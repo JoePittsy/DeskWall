@@ -129,11 +129,32 @@ public static class LayoutResolver
         if (path is not null && RemoteImageCache.IsRemote(path)) path = remote?.Invoke(path);
         if (path is null || !File.Exists(path))
             return vertical ? (int)Math.Round(img.Rect.W * 1.5) : (int)Math.Round(img.Rect.H / 1.5);   // 2:3 placeholder, as the POC did
-        using var s = Surface.Load(path);
+        var (w, h) = PixelSize(path);
         return vertical
-            ? (int)Math.Round((double)img.Rect.W * s.Height / s.Width)
-            : (int)Math.Round((double)img.Rect.H * s.Width / s.Height);
+            ? (int)Math.Round((double)img.Rect.W * h / w)
+            : (int)Math.Round((double)img.Rect.H * w / h);
     }
+
+    /// <summary>An image's pixel size, cached by path and mtime.
+    /// <para>
+    /// Resolve runs before the tick's skip gate, so without this every repeater image was fully
+    /// decoded every minute - four covers on a tick that changes nothing - purely to read two
+    /// numbers off it. The mtime is part of the key, so a file replaced in place is still re-read;
+    /// the cache is bounded by clearing it wholesale, which only a layout cycling through hundreds
+    /// of images would ever reach.
+    /// </para></summary>
+    private static (int Width, int Height) PixelSize(string path)
+    {
+        var stamp = File.GetLastWriteTimeUtc(path).Ticks;
+        if (s_sizes.TryGetValue(path, out var hit) && hit.Stamp == stamp) return (hit.Width, hit.Height);
+        using var s = Surface.Load(path);
+        if (s_sizes.Count > SizeCacheCap) s_sizes.Clear();
+        s_sizes[path] = (stamp, s.Width, s.Height);
+        return (s.Width, s.Height);
+    }
+
+    private const int SizeCacheCap = 256;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Stamp, int Width, int Height)> s_sizes = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Keep a template child inside its cell on the main axis and inside the repeater on the cross
