@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "baseImage": "unused.jpg",
+  "sources": [],
+  "components": [
+    { "type": "image", "id": "cover-r0",    "rect": [20, 20, 260, 140],  "source": { "bind": "img.cover" }, "fit": "cover" },
+    { "type": "image", "id": "contain-r0",  "rect": [300, 20, 260, 140], "source": { "bind": "img.cover" }, "fit": "contain" },
+    { "type": "image", "id": "stretch-r0",  "rect": [580, 20, 260, 140], "source": { "bind": "img.cover" }, "fit": "stretch" },
+    { "type": "image", "id": "cover-r12",   "rect": [20, 180, 260, 140],  "source": { "bind": "img.cover" }, "fit": "cover",   "radius": 12, "opacity": 0.5 },
+    { "type": "image", "id": "contain-r12", "rect": [300, 180, 260, 140], "source": { "bind": "img.cover" }, "fit": "contain", "radius": 12, "opacity": 0.5 },
+    { "type": "image", "id": "stretch-r12", "rect": [580, 180, 260, 140], "source": { "bind": "img.cover" }, "fit": "stretch", "radius": 12, "opacity": 0.5 }
+  ]
+}

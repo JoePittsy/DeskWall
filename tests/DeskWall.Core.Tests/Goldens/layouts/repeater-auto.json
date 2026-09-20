@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "baseImage": "unused.jpg",
+  "sources": [],
+  "components": [
+    { "type": "repeater", "id": "items", "rect": [300, 15, 260, 340], "items": { "bind": "games.list" }, "axis": "vertical", "gap": 8, "cellHeight": "auto",
+      "template": [
+        { "type": "image", "id": "cover", "rect": [0, 0, 70, 105], "source": { "bind": "cover" } },
+        { "type": "text", "id": "label", "rect": [90, 40, 150, 24], "text": { "bind": "label" } }
+      ] }
+  ]
+}

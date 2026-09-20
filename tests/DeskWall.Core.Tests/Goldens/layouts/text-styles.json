@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "baseImage": "unused.jpg",
+  "sources": [],
+  "components": [
+    { "type": "text", "id": "none-left",     "rect": [16, 14, 260, 72],  "effect": "none",    "align": "left",   "size": 20, "text": "AaBb" },
+    { "type": "text", "id": "none-center",   "rect": [300, 14, 260, 72], "effect": "none",    "align": "center", "size": 30, "text": "AaBb" },
+    { "type": "text", "id": "none-right",    "rect": [584, 14, 260, 72], "effect": "none",    "align": "right",  "size": 42, "text": "AaBb" },
+    { "type": "text", "id": "shadow-left",   "rect": [16, 100, 260, 72],  "effect": "shadow",  "align": "left",   "size": 20, "text": "AaBb" },
+    { "type": "text", "id": "shadow-center", "rect": [300, 100, 260, 72], "effect": "shadow",  "align": "center", "size": 30, "text": "AaBb" },
+    { "type": "text", "id": "shadow-right",  "rect": [584, 100, 260, 72], "effect": "shadow",  "align": "right",  "size": 42, "text": "AaBb" },
+    { "type": "text", "id": "outline-left",   "rect": [16, 186, 260, 72],  "effect": "outline", "align": "left",   "size": 20, "text": "AaBb" },
+    { "type": "text", "id": "outline-center", "rect": [300, 186, 260, 72], "effect": "outline", "align": "center", "size": 30, "text": "AaBb" },
+    { "type": "text", "id": "outline-right",  "rect": [584, 186, 260, 72], "effect": "outline", "align": "right",  "size": 42, "text": "AaBb" },
+    { "type": "text", "id": "plate-left",   "rect": [16, 272, 260, 72],  "effect": "plate", "align": "left",   "size": 20, "text": "AaBb" },
+    { "type": "text", "id": "plate-center", "rect": [300, 272, 260, 72], "effect": "plate", "align": "center", "size": 30, "text": "AaBb" },
+    { "type": "text", "id": "plate-right",  "rect": [584, 272, 260, 72], "effect": "plate", "align": "right",  "size": 42, "text": "AaBb" }
+  ]
+}
