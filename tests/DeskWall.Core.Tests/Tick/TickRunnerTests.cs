@@ -32,6 +32,8 @@ public class TickRunnerTests
         Assert.False(t1.Skipped);
         Assert.Equal(1, t1.Redrawn);
         Assert.True(File.Exists(Path.Combine(dir, "out.jpg")));
+        // Finding 3: CPU time now comes from Environment.CpuUsage, which opens no process handle.
+        Assert.True(t1.CpuMs >= 0);
 
         clock.Now = clock.Now.AddSeconds(10);            // same minute: time source not due
         var t2 = await runner.RunAsync(force: false, apply: false, default);

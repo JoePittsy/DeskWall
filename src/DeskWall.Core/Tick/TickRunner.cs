@@ -31,8 +31,9 @@ public sealed class TickRunner(
     {
         var t = new TickTimings();
         var sw = Stopwatch.StartNew();
-        var proc = Process.GetCurrentProcess();
-        var cpu0 = proc.TotalProcessorTime;
+        // Environment.CpuUsage reads the process times without opening a kernel handle; the old
+        // Process.GetCurrentProcess() leaked one SafeProcessHandle per tick (spec 1.2: under 100 handles).
+        var cpu0 = Environment.CpuUsage.TotalTime;
         var now = clock.Now;
 
         // 1. refresh due sources
@@ -59,8 +60,7 @@ public sealed class TickRunner(
         {
             t.Skipped = true;
             t.TotalMs = sw.ElapsedMilliseconds;
-            proc.Refresh();
-            t.CpuMs = (proc.TotalProcessorTime - cpu0).TotalMilliseconds;
+            t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
             return t;
         }
 
@@ -110,8 +110,7 @@ public sealed class TickRunner(
         state.Save(_statePath);
 
         t.TotalMs = sw.ElapsedMilliseconds;
-        proc.Refresh();
-        t.CpuMs = (proc.TotalProcessorTime - cpu0).TotalMilliseconds;
+        t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
         return t;
     }
 }
