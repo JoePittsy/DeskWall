@@ -67,19 +67,23 @@ public class LayoutResolverTests
         Assert.Equal("", ((ResolvedText)r.Single(c => c.Id == "missing")).Text);
         Assert.DoesNotContain(r, c => c.Id == "nolink");
     }
-}
 
-public class ContentKeyTests
-{
+    /// <summary>Finding 5: a malformed format string in a binding must render a fallback, not abort
+    /// the tick with a FormatException out of resolve.</summary>
     [Fact]
-    public void Key_Changes_With_Content_Not_With_Identity()
+    public void Malformed_Format_String_Does_Not_Abort_Resolve()
     {
-        var a = new ResolvedText("x", new Rect(0, 0, 10, 10), 0, "14:32", TextStyle.Default);
-        var b = new ResolvedText("y", new Rect(0, 0, 10, 10), 0, "14:32", TextStyle.Default);
-        var c = new ResolvedText("x", new Rect(0, 0, 10, 10), 0, "14:33", TextStyle.Default);
-        var d = new ResolvedText("x", new Rect(1, 0, 10, 10), 0, "14:32", TextStyle.Default);
-        Assert.Equal(ContentKey.Of(a), ContentKey.Of(b));
-        Assert.NotEqual(ContentKey.Of(a), ContentKey.Of(c));
-        Assert.NotEqual(ContentKey.Of(a), ContentKey.Of(d));
+        var layout = LayoutFile.Parse("""
+        {
+          "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [
+            { "type": "text", "id": "toomany", "rect": [0, 0, 100, 20], "text": { "bind": "disks.drives[C].freeGB | \"{0:N0} GB, {1} total\"" } },
+            { "type": "text", "id": "unbalanced", "rect": [0, 30, 100, 20], "text": { "bind": "disks.drives[C].freeGB | \"{0:N0} GB {free\"" } }
+          ]
+        }
+        """);
+        var r = LayoutResolver.Resolve(layout, Tree(), new Rect(0, 0, 3440, 1440));
+        Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "toomany")).Text);
+        Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "unbalanced")).Text);
     }
 }

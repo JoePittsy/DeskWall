@@ -6,23 +6,33 @@ namespace DeskWall.Core.Values;
 public abstract record Value
 {
     /// <summary>Render as text. <paramref name="format"/> is a .NET format string for the
-    /// value's type, or a composite format containing {0}, or null for the default.</summary>
+    /// value's type, or a composite format containing {0}, or null for the default.
+    /// A malformed format string (an argument index the value does not supply, an unbalanced
+    /// brace, an unknown type specifier) falls back to the unformatted text rather than throwing:
+    /// a user-authored layout must never abort the tick. Spec 3.2 / plan Task 6.</summary>
     public string ToText(string? format)
     {
         var inv = CultureInfo.InvariantCulture;
-        if (format is not null && format.Contains("{0"))
-            return string.Format(inv, format, Raw());
-        return this switch
+        try
         {
-            TextValue t => t.Text,
-            NumberValue n => n.Number.ToString(format, inv),
-            TimeValue t => t.Time.ToString(format ?? "o", inv),
-            BoolValue b => b.Flag ? "True" : "False",
-            ImageValue i => i.Path,
-            ListValue l => $"[{l.Items.Count} items]",
-            RecordValue r => $"{{{r.Fields.Count} fields}}",
-            _ => throw new InvalidOperationException(),
-        };
+            if (format is not null && format.Contains("{0"))
+                return string.Format(inv, format, Raw());
+            return this switch
+            {
+                TextValue t => t.Text,
+                NumberValue n => n.Number.ToString(format, inv),
+                TimeValue t => t.Time.ToString(format ?? "o", inv),
+                BoolValue b => b.Flag ? "True" : "False",
+                ImageValue i => i.Path,
+                ListValue l => $"[{l.Items.Count} items]",
+                RecordValue r => $"{{{r.Fields.Count} fields}}",
+                _ => throw new InvalidOperationException(),
+            };
+        }
+        catch (FormatException) when (format is not null)
+        {
+            return ToText(null);
+        }
     }
 
     /// <summary>The CLR object for composite formatting.</summary>
