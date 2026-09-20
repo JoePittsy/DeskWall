@@ -17,6 +17,7 @@ internal sealed unsafe class TrayIcon : IDisposable
     private readonly HostWindow _host;
     private readonly HICON _icon;
     private bool _added;
+    private string _tip = "DeskWall";   // last tooltip we were given, re-applied when the icon is re-added
 
     /// <summary>Raised on the pump thread.</summary>
     public event Action<TrayCommand>? Command;
@@ -28,12 +29,21 @@ internal sealed unsafe class TrayIcon : IDisposable
     {
         _host = host;
         _icon = LoadAppIcon();
+        Add();
+        host.TrayMessage += OnTrayMessage;
+        host.TaskbarCreated += OnTaskbarCreated;
+    }
+
+    public bool Added => _added;
+
+    private void Add()
+    {
         var nid = Data();
         nid.uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_MESSAGE | NOTIFY_ICON_DATA_FLAGS.NIF_ICON
                    | NOTIFY_ICON_DATA_FLAGS.NIF_TIP | NOTIFY_ICON_DATA_FLAGS.NIF_SHOWTIP;
         nid.uCallbackMessage = HostWindow.WM_APP_TRAY;
         nid.hIcon = _icon;
-        SetTip(ref nid, "DeskWall");
+        SetTip(ref nid, _tip);
         _added = PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_ADD, &nid);
         if (_added)
         {
@@ -41,13 +51,20 @@ internal sealed unsafe class TrayIcon : IDisposable
             nid.uVersion = PInvoke.NOTIFYICON_VERSION_4;
             PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_SETVERSION, &nid);
         }
-        host.TrayMessage += OnTrayMessage;
     }
 
-    public bool Added => _added;
+    /// <summary>Explorer restarted: the new taskbar has never heard of this icon, whatever _added says,
+    /// so add it again from scratch - message, icon, version and the tooltip we last published. Without
+    /// this the daemon loses its only interaction surface for the rest of the session (finding 3).</summary>
+    private void OnTaskbarCreated()
+    {
+        _added = false;
+        Add();
+    }
 
     public void SetTooltip(string text)
     {
+        _tip = text;
         if (!_added) return;
         var nid = Data();
         nid.uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_TIP | NOTIFY_ICON_DATA_FLAGS.NIF_SHOWTIP;
@@ -119,6 +136,7 @@ internal sealed unsafe class TrayIcon : IDisposable
     public void Dispose()
     {
         _host.TrayMessage -= OnTrayMessage;
+        _host.TaskbarCreated -= OnTaskbarCreated;
         if (_added)
         {
             var nid = Data();

@@ -2,6 +2,7 @@ AttachConsole
 FreeConsole
 ATTACH_PARENT_PROCESS
 RegisterClassExW
+RegisterWindowMessage
 UnregisterClass
 CreateWindowExW
 DestroyWindow

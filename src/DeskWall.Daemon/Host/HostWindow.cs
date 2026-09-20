@@ -19,6 +19,7 @@ internal sealed unsafe class HostWindow : IDisposable
     private static HostWindow? s_instance;        // one per process; the WndProc is a static function pointer
     private readonly List<WakeReason> _pending = new();
     private ushort _atom;
+    private uint _taskbarCreated;                 // the registered "TaskbarCreated" broadcast, 0 if it failed
 
     public HWND Handle { get; private set; }
 
@@ -27,6 +28,10 @@ internal sealed unsafe class HostWindow : IDisposable
 
     /// <summary>(msg, wParam, lParam) of a WM_APP_TRAY notification, for TrayIcon.</summary>
     public event Action<uint, nuint, nint>? TrayMessage;
+
+    /// <summary>Explorer restarted and the new taskbar knows nothing about our icon. Every tray client
+    /// is required to re-issue NIM_ADD when this arrives; TrayIcon subscribes (finding 3).</summary>
+    public event Action? TaskbarCreated;
 
     public HostWindow()
     {
@@ -51,6 +56,9 @@ internal sealed unsafe class HostWindow : IDisposable
             if (Handle.IsNull) throw new InvalidOperationException($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
         }
         PInvoke.WTSRegisterSessionNotification(Handle, PInvoke.NOTIFY_FOR_THIS_SESSION);
+        // Broadcast by every new taskbar. The atom is per-session and stable; 0 means the registration
+        // failed, in which case nothing can ever match it (a real message id is never 0).
+        fixed (char* name = "TaskbarCreated") _taskbarCreated = PInvoke.RegisterWindowMessage(name);
     }
 
     /// <summary>Thread-safe: PostMessage(WM_APP_WAKE, kind).</summary>
@@ -87,6 +95,11 @@ internal sealed unsafe class HostWindow : IDisposable
         var self = s_instance;
         if (self is not null)
         {
+            if (msg != 0 && msg == self._taskbarCreated)
+            {
+                self.TaskbarCreated?.Invoke();
+                return (LRESULT)0;
+            }
             switch (msg)
             {
                 case PInvoke.WM_DISPLAYCHANGE:

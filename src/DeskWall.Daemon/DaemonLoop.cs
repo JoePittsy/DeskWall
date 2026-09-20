@@ -75,6 +75,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
                 }
             };
             if (!trayIcon.Added) log.Warn("tray icon could not be added");
+            win.TaskbarCreated += () => log.Info($"taskbar re-created; tray icon re-added {trayIcon.Added}");
         }
 
         log.Info($"daemon start pid {Environment.ProcessId} tray {trayIcon is not null}");
