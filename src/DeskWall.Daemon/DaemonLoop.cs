@@ -48,9 +48,14 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
 
     public int Run()
     {
+        // `run --no-tray` wins outright (tray is already false by then); otherwise the designer's
+        // settings.json decides, read once here at start. It is never re-read: turning the tray icon
+        // off or on is a restart, which is what the designer's settings page says it is.
+        var wantTray = tray && DaemonSettings.TrayIconEnabled();
+
         using var win = new HostWindow();
         using var timer = new WaitableTimer();
-        using var trayIcon = tray ? new TrayIcon(win) : null;
+        using var trayIcon = wantTray ? new TrayIcon(win) : null;
         using var watcher = new LayoutWatcher(store, () => win.Post(WakeKind.LayoutChanged));
         _win = win;
         _watcher = watcher;
@@ -84,7 +89,8 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             win.TaskbarCreated += () => log.Info($"taskbar re-created; tray icon re-added {trayIcon.Added}");
         }
 
-        log.Info($"daemon start pid {Environment.ProcessId} tray {trayIcon is not null}");
+        log.Info($"daemon start pid {Environment.ProcessId} tray {trayIcon is not null}" +
+                 (tray && !wantTray ? " (settings.json: trayIcon false)" : ""));
         WallpaperSetter.RecordRestorePoint();
         // A download that lands after the frame was drawn must repaint it; images nobody has looked
         // up for 30 days go now, once, not on a timer.
@@ -205,15 +211,41 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     }
 }
 
-/// <summary>Phase 5 ships DeskWall.Designer.exe next to the daemon. Until then the tray's first menu
-/// item says so in the log rather than appearing to do nothing.</summary>
+/// <summary>Phase 5 ships DeskWall.Designer.exe next to the daemon, which is where an installed
+/// DeskWall always finds it. In a dev tree the two projects build into their own bin folders, so the
+/// tray item would otherwise never work on the machine it is being written on; the walk up to
+/// src/DeskWall.Designer is a development convenience only and never fires for an installed copy,
+/// which hits the first branch.</summary>
 internal static class Designer
 {
     public static void Open(RollingLog log)
     {
-        var exe = Path.Combine(AppContext.BaseDirectory, "DeskWall.Designer.exe");
-        if (!File.Exists(exe)) { log.Warn("designer not installed"); return; }
+        var exe = Find();
+        if (exe is null) { log.Warn("designer not installed"); return; }
+        // UseShellExecute false, and no redirection: the designer outlives this daemon happily and
+        // inherits nothing it could block on.
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false }); }
         catch (Exception ex) { log.Error("designer failed to start", ex); }
+    }
+
+    private static string? Find()
+    {
+        var beside = Path.Combine(AppContext.BaseDirectory, "DeskWall.Designer.exe");
+        if (File.Exists(beside)) return beside;
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var proj = Path.Combine(dir.FullName, "src", "DeskWall.Designer");
+            if (Directory.Exists(proj))
+            {
+                var found = Directory.EnumerateFiles(proj, "DeskWall.Designer.exe", SearchOption.AllDirectories)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .FirstOrDefault();
+                if (found is not null) return found;
+            }
+            dir = dir.Parent;
+        }
+        return null;
     }
 }

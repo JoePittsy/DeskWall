@@ -13,6 +13,20 @@ public sealed class Settings
     public string? LastLayoutPath { get; set; }
     public string? LastSignatureKey { get; set; }
 
+    // ---- the shell's own layout (Task 8) ----------------------------------------------------
+    // Which panels are showing, and where the window was, so reopening the designer puts the owner
+    // back where he left off. Defaults: everything visible, and let Windows place the window.
+    // The daemon's reader (DeskWall.Core.Diagnostics.DaemonSettings) ignores all of this.
+
+    public bool ShowSources { get; set; } = true;
+    public bool ShowProperties { get; set; } = true;
+    public bool ShowLayers { get; set; } = true;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
+    public bool WindowMaximized { get; set; }
+
     private static string FilePath => Paths.InRuntime("settings.json");
 
     public static Settings Load()

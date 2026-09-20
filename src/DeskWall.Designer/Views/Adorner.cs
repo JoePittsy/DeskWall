@@ -34,6 +34,9 @@ internal sealed class CanvasAdorner : FrameworkElement
     private static readonly Pen CellRestPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(0x3A, 0xFF, 0xFF, 0xFF))), 1));
     private static readonly Pen GuidePen = Freeze(new Pen(Freeze(new SolidColorBrush(SystemColors.HighlightColor)), 1) { DashStyle = new DashStyle([4, 3], 0) });
     private static readonly Pen MarqueePen = Freeze(new Pen(Freeze(new SolidColorBrush(SystemColors.HighlightColor)), 1) { DashStyle = new DashStyle([3, 3], 0) });
+    /// <summary>The repeater a template child in the layers panel belongs to. Dashed, so it reads as
+    /// "this is the thing you are editing inside" and never as a selection you can drag.</summary>
+    private static readonly Pen HighlightPen = Freeze(new Pen(Freeze(new SolidColorBrush(SystemColors.HighlightColor)), 2) { DashStyle = new DashStyle([6, 4], 0) });
     private static readonly Brush MarqueeFill = Freeze(new SolidColorBrush(Color.FromArgb(0x30, SystemColors.HighlightColor.R, SystemColors.HighlightColor.G, SystemColors.HighlightColor.B)));
     private static readonly Brush HandleFill = Freeze(new SolidColorBrush(Colors.White));
 
@@ -54,6 +57,9 @@ internal sealed class CanvasAdorner : FrameworkElement
     public IReadOnlyList<Snap.Guide> Guides = Array.Empty<Snap.Guide>();
     /// <summary>Marquee in canvas pixels, null when not dragging one.</summary>
     public CRect? Marquee;
+    /// <summary>A component to outline without selecting it: the repeater whose template child the
+    /// layers panel is pointing at. Null the rest of the time.</summary>
+    public CRect? Highlight;
 
     public CanvasAdorner()
     {
@@ -120,6 +126,8 @@ internal sealed class CanvasAdorner : FrameworkElement
                 dc.DrawLine(GuidePen, new Point(canvas.Left, y), new Point(canvas.Right, y));
             }
         }
+
+        if (Highlight is { } hl) dc.DrawRectangle(null, HighlightPen, Crisp(ToScreen(hl)));
 
         foreach (var o in Outlines) dc.DrawRectangle(null, Accent, Crisp(ToScreen(o)));
 

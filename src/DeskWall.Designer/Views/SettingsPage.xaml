@@ -113,8 +113,8 @@
                               HorizontalScrollBarVisibility="Auto"
                               GridLinesVisibility="Horizontal" HeadersVisibility="Column" CanUserAddRows="False" Margin="0,0,0,8">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Display" Binding="{Binding SignatureKey}" Width="210" />
-                            <DataGridTextColumn Header="Layout file" Binding="{Binding Path}" Width="330" />
+                            <DataGridTextColumn Header="Display" Binding="{Binding SignatureKey}" Width="*" MinWidth="150" />
+                            <DataGridTextColumn Header="Layout file" Binding="{Binding Path}" Width="2*" MinWidth="200" />
                             <DataGridTemplateColumn Header="" Width="Auto">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>

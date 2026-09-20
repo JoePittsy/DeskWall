@@ -47,6 +47,17 @@ public partial class SettingsPage : Window
         LoadLayoutsGrid();
     }
 
+    /// <summary>Escape returns to the canvas. The shell opens this page over the window it came
+    /// from, and everything on it writes as it is changed, so there is nothing to confirm on the way
+    /// out and no Close button earning its place.</summary>
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        if (e.Handled || e.Key != Key.Escape) return;
+        Close();
+        e.Handled = true;
+    }
+
     // ---- 1. Daemon -------------------------------------------------------------------------
 
     private void RefreshDaemonStatus()

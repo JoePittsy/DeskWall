@@ -77,6 +77,7 @@ internal static class Program
     {
         w.WriteLine("deskwall [--home <dir>] <command>");
         w.WriteLine("  run [--no-tray] [--no-shortcuts]   resident daemon (the default with no command)");
+        w.WriteLine("                             --no-tray wins; otherwise settings.json trayIcon decides");
         w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply] [--no-shortcuts]");
         w.WriteLine("  install                    start at sign-in, and start now");
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
@@ -87,7 +88,9 @@ internal static class Program
 
     /// <summary>deskwall run [--no-tray] [--no-shortcuts]. One daemon per session: a second one hands the
     /// running daemon a Manual wake (so `run` doubles as "refresh now" from a script) and exits happy.
-    /// --no-shortcuts leaves the desktop alone: the wallpaper still updates, no .lnk is written or moved.</summary>
+    /// --no-shortcuts leaves the desktop alone: the wallpaper still updates, no .lnk is written or moved.
+    /// <para>--no-tray is the override, so it is decided here; with it absent the daemon asks
+    /// DaemonSettings (the designer's settings.json) at start.</para></summary>
     private static int Run(List<string> opts)
     {
         using var single = new Mutex(initiallyOwned: true, @"Local\DeskWall.Daemon", out var mine);

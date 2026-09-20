@@ -1,0 +1,83 @@
+<Window x:Class="DeskWall.Designer.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:DeskWall.Designer.Views"
+        Title="DeskWall Designer"
+        Width="1500" Height="950" MinWidth="900" MinHeight="600"
+        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- The four decisions the shell itself owns: which file, which display, apply, undo the
+         applying. Everything else is a canvas gesture or a panel. -->
+    <Border Grid.Row="0"
+            Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+            BorderThickness="0,0,0,1">
+      <DockPanel LastChildFill="False" Margin="8,5">
+        <!-- MaxWidth and trimming: a layout saved for a display is named after the display, and a
+             device path is 60 characters of GUID. The name is the fact; its full length is not. -->
+        <TextBlock x:Name="FileText" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0"
+                   MaxWidth="260" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        <ComboBox x:Name="DisplayCombo" DockPanel.Dock="Left" Width="300" VerticalAlignment="Center"
+                  DisplayMemberPath="Label" SelectionChanged="DisplayCombo_SelectionChanged" />
+        <Button x:Name="CopyFromButton" DockPanel.Dock="Left" Content="Copy from..."
+                Margin="8,0,0,0" Padding="10,3" Click="CopyFrom_Click" />
+
+        <TextBlock x:Name="KeyHintText" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="20,0,0,0"
+                   Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                   Text="F9 sources   F10 properties   F11 layers" />
+        <Button x:Name="SettingsButton" DockPanel.Dock="Right" Content="Settings"
+                Margin="8,0,0,0" Padding="10,3" Click="Settings_Click" />
+        <Button x:Name="RevertButton" DockPanel.Dock="Right" Content="Revert to last applied"
+                Margin="8,0,0,0" Padding="10,3" Click="Revert_Click" />
+        <Button x:Name="ApplyButton" DockPanel.Dock="Right" Content="Apply" ToolTip="Ctrl+S"
+                Padding="10,3" Click="Apply_Click" />
+      </DockPanel>
+    </Border>
+
+    <!-- Spec 5's scaled banner. Collapsed, and therefore not a row at all, whenever the open layout
+         was authored for this display. -->
+    <Border x:Name="Banner" Grid.Row="1" Visibility="Collapsed"
+            Background="{DynamicResource {x:Static SystemColors.InfoBrushKey}}"
+            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+            BorderThickness="0,0,0,1">
+      <StackPanel Orientation="Horizontal" Margin="8,4">
+        <TextBlock x:Name="BannerText" VerticalAlignment="Center" Margin="0,0,12,0"
+                   Foreground="{DynamicResource {x:Static SystemColors.InfoTextBrushKey}}" />
+        <Button x:Name="SaveForDisplayButton" Content="Save as layout for this display"
+                Padding="10,3" Click="SaveForDisplay_Click" />
+      </StackPanel>
+    </Border>
+
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition x:Name="SourcesColumn" Width="280" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition x:Name="PropertiesColumn" Width="320" />
+      </Grid.ColumnDefinitions>
+
+      <Border x:Name="SourcesHost" Grid.Column="0" BorderThickness="0,0,1,0"
+              BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}">
+        <v:SourcesPanel x:Name="Sources" />
+      </Border>
+
+      <v:CanvasView x:Name="Editor" Grid.Column="1" />
+
+      <Border x:Name="PropertiesHost" Grid.Column="2" BorderThickness="1,0,0,0"
+              BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}">
+        <v:PropertiesPanel x:Name="Properties" />
+      </Border>
+    </Grid>
+
+    <Border x:Name="LayersHost" Grid.Row="3" Height="160" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}">
+      <v:LayersPanel x:Name="Layers" />
+    </Border>
+  </Grid>
+</Window>

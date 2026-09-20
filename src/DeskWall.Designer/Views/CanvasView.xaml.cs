@@ -55,6 +55,7 @@ public partial class CanvasView : UserControl
     private readonly Dictionary<string, CRect> _ghost = new(StringComparer.Ordinal);
     private (int X, int Y) _cursor;
     private CRect? _committed;
+    private string? _highlightId;
 
     public CanvasView()
     {
@@ -78,8 +79,20 @@ public partial class CanvasView : UserControl
         _model.SelectionChanged += OnSelectionChanged;
         _renderer.Rendered += OnRendered;
         _fit = true;
+        _highlightId = null;
         Fit();
         _renderer.Request(_model);
+        Redraw();
+    }
+
+    /// <summary>Outline a component without selecting it. The shell calls this when the layers panel
+    /// activates a repeater's template child: a template child has no rect of its own on the canvas
+    /// (the resolver expands it per item and DesignerModel.Find cannot even see it), so the honest
+    /// answer to "where is that" is the repeater it lives in. Null clears it.</summary>
+    public void HighlightComponent(string? id)
+    {
+        if (_highlightId == id) return;
+        _highlightId = id;
         Redraw();
     }
 
@@ -92,7 +105,13 @@ public partial class CanvasView : UserControl
         Redraw();
     }
 
-    private void OnSelectionChanged() => Redraw();
+    private void OnSelectionChanged()
+    {
+        // Selecting anything on the canvas answers "where is that" for real, so the borrowed
+        // template-child highlight has nothing left to say.
+        if (_model is { Selection.Count: > 0 }) _highlightId = null;
+        Redraw();
+    }
 
     private void OnRendered(PreviewFrame frame)
     {
@@ -163,6 +182,7 @@ public partial class CanvasView : UserControl
         _adorner.Cells = BuildCells();
         _adorner.Outlines = SelectedRects();
         _adorner.Handles = _model is { Selection.Count: 1 } ? SelectedRects().FirstOrDefault() : null;
+        _adorner.Highlight = _highlightId is { } hid && _hit.TryGetValue(hid, out var hr) ? hr : null;
         _adorner.Refresh();
         UpdateStatus();
     }

@@ -11,6 +11,7 @@ using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
 using DeskWall.Core.Values;
+using DeskWall.Designer.Model;
 using Microsoft.Win32;
 using CoreRect = DeskWall.Core.Rect;
 
@@ -87,7 +88,7 @@ public partial class FirstRun : Window
         try
         {
             var scaled = LayoutScaler.Scale(LayoutFile.Load(StarterPath(starterFile)), StarterSignature, _signature);
-            var dest = Paths.InRuntime("layouts", SafeFileName(_signature.Key) + ".json");
+            var dest = ShellState.LayoutPathFor(_signature);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             scaled.Save(dest);
             _store.Set(_signature, dest);
@@ -115,11 +116,5 @@ public partial class FirstRun : Window
         {
             MessageBox.Show(this, $"'{dlg.FileName}' is not a valid layout: {ex.Message}", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    }
-
-    private static string SafeFileName(string signatureKey)
-    {
-        var bad = Path.GetInvalidFileNameChars();
-        return new string(signatureKey.Select(c => bad.Contains(c) ? '_' : c).ToArray());
     }
 }
