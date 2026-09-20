@@ -40,4 +40,16 @@ public class ShortcutFilesTests
         Assert.False(File.Exists(lnk));
         Assert.Null(ShortcutFiles.Read(lnk));
     }
+
+    /// <summary>Phase 3 deferred minor: a .lnk that exists but is not a valid shell link (a
+    /// half-written file, a truncated OneDrive placeholder) must come back as a graceful null, not
+    /// throw out of Read and abort whatever tick or shortcut sync called it.</summary>
+    [Fact]
+    public void Read_Corrupt_Lnk_Returns_Null()
+    {
+        var lnk = TempLnk();
+        File.WriteAllBytes(lnk, [1, 2, 3, 4, 5, 6, 7, 8]);
+        Assert.True(File.Exists(lnk));
+        Assert.Null(ShortcutFiles.Read(lnk));
+    }
 }

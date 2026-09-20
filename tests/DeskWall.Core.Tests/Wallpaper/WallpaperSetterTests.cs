@@ -5,9 +5,12 @@ using Xunit;
 public class WallpaperSetterTests
 {
     [Fact]
+    [Trait("Category", "Desktop")]
     public void Get_ReturnsCurrentPath_ForPrimary()
     {
-        var p = Monitors.Enumerate().First(m => m.IsPrimary);
+        var mons = Monitors.Enumerate();
+        if (mons.Count == 0 || !mons.Any(m => m.IsPrimary)) return;   // no desktop session (e.g. a CI box): skip, do not fail
+        var p = mons.First(m => m.IsPrimary);
         var current = WallpaperSetter.Get(p.WallpaperMonitorId);
         // A machine with no wallpaper set answers "" - that is the COM call working, not failing, so
         // assert what is actually guaranteed rather than something a fresh profile or a CI agent fails.
