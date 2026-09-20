@@ -239,7 +239,7 @@ internal static class Program
         {
             var snap = registry.Get(s.Name);
             try { registry.Set(snap.Succeeded(await s.RefreshAsync(CancellationToken.None), clock.Now)); }
-            catch (Exception ex) { registry.Set(snap.Failed(ex.Message)); }
+            catch (Exception ex) { registry.Set(snap.Failed(ex.Message, clock.Now)); }
         }
 
         var resolved = LayoutResolver.Resolve(layout, registry.Tree());

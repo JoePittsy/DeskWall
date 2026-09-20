@@ -3,6 +3,7 @@ using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
+using DeskWall.Core.Scheduling;
 using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Wallpaper;
@@ -46,9 +47,11 @@ public sealed class TickRunner(
         foreach (var s in sources)
         {
             var snap = registry.Get(s.Name);
-            if (!force && s.NextDue(snap.LastRefresh, now) > now) continue;
+            // Scheduler.IsDue, not NextDue: a failing source is on a backed-off schedule and the wake
+            // maths and this gate must agree exactly (finding 1).
+            if (!force && !Scheduler.IsDue(s, snap, now)) continue;
             try { registry.Set(snap.Succeeded(await s.RefreshAsync(ct).ConfigureAwait(false), now)); }
-            catch (Exception ex) { registry.Set(snap.Failed(ex.Message)); }
+            catch (Exception ex) { registry.Set(snap.Failed(ex.Message, now)); }
         }
 
         // 2. resolve + diff

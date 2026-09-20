@@ -32,6 +32,8 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
         return mtime != _seenMtime ? now : lastRefresh.Value + every;
     }
 
+    public TimeSpan Interval(DateTimeOffset now) => every;
+
     public ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
         var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase);

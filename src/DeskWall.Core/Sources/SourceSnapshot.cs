@@ -3,20 +3,24 @@ using DeskWall.Core.Values;
 namespace DeskWall.Core.Sources;
 
 /// <summary>Last known state of one source. Immutable; the registry swaps whole snapshots.</summary>
+/// <param name="LastRefresh">When the source last produced values; staleness is judged from this.</param>
+/// <param name="LastAttempt">When the source last ran at all, successfully or not. The scheduler
+/// schedules a failing source from this: LastRefresh alone leaves it permanently due (finding 1).</param>
 public sealed record SourceSnapshot(
     string Name,
     RecordValue? Values,
     DateTimeOffset? LastRefresh,
+    DateTimeOffset? LastAttempt,
     string? LastError,
     int ConsecutiveFailures)
 {
-    public static SourceSnapshot Initial(string name) => new(name, null, null, null, 0);
+    public static SourceSnapshot Initial(string name) => new(name, null, null, null, null, 0);
 
     public SourceSnapshot Succeeded(RecordValue v, DateTimeOffset at)
-        => this with { Values = v, LastRefresh = at, LastError = null, ConsecutiveFailures = 0 };
+        => this with { Values = v, LastRefresh = at, LastAttempt = at, LastError = null, ConsecutiveFailures = 0 };
 
-    public SourceSnapshot Failed(string error)
-        => this with { LastError = error, ConsecutiveFailures = ConsecutiveFailures + 1 };
+    public SourceSnapshot Failed(string error, DateTimeOffset at)
+        => this with { LastAttempt = at, LastError = error, ConsecutiveFailures = ConsecutiveFailures + 1 };
 }
 
 /// <summary>All snapshots, keyed by source name. Builds the value tree for resolution.</summary>

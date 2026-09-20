@@ -37,7 +37,7 @@ public sealed class LiveSources : IDisposable
             }
             catch (Exception ex)
             {
-                lock (_registryLock) _registry.Set(SourceSnapshot.Initial(def.Name).Failed(ex.Message));
+                lock (_registryLock) _registry.Set(SourceSnapshot.Initial(def.Name).Failed(ex.Message, clock.Now));
             }
             _entries.Add(entry);
         }
@@ -103,7 +103,7 @@ public sealed class LiveSources : IDisposable
         }
         catch (Exception ex)
         {
-            lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name).Failed(ex.Message));
+            lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name).Failed(ex.Message, _clock.Now));
         }
         Updated?.Invoke();
     }

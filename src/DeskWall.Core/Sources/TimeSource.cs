@@ -14,6 +14,8 @@ public sealed class TimeSource(string name, IClock clock) : ISource
         return new DateTimeOffset(l.Year, l.Month, l.Day, l.Hour, l.Minute, 0, l.Offset).AddMinutes(1);
     }
 
+    public TimeSpan Interval(DateTimeOffset now) => TimeSpan.FromMinutes(1);
+
     public ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
         var now = clock.Now;

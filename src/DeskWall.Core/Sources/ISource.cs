@@ -13,6 +13,11 @@ public interface ISource
     /// <summary>Next time this source is due, given the last refresh (null = never ran).</summary>
     DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now);
 
+    /// <summary>How long this source wants between refreshes. NextDue cannot answer that for a source
+    /// that has never succeeded, which is exactly the case the scheduler has to back off (finding 1);
+    /// a source with no interval of its own inherits the daemon's one-minute granularity.</summary>
+    TimeSpan Interval(DateTimeOffset now) => TimeSpan.FromMinutes(1);
+
     /// <summary>Produce the current values. Throwing marks the source failed (spec 3.2).</summary>
     ValueTask<RecordValue> RefreshAsync(CancellationToken ct);
 }
@@ -25,6 +30,8 @@ public abstract class PeriodicSource(string name, TimeSpan every) : ISource
 
     public virtual DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
         => lastRefresh is null ? now : lastRefresh.Value + every;
+
+    public virtual TimeSpan Interval(DateTimeOffset now) => every;
 
     public abstract ValueTask<RecordValue> RefreshAsync(CancellationToken ct);
 }
