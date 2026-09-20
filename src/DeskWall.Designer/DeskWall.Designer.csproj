@@ -14,4 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DeskWall.Core\DeskWall.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\layouts\starter-*.json" Link="layouts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

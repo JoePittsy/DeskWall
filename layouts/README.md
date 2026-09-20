@@ -8,6 +8,14 @@ layout proportionally when the display signature has no layout of its own.
 |---|---|
 | `clock-disks.json` | Clock top right, one row per fixed drive bottom right. No network, no secrets. |
 | `steam-recent.json` | The same column with the four most recently played Steam games between them, covers from Steam's CDN, each cover a click-to-launch shortcut. Needs two secrets. |
+| `starter-column.json` | The Designer's first-run "column" card. Identical to `steam-recent.json`; needs the same two secrets before the covers appear. |
+| `starter-clock.json` | The Designer's first-run "clock" card. Clock only, top right; no sources beyond time, no secrets. |
+| `starter-blank.json` | The Designer's first-run "blank" card. Base image only, nothing drawn on top. |
+
+The three `starter-*.json` files are what `FirstRun` offers when the layout store has no entry for
+the current display: it copies the chosen one into `runtime/layouts/<signature>.json`, scaled to
+the actual signature by `LayoutScaler`, and opens it in the designer. They are otherwise ordinary
+layout files - open one directly with `deskwall tick --layout` like any other.
 
 ## Steam secrets
 

@@ -258,6 +258,11 @@ public sealed unsafe class Surface : IDisposable
         });
     }
 
+    /// <summary>Copy the whole surface out as tightly packed, premultiplied BGRA rows (top-down),
+    /// the same layout <see cref="System.Windows.Media.PixelFormats.Pbgra32"/> expects. Public so a
+    /// WPF host (the Designer's preview) can build a WriteableBitmap without reaching into internals.</summary>
+    public void CopyTo(byte[] bgra) => ReadRegion(new Rect(0, 0, Width, Height), bgra);
+
     /// <summary>Replace the pixels of <paramref name="r"/> with the same rect from <paramref name="src"/>. Same-size surfaces.</summary>
     public void CopyRect(Surface src, Rect r)
     {
