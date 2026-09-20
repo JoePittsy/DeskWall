@@ -64,8 +64,12 @@ $rows = foreach ($r in $all) {
 $Games = @($rows | Sort-Object Last -Descending | Select-Object -First $Top)
 $Disks = @(foreach ($d in (Get-PSDrive C, D)) { [pscustomobject]@{ Letter = $d.Name; FreeGB = [math]::Round($d.Free/1GB); UsedPct = $d.Used/($d.Used+$d.Free) } })
 
-# cover geometry shared by renderer and shortcut placer
-$ColW = 180; $ColLeft = 3440 - 48 - $ColW; $ColTop = 48; $Gap = 14
+# column geometry shared by renderer and shortcut placer (3440x1440, taskbar 48)
+# top-down: clock (ClockH) | gap | covers | ... | disks block anchored to the bottom
+# 172px wide so four 2:3 covers (258 tall) fit between clock and disks: 142 + 4*258 + 3*14 = 1216 <= 1236
+$ColW = 172; $ColLeft = 3440 - 48 - $ColW; $Gap = 14
+$ClockTop = 48; $ClockH = 70
+$ColTop = $ClockTop + $ClockH + 24
 $CoverRects = @()
 $y = $ColTop
 foreach ($gm in $Games) {
