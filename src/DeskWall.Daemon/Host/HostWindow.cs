@@ -107,17 +107,23 @@ internal sealed unsafe class HostWindow : IDisposable
                         $"{(int)(lParam.Value & 0xFFFF)}x{(int)((lParam.Value >> 16) & 0xFFFF)}"));
                     return (LRESULT)0;
                 case PInvoke.WM_SETTINGCHANGE:
-                    if ((uint)wParam.Value == (uint)SYSTEM_PARAMETERS_INFO_ACTION.SPI_SETDESKWALLPAPER
-                        || (lParam.Value != 0 && new PCWSTR((char*)lParam.Value).ToString() == "ImmersiveColorSet"))
-                        self._pending.Add(new WakeReason(WakeKind.DisplayChange, "settingchange"));
+                    // Deliberately NOT SPI_SETDESKWALLPAPER: the daemon is what sets the wallpaper, and
+                    // a shell that echoed that back would wake it into a permanent two-second
+                    // forced-redraw loop. The timer and WM_DISPLAYCHANGE cover what it was for
+                    // (finding 7). A theme change is a redraw, not an Explorer re-layout, so it is a
+                    // Manual wake: forced, but without the two-second delay.
+                    if (lParam.Value != 0 && new PCWSTR((char*)lParam.Value).ToString() == "ImmersiveColorSet")
+                        self._pending.Add(new WakeReason(WakeKind.Manual, "ImmersiveColorSet"));
                     return (LRESULT)0;
                 case PInvoke.WM_WTSSESSION_CHANGE:
                     if ((uint)wParam.Value is PInvoke.WTS_SESSION_UNLOCK or PInvoke.WTS_REMOTE_CONNECT or PInvoke.WTS_CONSOLE_CONNECT)
                         self._pending.Add(new WakeReason(WakeKind.SessionUnlock, ((uint)wParam.Value).ToString()));
                     return (LRESULT)0;
                 case PInvoke.WM_POWERBROADCAST:
+                    // Resuming is an unlock by another name: the session was away, so re-apply rather
+                    // than let the skip gate decide nothing changed (finding 9).
                     if ((uint)wParam.Value == PInvoke.PBT_APMRESUMEAUTOMATIC)
-                        self._pending.Add(new WakeReason(WakeKind.Timer, "resume"));
+                        self._pending.Add(new WakeReason(WakeKind.SessionUnlock, "resume"));
                     return (LRESULT)1;
                 case WM_APP_WAKE:
                     self._pending.Add(new WakeReason((WakeKind)(int)wParam.Value, "posted"));

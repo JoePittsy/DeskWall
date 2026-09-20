@@ -11,6 +11,7 @@ using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
 using DeskWall.Core.Wallpaper;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace DeskWall.Daemon;
 
@@ -91,8 +92,16 @@ internal static class Program
         using var single = new Mutex(initiallyOwned: true, @"Local\DeskWall.Daemon", out var mine);
         if (!mine)
         {
-            var hwnd = PInvoke.FindWindow(HostClass, null);
-            if (!hwnd.IsNull) PInvoke.PostMessage(hwnd, HostWindow.WM_APP_WAKE, (nuint)(int)WakeKind.Manual, 0);
+            // The winner may still be between `new Mutex` and CreateWindowEx, so give the window a
+            // second to appear rather than claim a refresh nobody was asked for (finding 10).
+            var hwnd = HWND.Null;
+            for (var i = 0; i < 20 && (hwnd = PInvoke.FindWindow(HostClass, null)).IsNull; i++) Thread.Sleep(50);
+            if (hwnd.IsNull)
+            {
+                Console.Error.WriteLine("deskwall: another instance holds the lock but has no window yet; nothing refreshed");
+                return 1;
+            }
+            PInvoke.PostMessage(hwnd, HostWindow.WM_APP_WAKE, (nuint)(int)WakeKind.Manual, 0);
             Console.WriteLine("deskwall: already running; asked it to refresh");
             return 0;
         }

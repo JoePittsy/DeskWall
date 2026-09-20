@@ -24,7 +24,12 @@ public static class TickPlan
         var display = reasons.Any(r => r.Kind == WakeKind.DisplayChange);
         var layout = reasons.Any(r => r.Kind == WakeKind.LayoutChanged);
         var manual = reasons.Any(r => r.Kind == WakeKind.Manual);
-        return new Decision(Tick: true, Force: display || layout || manual, DelayForExplorer: display,
+        // SessionUnlock is forced (finding 9): the only reason to wake on an unlock or a resume is
+        // that something else may have replaced the wallpaper while the session was away, and the
+        // skip gate would otherwise return Skipped without ever reaching WallpaperSetter.Set. It is
+        // rare and costs one redraw. It does not reactivate: the display has not changed.
+        var unlock = reasons.Any(r => r.Kind == WakeKind.SessionUnlock);
+        return new Decision(Tick: true, Force: display || layout || manual || unlock, DelayForExplorer: display,
             Reactivate: display || layout, Shutdown: false);
     }
 }

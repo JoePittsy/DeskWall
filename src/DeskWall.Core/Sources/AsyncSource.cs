@@ -28,7 +28,11 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
             work = done ?? (_inFlight ??= Start());
         }
         if (done is not null) return await done.ConfigureAwait(false);
-        var finished = await Task.WhenAny(work, Task.Delay(timeout, ct)).ConfigureAwait(false);
+        // Cancel the loser: an abandoned Task.Delay keeps an armed timer for the whole timeout, one
+        // per async source per tick, and the daemon passes a token that can never cancel it (finding 6).
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var finished = await Task.WhenAny(work, Task.Delay(timeout, cts.Token)).ConfigureAwait(false);
+        cts.Cancel();
         if (finished != work) throw new TimeoutException($"source '{Name}' exceeded {timeout.TotalSeconds:0} s; still running");
         lock (_lock) _inFlight = null;
         return await work.ConfigureAwait(false);

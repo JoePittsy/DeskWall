@@ -23,15 +23,21 @@ public sealed unsafe record Footprint(long PrivateBytes, long WorkingSetBytes, T
 
     public string Short() => $"{WorkingSetBytes / 1048576.0:0.0} MB . cpu {TotalCpu.TotalSeconds:0.0} s . {Handles} h . {Threads} t";
 
+    private static int s_threads = -1;
+
     private static int ThreadCount()
     {
-        // System.Diagnostics.Process would open a handle; the thread count is cheap to read from the
-        // process snapshot API instead. Fall back to 0 rather than fail the tooltip.
+        // Finding 5: Process.Threads is not cheap - it issues NtQuerySystemInformation
+        // (SystemProcessInformation), a buffer sized for every process and thread on the machine,
+        // typically a few hundred KB on the LOH. The tooltip reads this on every wake, outside
+        // anything TickTimings measures. The daemon creates no threads of its own, so read it once.
+        // Fall back to 0 rather than fail the tooltip.
+        if (s_threads >= 0) return s_threads;
         try
         {
             using var p = System.Diagnostics.Process.GetCurrentProcess();
-            return p.Threads.Count;
+            return s_threads = p.Threads.Count;
         }
-        catch (Exception) { return 0; }
+        catch (Exception) { return s_threads = 0; }
     }
 }

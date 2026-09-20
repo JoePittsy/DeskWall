@@ -61,11 +61,23 @@ public class TickPlanTests
     }
 
     [Fact]
-    public void SourceCompleted_And_SessionUnlock_Tick_Without_Forcing()
+    public void SourceCompleted_Ticks_Without_Forcing()
     {
-        var d = From(WakeKind.SourceCompleted, WakeKind.SessionUnlock);
+        var d = From(WakeKind.SourceCompleted);
         Assert.True(d.Tick);
         Assert.False(d.Force);
+        Assert.False(d.Reactivate);
+    }
+
+    /// <summary>Finding 9: waking on an unlock or a resume is only worth anything if the wallpaper is
+    /// re-applied, and the skip gate swallows an unforced tick whose content has not changed.</summary>
+    [Fact]
+    public void SessionUnlock_Forces_But_Does_Not_Reactivate_Or_Delay()
+    {
+        var d = From(WakeKind.SessionUnlock);
+        Assert.True(d.Tick);
+        Assert.True(d.Force);
+        Assert.False(d.DelayForExplorer);
         Assert.False(d.Reactivate);
     }
 

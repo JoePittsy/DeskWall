@@ -9,7 +9,10 @@ public class WallpaperSetterTests
     {
         var p = Monitors.Enumerate().First(m => m.IsPrimary);
         var current = WallpaperSetter.Get(p.WallpaperMonitorId);
-        Assert.False(string.IsNullOrEmpty(current));
+        // A machine with no wallpaper set answers "" - that is the COM call working, not failing, so
+        // assert what is actually guaranteed rather than something a fresh profile or a CI agent fails.
+        Assert.NotNull(current);
+        if (current.Length > 0) Assert.True(Path.IsPathRooted(current), current);
     }
 
     /// <summary>

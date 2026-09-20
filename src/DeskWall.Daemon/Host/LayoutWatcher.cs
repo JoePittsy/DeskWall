@@ -24,7 +24,8 @@ internal sealed class LayoutWatcher : IDisposable
     private readonly System.Threading.Timer _timer;
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private volatile HashSet<string> _interesting = new(StringComparer.OrdinalIgnoreCase);
-    private bool _disposed;
+    // Written by the loop thread in Dispose, read by OnEvent/OnRenamed/OnError/Fire on pool threads.
+    private volatile bool _disposed;
 
     public LayoutWatcher(LayoutStore store, Action onChanged)
     {
@@ -42,6 +43,15 @@ internal sealed class LayoutWatcher : IDisposable
         if (_disposed) return;
         var paths = _store.WatchPaths.Select(Path.GetFullPath).ToList();
         _interesting = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+        // A directory that no longer holds a layout we care about keeps a 64 KB kernel buffer for the
+        // life of the process otherwise (finding 11).
+        var wanted = new HashSet<string>(paths.Select(Path.GetDirectoryName).Where(d => !string.IsNullOrEmpty(d))!, StringComparer.OrdinalIgnoreCase);
+        foreach (var dead in _watchers.Keys.Where(d => !wanted.Contains(d)).ToList())
+        {
+            _watchers[dead].EnableRaisingEvents = false;
+            _watchers[dead].Dispose();
+            _watchers.Remove(dead);
+        }
         foreach (var path in paths)
         {
             var dir = Path.GetDirectoryName(path);
