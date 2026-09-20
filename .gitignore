@@ -1,7 +1,16 @@
 # runtime output belongs in %LOCALAPPDATA%\DeskWall, never here
-*.png
-*.ico
+bin/
+obj/
+*.user
+.vs/
 state.json
 restore.txt
 *.backup.json
 *.log
+# goldens under tests/ are tracked; stray renders elsewhere are not
+/*.png
+/*.jpg
+/*.ico
+poc/*.png
+poc/*.ico
+.superpowers/

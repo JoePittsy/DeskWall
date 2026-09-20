@@ -3,6 +3,10 @@
 Read this before touching anything. README.md is the human-facing overview; this file is the
 stuff you would otherwise rediscover the hard way.
 
+**v1 rewrite:** spec in `docs/superpowers/specs/`, plans in `docs/superpowers/plans/`. The POC
+described below now lives in `poc/`; paths in this file are relative to that folder. Native AOT
+publish needs the VS "Desktop development with C++" workload (MSVC linker + Windows SDK).
+
 ## What this is, in one sentence
 
 A PowerShell 5.1 tool that paints slow-changing state (clock, recently played games, disk

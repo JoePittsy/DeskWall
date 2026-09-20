@@ -1,5 +1,8 @@
 # DeskWall
 
+**Status:** v1 rewrite in progress on branch `v1`; see `docs/superpowers/specs/2026-09-20-deskwall-v1-design.md`.
+The PowerShell proof of concept lives in `poc/` and still runs the desktop until parity.
+
 Wallpaper-as-widgets for a Windows 11 desktop. Slow-changing state is painted into a static
 image and set as the wallpaper, so there is nothing resident and nothing burning cycles
 between renders. Transparent desktop shortcuts are placed over parts of the image to make

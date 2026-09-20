@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeskWall.Core/DeskWall.Core.csproj" />
+    <Project Path="src/DeskWall.Daemon/DeskWall.Daemon.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeskWall.Core.Tests/DeskWall.Core.Tests.csproj" />
+  </Folder>
+</Solution>
