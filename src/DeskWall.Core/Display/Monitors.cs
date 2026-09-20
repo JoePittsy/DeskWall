@@ -67,9 +67,16 @@ public static unsafe class Monitors
         var raws = (List<Raw>)GCHandle.FromIntPtr(lp).Target!;
         var mi = new MONITORINFOEXW();
         mi.monitorInfo.cbSize = (uint)sizeof(MONITORINFOEXW);
-        PInvoke.GetMonitorInfo(mon, (MONITORINFO*)&mi);
-        uint dx, dy;
-        PInvoke.GetDpiForMonitor(mon, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, &dx, &dy);
+        // Finding 11: a failure here used to be discarded, so a monitor that fails to query
+        // yielded a zeroed Rect(0,0,0,0) that then never joins an IDesktopWallpaper RECT and
+        // silently drops the monitor further down - or, for DPI, a scale of 0% that poisons the
+        // display signature and defeats the tick's skip gate on every subsequent tick. Continue
+        // enumerating (return true) either way; only skip *adding* this one monitor.
+        if (!PInvoke.GetMonitorInfo(mon, (MONITORINFO*)&mi)) return true;
+
+        uint dx = 96, dy = 96;
+        if (PInvoke.GetDpiForMonitor(mon, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, &dx, &dy).Failed) { dx = 96; dy = 96; }
+
         var r = mi.monitorInfo.rcMonitor;
         raws.Add(new Raw(new Rect(r.left, r.top, r.right - r.left, r.bottom - r.top), (mi.monitorInfo.dwFlags & 1) != 0, (int)dx, mi.szDevice.ToString()));
         return true;
