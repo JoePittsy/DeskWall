@@ -28,6 +28,11 @@ public sealed unsafe class Surface : IDisposable
     private static ID2D1Factory* s_d2d;
     private static IDWriteFactory* s_dw;
     private static readonly object s_lock = new();
+    // Finding 8: the three pointers stay non-volatile; this flag is the one write ordered after
+    // them and the one read ordered before using them, which the .NET memory model guarantees for
+    // a volatile field but does not guarantee for a plain-pointer double-checked read on every
+    // architecture (only x64's store ordering happened to make the old check safe).
+    private static volatile bool s_ready;
 
     private IWICBitmap* _bmp;
     private ID2D1RenderTarget* _rt;
@@ -39,10 +44,10 @@ public sealed unsafe class Surface : IDisposable
 
     private static void EnsureFactories()
     {
-        if (s_wic is not null) return;
+        if (s_ready) return;
         lock (s_lock)
         {
-            if (s_wic is not null) return;
+            if (s_ready) return;
             Com.EnsureInitialized();
             IWICImagingFactory2* wic; var clsid = PInvoke.CLSID_WICImagingFactory2; var iid = typeof(IWICImagingFactory2).GUID;
             PInvoke.CoCreateInstance(&clsid, null, CLSCTX.CLSCTX_INPROC_SERVER, &iid, (void**)&wic).ThrowOnFailure();
@@ -51,6 +56,7 @@ public sealed unsafe class Surface : IDisposable
             IDWriteFactory* dw; var iidDw = typeof(IDWriteFactory).GUID;
             PInvoke.DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &iidDw, (void**)&dw).ThrowOnFailure();
             s_d2d = d2d; s_dw = dw; s_wic = wic;
+            s_ready = true;   // published last: a thread that observes this true also observes the three pointers above
         }
     }
 

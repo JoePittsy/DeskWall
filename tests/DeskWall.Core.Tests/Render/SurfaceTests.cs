@@ -70,6 +70,30 @@ public class SurfaceTests
         Assert.NotEqual(((byte)255, (byte)40, (byte)40, (byte)40), s.GetPixel(11, 185));    // plate painted behind the text
     }
 
+    /// <summary>
+    /// Finding 8: the process-wide factory init used a non-volatile double-checked pointer read.
+    /// This cannot prove memory-model correctness (that needs a weak-ordering CPU), but it is a
+    /// smoke test that concurrent first-use from several threads never observes a partially
+    /// published factory set (which would surface as a NullReferenceException or an access
+    /// violation inside Rt()/EnsureFactories, not a normal managed exception).
+    /// </summary>
+    [Fact]
+    public void Concurrent_First_Use_Does_Not_Race_Factory_Init()
+    {
+        var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        Parallel.For(0, 16, _ =>
+        {
+            try
+            {
+                using var s = Surface.Create(4, 4);
+                s.Clear(new Color(255, 1, 2, 3));
+                Assert.Equal(((byte)255, (byte)1, (byte)2, (byte)3), s.GetPixel(0, 0));
+            }
+            catch (Exception ex) { exceptions.Add(ex); }
+        });
+        Assert.Empty(exceptions);
+    }
+
     [Fact]
     public void CopyRect_Replaces_Only_That_Rect()
     {
