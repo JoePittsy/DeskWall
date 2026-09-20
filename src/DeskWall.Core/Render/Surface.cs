@@ -457,5 +457,14 @@ public sealed unsafe class Surface : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~Surface() => Dispose();
+#if DEBUG
+    // Finding 22: releasing COM interfaces from the finalizer thread is wrong - it never ran
+    // Com.EnsureInitialized and has no ordering relationship with the process-wide factories, and
+    // every production call site already uses `using`. Keep only a leak assertion in DEBUG builds,
+    // which touches no COM pointer.
+    ~Surface()
+    {
+        if (_bmp is not null) System.Diagnostics.Debug.Fail("Surface leaked");
+    }
+#endif
 }
