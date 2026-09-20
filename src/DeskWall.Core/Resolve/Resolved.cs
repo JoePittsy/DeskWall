@@ -38,7 +38,12 @@ public sealed record ResolvedText(string Id, Rect Rect, int Z, string Text, Text
 
 public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit Fit, float Radius, float Opacity) : Resolved(Id, Rect, Z)
 {
-    public override IEnumerable<string> KeyParts() => [Path, Fit.ToString(), Radius.ToString("R"), Opacity.ToString("R")];
+    // Finding 14: without the file's own mtime, a revalidated cache file (Phase 4's remote image
+    // cache keeps the same path across a content refresh) or any cover replaced in place never
+    // redraws, because path/fit/radius/opacity are unchanged.
+    public override IEnumerable<string> KeyParts() => [Path, Fit.ToString(), Radius.ToString("R"), Opacity.ToString("R"), MTimeKeyPart()];
+
+    private string MTimeKeyPart() => File.Exists(Path) ? File.GetLastWriteTimeUtc(Path).Ticks.ToString() : "missing";
 }
 
 public sealed record ResolvedBar(string Id, Rect Rect, int Z, double Fraction, Color Track, Color Fill, Axis Direction) : Resolved(Id, Rect, Z)
