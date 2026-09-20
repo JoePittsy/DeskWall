@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "baseImage": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\DesktopSpotlight\\Assets\\Images\\image_3.jpg",
+  "baseFit": "cover",
+  "encode": "jpeg",
+  "jpegQuality": 92,
+  "sources": [
+    { "name": "time", "type": "time" },
+    { "name": "disks", "type": "disks", "every": 300 },
+    { "name": "steam", "type": "http", "every": 600, "settings": {
+        "url": "https://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v1/?key={secret:steamKey}&steamid={secret:steamId}&count=4&format=json",
+        "unixTimeFields": "rtime_last_played" } }
+  ],
+  "components": [
+    { "type": "text", "id": "clock", "rect": [3220, 40, 172, 78], "z": 1,
+      "text": { "bind": "time.now | HH:mm" }, "font": "Segoe UI Light", "size": 64, "weight": 300, "align": "right" },
+    { "type": "repeater", "id": "games", "rect": [3220, 142, 172, 1094], "z": 1,
+      "items": { "bind": "steam.json.response.games" }, "axis": "vertical", "gap": 14, "cellHeight": "auto",
+      "template": [
+        { "type": "image", "id": "cover", "rect": [0, 0, 172, 258], "radius": 4,
+          "source": { "bind": "appid | \"https://cdn.cloudflare.steamstatic.com/steam/apps/{0}/library_600x900.jpg\"" } },
+        { "type": "shortcut", "id": "play", "rect": [0, 0, 172, 258], "slot": 0,
+          "target": { "bind": "appid | \"steam://rungameid/{0}\"" }, "tooltip": { "bind": "name | \"Play {0}\"" } }
+      ] },
+    { "type": "repeater", "id": "drives", "rect": [3220, 1260, 172, 92], "z": 1,
+      "items": { "bind": "disks.drives" }, "axis": "vertical", "gap": 0, "cellHeight": 46,
+      "template": [
+        { "type": "text", "id": "letter", "rect": [0, 0, 60, 24], "text": { "bind": "letter | \"{0}:\"" }, "size": 15 },
+        { "type": "text", "id": "free", "rect": [60, 0, 112, 24], "text": { "bind": "freeGB | \"{0:N0} GB free\"" }, "size": 15, "align": "right" },
+        { "type": "bar", "id": "bar", "rect": [0, 26, 172, 6], "fraction": { "bind": "usedFraction" }, "threshold": 0.85, "thresholdFill": "#FFD13438" }
+      ] }
+  ]
+}
