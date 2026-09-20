@@ -37,6 +37,11 @@ public sealed class TickRunner(
     public async Task<TickTimings> RunAsync(bool force, bool apply, CancellationToken ct)
     {
         var t = new TickTimings();
+        // Cleared here, not inside stage 6. It used to be cleared in stage 6, which the skip gate
+        // returns before, so a skipped tick reported the PREVIOUS tick's outcome as its own - the
+        // daemon logged a spurious "shortcuts: placed 4 ... in 0 ms" line for work it had not done,
+        // and the retry test passed on that stale value rather than on a retry.
+        LastShortcutOutcome = null;
         var sw = Stopwatch.StartNew();
         // Environment.CpuUsage reads the process times without opening a kernel handle; the old
         // Process.GetCurrentProcess() leaked one SafeProcessHandle per tick (spec 1.2: under 100 handles).
@@ -74,6 +79,18 @@ public sealed class TickRunner(
         if (!force && changed.Count == 0 && !removed && sameSig)
         {
             t.Skipped = true;
+            // A slot that failed is owed a retry on the NEXT tick, and the next tick is usually one
+            // that draws nothing: on the owner's layout only the clock moves, so 59 of every 60 ticks
+            // end here. Gated on the persisted flag and nothing else, so the ordinary skipped tick -
+            // the one this whole path exists to keep cheap - still makes no shell call at all.
+            if (shortcuts is not null && state.ShortcutsRetryPending)
+            {
+                var r0 = sw.ElapsedMilliseconds;
+                ReconcileShortcuts(state, force: false);
+                t.ShortcutsMs = sw.ElapsedMilliseconds - r0;
+                // Only the two shortcut fields moved; everything else is what Load just read back.
+                state.Save(_statePath);
+            }
             t.TotalMs = sw.ElapsedMilliseconds;
             t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
             return t;
@@ -128,32 +145,7 @@ public sealed class TickRunner(
         // 6. shortcuts: make the desktop icons match. Skipped unless the fingerprint moved, because
         // Reconcile talks to Explorer and costs far more than the rest of a tick put together.
         var s0 = sw.ElapsedMilliseconds;
-        LastShortcutOutcome = null;
-        if (shortcuts is not null)
-        {
-            try
-            {
-                // Inside the try: Fingerprint throws on a duplicate slot (two shortcut components, or a
-                // standalone one colliding with a repeater's base), and a layout mistake must not make
-                // every tick throw after the wallpaper is applied and before state.Save.
-                var fingerprint = shortcuts.Fingerprint(LastShortcuts, monitor.Signature.ScalePercent);
-                if (force || fingerprint != state.ShortcutsFingerprint)
-                {
-                    var outcome = shortcuts.Reconcile(LastShortcuts, monitor.Signature.ScalePercent);
-                    LastShortcutOutcome = outcome;
-                    // A slot that could not be written or positioned leaves the fingerprint unstored,
-                    // so the next tick reconciles again instead of the icon staying missing until the
-                    // game list or the layout happens to change.
-                    state.ShortcutsFingerprint = outcome.SlotFailed ? "" : fingerprint;
-                }
-            }
-            catch (Exception ex)
-            {
-                // The desktop view can be gone (Explorer restarting). Record it and retry next tick.
-                LastShortcutOutcome = new ShortcutOutcome(0, 0, 0, [$"{ex.GetType().Name}: {ex.Message}"]) { SlotFailed = true };
-                state.ShortcutsFingerprint = "";
-            }
-        }
+        ReconcileShortcuts(state, force);
         t.ShortcutsMs = sw.ElapsedMilliseconds - s0;
 
         // 7. state
@@ -168,6 +160,37 @@ public sealed class TickRunner(
         t.TotalMs = sw.ElapsedMilliseconds;
         t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
         return t;
+    }
+
+    /// <summary>Stage 6: make the desktop icons match <see cref="LastShortcuts"/>. Skipped unless the
+    /// fingerprint moved, because Reconcile talks to Explorer and costs far more than the rest of a tick
+    /// put together. Mutates <paramref name="state"/>; the caller saves it.</summary>
+    private void ReconcileShortcuts(FrameState state, bool force)
+    {
+        if (shortcuts is null) return;
+        try
+        {
+            // Inside the try: Fingerprint throws on a duplicate slot (two shortcut components, or a
+            // standalone one colliding with a repeater's base), and a layout mistake must not make
+            // every tick throw after the wallpaper is applied and before state.Save.
+            var fingerprint = shortcuts.Fingerprint(LastShortcuts, monitor.Signature.ScalePercent);
+            if (!force && fingerprint == state.ShortcutsFingerprint) return;
+
+            var outcome = shortcuts.Reconcile(LastShortcuts, monitor.Signature.ScalePercent);
+            LastShortcutOutcome = outcome;
+            // A slot that could not be written or positioned leaves the fingerprint unstored and the
+            // retry owed, so the next tick reconciles again - drawing tick or not - instead of the
+            // icon staying missing until the game list or the layout happens to change.
+            state.ShortcutsFingerprint = outcome.SlotFailed ? "" : fingerprint;
+            state.ShortcutsRetryPending = outcome.SlotFailed;
+        }
+        catch (Exception ex)
+        {
+            // The desktop view can be gone (Explorer restarting). Record it and retry next tick.
+            LastShortcutOutcome = new ShortcutOutcome(0, 0, 0, [$"{ex.GetType().Name}: {ex.Message}"]) { SlotFailed = true };
+            state.ShortcutsFingerprint = "";
+            state.ShortcutsRetryPending = true;
+        }
     }
 
     /// <summary>Replace every ResolvedImage whose Path is a remote URL with the cache's local file

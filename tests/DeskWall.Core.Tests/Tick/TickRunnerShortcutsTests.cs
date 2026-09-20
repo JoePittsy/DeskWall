@@ -2,6 +2,7 @@ using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
+using DeskWall.Core.Resolve;
 using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
@@ -65,43 +66,99 @@ public class TickRunnerShortcutsTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    /// <summary>A slot the manager could not write must not have its fingerprint stored, or the icon
-    /// stays missing until the game list or the layout happens to change. The next tick reconciles
-    /// again even though nothing about the layout moved.</summary>
+    /// <summary>A slot the manager could not place must be retried on the next tick even when that tick
+    /// draws nothing - which is nearly every tick, since on the owner's layout only the clock moves and
+    /// it moves once a minute.
+    /// <para>
+    /// This test used to be green against a broken runner. It asserted only that
+    /// <c>LastShortcutOutcome</c> was non-null on the second run, and that field was cleared inside
+    /// stage 6, which the skip gate returns before - so the skipped tick was still reporting the first
+    /// tick's outcome. The clear now happens at the top of RunAsync, and the counter below is what makes
+    /// the retry a fact rather than a leftover. It also no longer needs a real desktop: the manager is a
+    /// fake, so the failure is stated instead of manufactured by locking a slot file.
+    /// </para></summary>
     [Fact]
-    [Trait("Category", "Desktop")]
-    public async Task A_Failed_Slot_Leaves_The_Fingerprint_Unstored_So_The_Next_Tick_Retries()
+    public async Task A_Failed_Slot_Is_Retried_On_The_Next_Tick_Even_Though_The_Frame_Is_Skipped()
     {
-        if (!DesktopView.IsAvailable()) return;   // Session 0 or a locked workstation: skip, do not fail
         var (layout, dir) = Scene("""
             { "type": "shortcut", "id": "a", "rect": [0, 0, 40, 40], "slot": 60, "target": "explorer.exe" }
             """);
-        var ownedFile = Paths.InRuntime("shortcuts-owned.json");
-        if (File.Exists(ownedFile)) File.Delete(ownedFile);
         try
         {
             var clock = new ShortcutTickClock(new DateTimeOffset(2026, 9, 20, 14, 32, 5, TimeSpan.Zero));
-            var runner = Runner(layout, dir, clock, new ShortcutManager(Calibration.Seed(), desktopDir: () => dir));
-            var slotPath = Path.Combine(dir, ShortcutPlan.SlotFileName(60));
-            using (new FileStream(slotPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
-            {
-                await runner.RunAsync(force: true, apply: false, default);
-                Assert.True(runner.LastShortcutOutcome!.SlotFailed);
-                Assert.Equal("", FrameState.Load(Path.Combine(dir, "state.json")).ShortcutsFingerprint);
+            var manager = new FakeShortcuts(dir) { Fail = true };
+            var runner = Runner(layout, dir, clock, manager);
+            var statePath = Path.Combine(dir, "state.json");
 
-                // Same layout, same clock minute: without the fix the fingerprint matched and stage 6
-                // did nothing at all, so LastShortcutOutcome would be null here.
-                clock.Now = clock.Now.AddMinutes(1);
-                await runner.RunAsync(force: false, apply: false, default);
-                Assert.NotNull(runner.LastShortcutOutcome);
-                Assert.True(runner.LastShortcutOutcome!.SlotFailed);
-            }
+            await runner.RunAsync(force: true, apply: false, default);
+            Assert.Equal(1, manager.Reconciles);
+            Assert.True(runner.LastShortcutOutcome!.SlotFailed);
+            var state = FrameState.Load(statePath);
+            Assert.Equal("", state.ShortcutsFingerprint);
+            Assert.True(state.ShortcutsRetryPending);
+
+            // Nothing in the layout moves and the frame is already on disk, so this tick is skipped -
+            // and the debt is still owed, so stage 6 runs anyway. This time the slot is placed.
+            manager.Fail = false;
+            clock.Now = clock.Now.AddMinutes(1);
+            var skipped = await runner.RunAsync(force: false, apply: false, default);
+            Assert.True(skipped.Skipped);
+            Assert.Equal(2, manager.Reconciles);
+            Assert.False(runner.LastShortcutOutcome!.SlotFailed);
+            state = FrameState.Load(statePath);
+            Assert.False(state.ShortcutsRetryPending);
+            Assert.NotEqual("", state.ShortcutsFingerprint);
+
+            // And now that nothing is owed, a skipped tick must cost no reconcile at all: this path is
+            // 59 ticks in 60 and the whole reason stage 6 is fingerprint-gated.
+            clock.Now = clock.Now.AddMinutes(1);
+            var quiet = await runner.RunAsync(force: false, apply: false, default);
+            Assert.True(quiet.Skipped);
+            Assert.Equal(2, manager.Reconciles);
+            Assert.Null(runner.LastShortcutOutcome);
         }
-        finally
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>The cheap path stays cheap: with no manager at all a skipped tick touches nothing, and
+    /// the outcome is null rather than whatever the last reconciling tick left behind.</summary>
+    [Fact]
+    public async Task A_Skipped_Tick_With_No_Shortcuts_Manager_Reports_Nothing()
+    {
+        var (layout, dir) = Scene("""
+            { "type": "shortcut", "id": "a", "rect": [0, 0, 40, 40], "slot": 60, "target": "explorer.exe" }
+            """);
+        try
         {
-            DesktopFlags.Restore();
-            Directory.Delete(dir, recursive: true);
-            if (File.Exists(ownedFile)) File.Delete(ownedFile);
+            var clock = new ShortcutTickClock(new DateTimeOffset(2026, 9, 20, 14, 32, 5, TimeSpan.Zero));
+            var runner = Runner(layout, dir, clock, manager: null);
+            await runner.RunAsync(force: true, apply: false, default);
+            Assert.Null(runner.LastShortcutOutcome);
+
+            clock.Now = clock.Now.AddMinutes(1);
+            var t = await runner.RunAsync(force: false, apply: false, default);
+            Assert.True(t.Skipped);
+            Assert.Null(runner.LastShortcutOutcome);
+            Assert.Equal(0, t.ShortcutsMs);
         }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+}
+
+/// <summary>A manager that reports an outcome instead of producing one. Fingerprint is inherited, not
+/// overridden: it is pure by contract (it runs every tick and must not touch the shell), so leaving the
+/// real one in place keeps the fingerprint gate under test rather than stubbed out.</summary>
+file sealed class FakeShortcuts(string dir) : ShortcutManager(Calibration.Seed(), desktopDir: () => dir)
+{
+    public int Reconciles { get; private set; }
+
+    public bool Fail { get; set; }
+
+    public override ShortcutOutcome Reconcile(IReadOnlyList<ResolvedShortcut> shortcuts, int scalePercent)
+    {
+        Reconciles++;
+        return Fail
+            ? new ShortcutOutcome(0, 0, 0, ["slot 60: fake failure"]) { SlotFailed = true }
+            : new ShortcutOutcome(1, 1, 0, []);
     }
 }

@@ -25,8 +25,14 @@ public sealed record ShortcutOutcome(int Written, int Positioned, int Removed, I
 /// draws. The set of slots this manager has written is remembered in <c>shortcuts-owned.json</c> in the
 /// runtime dir, and only those are ever deleted: the v0 PowerShell proof of concept owns slots 0..3 on
 /// the same desktop until it is retired, and a blanket "delete every slot file" would fight it.
+/// </para>
+/// <para>
+/// Not sealed, and <see cref="Fingerprint"/> and <see cref="Reconcile"/> are virtual, purely so the
+/// tick's stage 6 can be tested without a desktop: those two are the only members TickRunner reaches
+/// the shell through, and a test that has to lock a real slot file to make a real reconcile fail proves
+/// less about the tick than one that simply says the reconcile failed.
 /// </para></summary>
-public sealed class ShortcutManager(Calibration calibration, int pad = ShortcutPlan.DefaultPad, Func<string>? desktopDir = null)
+public class ShortcutManager(Calibration calibration, int pad = ShortcutPlan.DefaultPad, Func<string>? desktopDir = null)
 {
     /// <summary>Position, read back, re-position: three rounds is enough for the shell to catch up.</summary>
     private const int PositionRounds = 3;
@@ -47,7 +53,7 @@ public sealed class ShortcutManager(Calibration calibration, int pad = ShortcutP
     /// <summary>Make the desktop match: write/update slot files, delete the slots we own that are no
     /// longer in the list, position all of them and verify with GetPosition. Never throws for a single
     /// bad slot; collects Warnings. Throws only when the desktop view is unavailable.</summary>
-    public ShortcutOutcome Reconcile(IReadOnlyList<ResolvedShortcut> shortcuts, int scalePercent)
+    public virtual ShortcutOutcome Reconcile(IReadOnlyList<ResolvedShortcut> shortcuts, int scalePercent)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         var warnings = new List<string>();
@@ -141,7 +147,7 @@ public sealed class ShortcutManager(Calibration calibration, int pad = ShortcutP
 
     /// <summary>The state we last wrote, so the tick can skip Reconcile when nothing changed: slots,
     /// rects, targets, tooltips, the pad and the arrow rect in force for this scale.</summary>
-    public string Fingerprint(IReadOnlyList<ResolvedShortcut> shortcuts, int scalePercent)
+    public virtual string Fingerprint(IReadOnlyList<ResolvedShortcut> shortcuts, int scalePercent)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         var arrow = calibration.Get(_iconSize, scalePercent) ?? FallbackArrow();

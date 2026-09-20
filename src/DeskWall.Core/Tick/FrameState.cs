@@ -13,6 +13,12 @@ public sealed class FrameState
     /// <summary>What the shortcut manager last reconciled the desktop to (slots, rects, targets,
     /// tooltips, arrow). Empty when shortcuts have never been placed, or the last attempt failed.</summary>
     public string ShortcutsFingerprint { get; set; } = "";
+    /// <summary>True when the last reconcile left a slot unwritten or unplaced, so the next tick owes a
+    /// retry even if it draws nothing. Persisted rather than kept in the runner: the debt survives a
+    /// daemon restart, and the skip gate returns before stage 6, which is why a broken icon used to stay
+    /// broken until the game list or the layout happened to move. An empty fingerprint is not the same
+    /// signal - that is also what a first run has, and a first run has nothing to retry.</summary>
+    public bool ShortcutsRetryPending { get; set; }
     public string FramePath { get; set; } = "";
     /// <summary>BaseCache.KeyFor of the base image at the last render. Finding 12: a mismatch here
     /// means the base image was replaced in place, so the skip gate must not skip.</summary>
