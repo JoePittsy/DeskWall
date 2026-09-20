@@ -163,3 +163,27 @@ comparison matters: the OS page cache holds both files and no JIT is paid. Re-me
 Design note for Phase 2: the previous frame must NOT be kept in memory in the daemon. At
 3440x1440 it is 19.8 MB, which alone breaks the 10 MB idle budget. Loading it from disk per tick
 is the design, and the single-read `LoadRaw` is what makes that cheap.
+
+## Phase 6 budget results
+
+Spec 1.2 measured against the published native-AOT daemon by
+`tests/DeskWall.Core.Tests/Budget/BudgetTests.cs`:
+
+```
+dotnet publish src/DeskWall.Daemon -c Release -r win-x64
+dotnet test tests/DeskWall.Core.Tests --filter Category=Budget
+```
+
+Each test prints its own row; paste them in below. A row over budget is a finding for the
+controller, never a reason to raise the budget.
+
+| Test | Measured | Budget | Verdict |
+|---|---|---|---|
+| `ColdStart_To_First_Wallpaper` | pending | < 500 ms | - |
+| `Idle_PrivateBytes_After_Trim` | pending | < 10 MB | - |
+| `Idle_Cpu_Between_Wakes` | pending | < 50 ms | - |
+| `Idle_Handles_And_Threads` | pending | < 100 h / < 5 t | - |
+| `ClockOnly_Tick_Wall_And_Cpu` | pending | < 60 ms wall / < 40 ms cpu | - |
+
+Not yet run: the reference machine was busy with another lane's live GUI testing when the
+harness landed, and the budget run has to have the desktop to itself.

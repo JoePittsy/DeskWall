@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The budget tests drive a published native-AOT daemon for minutes at a time and paint the real
+     desktop, so they are not part of the default run. They are asked for by name:
+       dotnet test tests/DeskWall.Core.Tests -filter Category=Budget   (two dashes before filter)
+     A filter given on the command line overrides the TestCaseFilter below, which is what makes
+     that work. -->
+<RunSettings>
+  <RunConfiguration>
+    <TestCaseFilter>Category!=Budget</TestCaseFilter>
+  </RunConfiguration>
+</RunSettings>
