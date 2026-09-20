@@ -1,0 +1,7 @@
+# runtime output belongs in %LOCALAPPDATA%\DeskWall, never here
+*.png
+*.ico
+state.json
+restore.txt
+*.backup.json
+*.log
