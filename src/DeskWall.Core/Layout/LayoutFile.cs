@@ -24,8 +24,17 @@ public sealed class LayoutFile
     public void Save(string path)
     {
         var tmp = path + ".tmp";
-        File.WriteAllText(tmp, ToJson());
-        File.Move(tmp, path, overwrite: true);
+        try
+        {
+            File.WriteAllText(tmp, ToJson());
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing save.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 }
 

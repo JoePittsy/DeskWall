@@ -11,6 +11,9 @@ public sealed class FrameState
     public Dictionary<string, int[]> RectsById { get; set; } = new();
     public string SignatureKey { get; set; } = "";
     public string FramePath { get; set; } = "";
+    /// <summary>BaseCache.KeyFor of the base image at the last render. Finding 12: a mismatch here
+    /// means the base image was replaced in place, so the skip gate must not skip.</summary>
+    public string BaseKey { get; set; } = "";
 
     public static FrameState Load(string path)
     {
@@ -22,8 +25,17 @@ public sealed class FrameState
     public void Save(string path)
     {
         var tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(this, FrameStateJsonContext.Default.FrameState));
-        File.Move(tmp, path, overwrite: true);
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, FrameStateJsonContext.Default.FrameState));
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing save.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 }
 

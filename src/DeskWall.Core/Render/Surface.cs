@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -10,6 +11,10 @@ using Windows.Win32.Graphics.Imaging.D2D;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Com.StructuredStorage;
 using Windows.Win32.System.Variant;
+
+// Test-only visibility for Surface.LiveCount, which lets the two exception-path-leak regression
+// tests for finding 7 assert no net increase in live surfaces across a call that throws.
+[assembly: InternalsVisibleTo("DeskWall.Core.Tests")]
 
 namespace DeskWall.Core.Render;
 
@@ -28,21 +33,30 @@ public sealed unsafe class Surface : IDisposable
     private static ID2D1Factory* s_d2d;
     private static IDWriteFactory* s_dw;
     private static readonly object s_lock = new();
+    // Finding 8: the three pointers stay non-volatile; this flag is the one write ordered after
+    // them and the one read ordered before using them, which the .NET memory model guarantees for
+    // a volatile field but does not guarantee for a plain-pointer double-checked read on every
+    // architecture (only x64's store ordering happened to make the old check safe).
+    private static volatile bool s_ready;
 
     private IWICBitmap* _bmp;
     private ID2D1RenderTarget* _rt;
 
+    /// <summary>Surfaces created but not yet disposed. Test-only (finding 7 regression tests);
+    /// production code never reads it.</summary>
+    internal static int LiveCount;
+
     public int Width { get; }
     public int Height { get; }
 
-    private Surface(IWICBitmap* bmp, int w, int h) { _bmp = bmp; Width = w; Height = h; }
+    private Surface(IWICBitmap* bmp, int w, int h) { _bmp = bmp; Width = w; Height = h; Interlocked.Increment(ref LiveCount); }
 
     private static void EnsureFactories()
     {
-        if (s_wic is not null) return;
+        if (s_ready) return;
         lock (s_lock)
         {
-            if (s_wic is not null) return;
+            if (s_ready) return;
             Com.EnsureInitialized();
             IWICImagingFactory2* wic; var clsid = PInvoke.CLSID_WICImagingFactory2; var iid = typeof(IWICImagingFactory2).GUID;
             PInvoke.CoCreateInstance(&clsid, null, CLSCTX.CLSCTX_INPROC_SERVER, &iid, (void**)&wic).ThrowOnFailure();
@@ -51,6 +65,7 @@ public sealed unsafe class Surface : IDisposable
             IDWriteFactory* dw; var iidDw = typeof(IDWriteFactory).GUID;
             PInvoke.DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &iidDw, (void**)&dw).ThrowOnFailure();
             s_d2d = d2d; s_dw = dw; s_wic = wic;
+            s_ready = true;   // published last: a thread that observes this true also observes the three pointers above
         }
     }
 
@@ -119,19 +134,29 @@ public sealed unsafe class Surface : IDisposable
     public void SaveRaw(string path)
     {
         var tmp = path + ".tmp";
-        using (var fs = File.Create(tmp))
+        try
         {
-            fs.Write(RawMagic); fs.Write(BitConverter.GetBytes(Width)); fs.Write(BitConverter.GetBytes(Height));
-            var rowBytes = Width * 4;
-            var all = new byte[rowBytes * Height];
-            WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
+            using (var fs = File.Create(tmp))
             {
-                if (stride == rowBytes) Marshal.Copy(ptr, all, 0, all.Length);
-                else for (var y = 0; y < Height; y++) Marshal.Copy((IntPtr)(ptr + y * stride), all, y * rowBytes, rowBytes);
-            });
-            fs.Write(all);   // one write
+                fs.Write(RawMagic); fs.Write(BitConverter.GetBytes(Width)); fs.Write(BitConverter.GetBytes(Height));
+                var rowBytes = Width * 4;
+                var all = new byte[rowBytes * Height];
+                WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
+                {
+                    if (stride == rowBytes) Marshal.Copy(ptr, all, 0, all.Length);
+                    else for (var y = 0; y < Height; y++) Marshal.Copy((IntPtr)(ptr + y * stride), all, y * rowBytes, rowBytes);
+                });
+                fs.Write(all);   // one write
+            }
+            File.Move(tmp, path, overwrite: true);
         }
-        File.Move(tmp, path, overwrite: true);
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing tick; this directory is
+            // supposed to stay tidy across a daemon that ticks every minute for weeks.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 
     public void SaveJpeg(string path, int quality) => Encode(path, PInvoke.GUID_ContainerFormatJpeg, Math.Clamp(quality, 1, 100) / 100f);
@@ -142,39 +167,48 @@ public sealed unsafe class Surface : IDisposable
     {
         ReleaseRenderTarget();
         var tmp = path + ".tmp";
-        IWICStream* stream; s_wic->CreateStream(&stream);
         try
         {
-            fixed (char* p = tmp) stream->InitializeFromFilename(p, (uint)GENERIC_ACCESS_RIGHTS.GENERIC_WRITE);
-            IWICBitmapEncoder* enc = s_wic->CreateEncoder(&container, null);
+            IWICStream* stream; s_wic->CreateStream(&stream);
             try
             {
-                enc->Initialize((IStream*)stream, WICBitmapEncoderCacheOption.WICBitmapEncoderNoCache);
-                IWICBitmapFrameEncode* frame; IPropertyBag2* bag; enc->CreateNewFrame(&frame, &bag);
+                fixed (char* p = tmp) stream->InitializeFromFilename(p, (uint)GENERIC_ACCESS_RIGHTS.GENERIC_WRITE);
+                IWICBitmapEncoder* enc = s_wic->CreateEncoder(&container, null);
                 try
                 {
-                    if (jpegQuality is { } q)
+                    enc->Initialize((IStream*)stream, WICBitmapEncoderCacheOption.WICBitmapEncoderNoCache);
+                    IWICBitmapFrameEncode* frame; IPropertyBag2* bag; enc->CreateNewFrame(&frame, &bag);
+                    try
                     {
-                        fixed (char* pn = "ImageQuality")
+                        if (jpegQuality is { } q)
                         {
-                            var pb = new PROPBAG2 { pstrName = pn };
-                            var v = new VARIANT();
-                            v.Anonymous.Anonymous.vt = VARENUM.VT_R4;
-                            v.Anonymous.Anonymous.Anonymous.fltVal = q;
-                            bag->Write(1, &pb, &v);
+                            fixed (char* pn = "ImageQuality")
+                            {
+                                var pb = new PROPBAG2 { pstrName = pn };
+                                var v = new VARIANT();
+                                v.Anonymous.Anonymous.vt = VARENUM.VT_R4;
+                                v.Anonymous.Anonymous.Anonymous.fltVal = q;
+                                bag->Write(1, &pb, &v);
+                            }
                         }
+                        frame->Initialize(bag);
+                        frame->WriteSource((IWICBitmapSource*)_bmp, null);
+                        frame->Commit();
+                        enc->Commit();
                     }
-                    frame->Initialize(bag);
-                    frame->WriteSource((IWICBitmapSource*)_bmp, null);
-                    frame->Commit();
-                    enc->Commit();
+                    finally { frame->Release(); bag->Release(); }
                 }
-                finally { frame->Release(); bag->Release(); }
+                finally { enc->Release(); }
             }
-            finally { enc->Release(); }
+            finally { stream->Release(); }
+            File.Move(tmp, path, overwrite: true);
         }
-        finally { stream->Release(); }
-        File.Move(tmp, path, overwrite: true);
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing tick.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 
     // ---- pixels --------------------------------------------------------------------------
@@ -280,8 +314,27 @@ public sealed unsafe class Surface : IDisposable
     {
         var rt = Rt();
         rt->BeginDraw();
-        try { body(rt); }
-        finally { rt->EndDraw(null, null).ThrowOnFailure(); }
+        try
+        {
+            body(rt);
+        }
+        catch
+        {
+            // Finding 19: a half-pushed layer or clip left by the body must not poison the cached
+            // target for every later Draw on this Surface, so drop it entirely rather than try to
+            // rebalance it. EndDraw's own result is irrelevant here - call it (D2D expects a
+            // matching EndDraw for every BeginDraw) but never let its failure mask the body's real
+            // exception with a different one.
+            rt->EndDraw(null, null);
+            ReleaseRenderTarget();
+            throw;
+        }
+        var hr = rt->EndDraw(null, null);
+        if (hr.Failed)
+        {
+            ReleaseRenderTarget();   // do not leave a target that just failed EndDraw cached for reuse
+            hr.ThrowOnFailure();
+        }
     }
 
     public void Clear(Color c) => Draw(rt => { var cc = ToD2D(c); rt->Clear(&cc); });
@@ -482,9 +535,18 @@ public sealed unsafe class Surface : IDisposable
     public void Dispose()
     {
         ReleaseRenderTarget();
-        if (_bmp is not null) { _bmp->Release(); _bmp = null; }
+        if (_bmp is not null) { _bmp->Release(); _bmp = null; Interlocked.Decrement(ref LiveCount); }
         GC.SuppressFinalize(this);
     }
 
-    ~Surface() => Dispose();
+#if DEBUG
+    // Finding 22: releasing COM interfaces from the finalizer thread is wrong - it never ran
+    // Com.EnsureInitialized and has no ordering relationship with the process-wide factories, and
+    // every production call site already uses `using`. Keep only a leak assertion in DEBUG builds,
+    // which touches no COM pointer.
+    ~Surface()
+    {
+        if (_bmp is not null) System.Diagnostics.Debug.Fail("Surface leaked");
+    }
+#endif
 }

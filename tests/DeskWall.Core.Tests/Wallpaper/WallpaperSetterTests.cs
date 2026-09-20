@@ -12,13 +12,30 @@ public class WallpaperSetterTests
         Assert.False(string.IsNullOrEmpty(current));
     }
 
+    /// <summary>
+    /// Finding 17: the previous version of this test never actually exercised "once" - on every
+    /// run after the first, restore.json already existed from a prior run (DESKWALL_HOME is a
+    /// fixed temp folder that is never cleaned between runs), so the only content assertion was
+    /// skipped and the test reduced to Assert.True(File.Exists(path)), which would pass even if
+    /// RecordRestorePoint were an empty method. Delete the file first, call twice with the content
+    /// modified in between, and assert the second call left the modification untouched.
+    /// </summary>
     [Fact]
     public void RecordRestorePoint_WritesOnce()
     {
         var path = DeskWall.Core.Paths.InRuntime("restore.json");
-        var existed = File.Exists(path);
+        File.Delete(path);
+
         WallpaperSetter.RecordRestorePoint();
         Assert.True(File.Exists(path));
-        if (!existed) Assert.Contains("\"", File.ReadAllText(path));
+
+        // RecordRestorePoint's only precondition is File.Exists(RestoreFile); overwrite with an
+        // arbitrary marker and prove the second call leaves it alone.
+        var marker = "test-marker-" + Guid.NewGuid();
+        File.WriteAllText(path, marker);
+
+        WallpaperSetter.RecordRestorePoint();   // file already exists: must not overwrite
+
+        Assert.Equal(marker, File.ReadAllText(path));
     }
 }

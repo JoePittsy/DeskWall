@@ -41,6 +41,36 @@ public class SurfaceTests
         Assert.Equal(s.GetPixel(3, 3), raw2.GetPixel(3, 3));
     }
 
+    /// <summary>Finding 10: a failing SaveRaw used to leave &lt;path&gt;.tmp behind forever.</summary>
+    [Fact]
+    public void SaveRaw_Failure_Leaves_No_Tmp_File()
+    {
+        var dir = Path.Combine(TempDir(), "saveraw-fail-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "frame.raw");
+        Directory.CreateDirectory(path);   // destination is a directory: File.Move fails after the tmp write
+
+        using var s = Surface.Create(4, 4);
+        s.Clear(new Color(255, 1, 2, 3));
+        Assert.ThrowsAny<Exception>(() => s.SaveRaw(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    /// <summary>Same failure shape through Encode (SaveJpeg/SavePng share it).</summary>
+    [Fact]
+    public void SaveJpeg_Failure_Leaves_No_Tmp_File()
+    {
+        var dir = Path.Combine(TempDir(), "savejpeg-fail-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "out.jpg");
+        Directory.CreateDirectory(path);   // destination is a directory: File.Move fails after the tmp write
+
+        using var s = Surface.Create(4, 4);
+        s.Clear(new Color(255, 1, 2, 3));
+        Assert.ThrowsAny<Exception>(() => s.SaveJpeg(path, 92));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
     [Fact]
     public void DrawText_Marks_Pixels()
     {
@@ -68,6 +98,30 @@ public class SurfaceTests
         Assert.InRange(s.GetPixel(40, 55).G, 170, 200);                                         // inside the rounded image: green at 0.9 over grey
         Assert.Equal(((byte)255, (byte)40, (byte)40, (byte)40), s.GetPixel(10, 10));        // corner clipped by the radius
         Assert.NotEqual(((byte)255, (byte)40, (byte)40, (byte)40), s.GetPixel(11, 185));    // plate painted behind the text
+    }
+
+    /// <summary>
+    /// Finding 8: the process-wide factory init used a non-volatile double-checked pointer read.
+    /// This cannot prove memory-model correctness (that needs a weak-ordering CPU), but it is a
+    /// smoke test that concurrent first-use from several threads never observes a partially
+    /// published factory set (which would surface as a NullReferenceException or an access
+    /// violation inside Rt()/EnsureFactories, not a normal managed exception).
+    /// </summary>
+    [Fact]
+    public void Concurrent_First_Use_Does_Not_Race_Factory_Init()
+    {
+        var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        Parallel.For(0, 16, _ =>
+        {
+            try
+            {
+                using var s = Surface.Create(4, 4);
+                s.Clear(new Color(255, 1, 2, 3));
+                Assert.Equal(((byte)255, (byte)1, (byte)2, (byte)3), s.GetPixel(0, 0));
+            }
+            catch (Exception ex) { exceptions.Add(ex); }
+        });
+        Assert.Empty(exceptions);
     }
 
     [Fact]
@@ -199,6 +253,40 @@ public class FrameRendererTests
             new Dictionary<string, Rect> { ["b"] = atLeft.PaintBounds });
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), second.GetPixel(5, 10));    // old location back to the base
         Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), second.GetPixel(25, 10));   // new location painted
+    }
+}
+
+public class FrameRendererLeakTests
+{
+    private static string TempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>
+    /// Finding 7: a throw partway through RenderAll's draw loop (a corrupt image file, here) used
+    /// to leak the base frame surface it had just loaded, reclaimed only by the GC finalizer.
+    /// </summary>
+    [Fact]
+    public void RenderAll_Disposes_The_Frame_When_A_Component_Throws_Mid_Draw()
+    {
+        var dir = TempDir();
+        var basePng = Path.Combine(dir, "leak-base-" + Guid.NewGuid().ToString("N")[..8] + ".png");
+        using (var b = Surface.Create(20, 20)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(basePng); }
+        var raw = BaseCache.Ensure(basePng, 20, 20, Fit.Cover);
+
+        // Exists, but is not a decodable image: Surface.Load throws from inside FrameRenderer.Draw.
+        var corrupt = Path.Combine(dir, "corrupt-" + Guid.NewGuid().ToString("N")[..8] + ".png");
+        File.WriteAllBytes(corrupt, [1, 2, 3, 4, 5]);
+
+        var r = new FrameRenderer(20, 20);
+        var comps = new Resolved[] { new ResolvedImage("i", new Rect(0, 0, 20, 20), 0, corrupt, Fit.Cover, 0, 1) };
+
+        var before = Surface.LiveCount;
+        Assert.ThrowsAny<Exception>(() => r.RenderAll(raw, comps));
+        Assert.Equal(before, Surface.LiveCount);   // the frame RenderAll loaded must have been disposed, not leaked
     }
 }
 

@@ -73,4 +73,20 @@ public class LayoutFileTests
     [Fact]
     public void Unknown_Type_Throws()
         => Assert.ThrowsAny<Exception>(() => LayoutFile.Parse("""{ "version": 1, "baseImage": "x", "sources": [], "components": [ { "type": "gauge", "id": "g", "rect": [0,0,1,1] } ] }"""));
+
+    /// <summary>Finding 10: a failing Save used to leave &lt;path&gt;.tmp behind forever.</summary>
+    [Fact]
+    public void Save_Failure_Leaves_No_Tmp_File()
+    {
+        var l = LayoutFile.Parse(Json);
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "layoutfile-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        // A destination that is itself an existing directory makes File.Move fail after the tmp
+        // file has already been written, which is the failure shape the finding describes.
+        var path = Path.Combine(dir, "layout.json");
+        Directory.CreateDirectory(path);
+
+        Assert.ThrowsAny<Exception>(() => l.Save(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
 }
