@@ -2,12 +2,19 @@ using DeskWall.Core.Layout;
 
 namespace DeskWall.Daemon.Host;
 
-/// <summary>Watches every directory that holds a layout file (and the store itself) and calls back
-/// once, 300 ms after the last event in a burst. Editors save by write-temp-then-rename, which can
-/// raise three or four events for one Ctrl+S; the debounce collapses them into one re-render.
-/// FileSystemWatcher is AOT-safe and costs no dedicated thread while idle - the callback arrives on
-/// the thread pool, so the callback given here must be thread-safe (the daemon posts a window
-/// message, which is).</summary>
+/// <summary>Watches the layout files named in the store (and the store itself) and calls back once,
+/// 300 ms after the last event in a burst. Editors save by write-temp-then-rename, which can raise
+/// three or four events for one Ctrl+S; the debounce collapses them into one re-render.
+/// <para>
+/// FileSystemWatcher can only filter by directory and wildcard, and layouts.json lives in the runtime
+/// directory next to frame-state.json, which the daemon itself rewrites on every tick. A plain
+/// "*.json in this directory" watch therefore feeds the daemon its own output: tick, write state,
+/// wake, tick, at about two frames a second. So every event is checked against the exact set of files
+/// we care about, and that set is snapshotted on the loop thread (Rescan) rather than read live off
+/// the store from a pool thread.
+/// </para>
+/// FileSystemWatcher is AOT-safe and costs no dedicated thread while idle - events arrive on the
+/// thread pool, so the callback given here must be thread-safe (posting a window message is).</summary>
 internal sealed class LayoutWatcher : IDisposable
 {
     private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(300);
@@ -16,6 +23,7 @@ internal sealed class LayoutWatcher : IDisposable
     private readonly Action _onChanged;
     private readonly System.Threading.Timer _timer;
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
+    private volatile HashSet<string> _interesting = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     public LayoutWatcher(LayoutStore store, Action onChanged)
@@ -26,14 +34,17 @@ internal sealed class LayoutWatcher : IDisposable
         Rescan();
     }
 
-    /// <summary>Directories to watch come from the store, which changes when `layouts set` adds an
-    /// entry pointing somewhere new. Cheap and idempotent; the loop calls it after every reload.</summary>
+    /// <summary>Re-read which files matter and add a watcher for any directory not covered yet. The
+    /// store changes when `deskwall layouts set` adds an entry, possibly pointing somewhere new, so
+    /// the loop calls this after every reload. Cheap and idempotent. Loop thread only.</summary>
     public void Rescan()
     {
         if (_disposed) return;
-        foreach (var path in _store.WatchPaths)
+        var paths = _store.WatchPaths.Select(Path.GetFullPath).ToList();
+        _interesting = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+        foreach (var path in paths)
         {
-            var dir = Path.GetDirectoryName(Path.GetFullPath(path));
+            var dir = Path.GetDirectoryName(path);
             if (string.IsNullOrEmpty(dir) || _watchers.ContainsKey(dir) || !Directory.Exists(dir)) continue;
             var w = new FileSystemWatcher(dir, "*.json")
             {
@@ -42,9 +53,9 @@ internal sealed class LayoutWatcher : IDisposable
             w.Changed += OnEvent;
             w.Created += OnEvent;
             w.Deleted += OnEvent;
-            w.Renamed += OnEvent;
-            // An editor rewriting a big file can outrun the default 8 KB buffer; a lost event would
-            // mean a layout edit that never re-renders, so take the 64 KB and the Error hook.
+            w.Renamed += OnRenamed;
+            // An editor rewriting a big file can outrun the default 8 KB buffer, and a lost event is a
+            // layout edit that never re-renders; take the 64 KB and treat an overflow as "something changed".
             w.InternalBufferSize = 65536;
             w.Error += OnError;
             w.EnableRaisingEvents = true;
@@ -52,7 +63,16 @@ internal sealed class LayoutWatcher : IDisposable
         }
     }
 
-    private void OnEvent(object sender, FileSystemEventArgs e) => Kick();
+    private void OnEvent(object sender, FileSystemEventArgs e)
+    {
+        if (_interesting.Contains(e.FullPath)) Kick();
+    }
+
+    private void OnRenamed(object sender, RenamedEventArgs e)
+    {
+        // Save-by-rename: the temp file we do not care about becomes the layout we do.
+        if (_interesting.Contains(e.FullPath) || _interesting.Contains(e.OldFullPath)) Kick();
+    }
 
     private void OnError(object sender, ErrorEventArgs e) => Kick();   // buffer overflow: assume something changed
 

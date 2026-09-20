@@ -37,6 +37,8 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     private DateTimeOffset _nextWake;
     private TickTimings? _last;
     private HostWindow? _win;
+    private LayoutWatcher? _watcher;
+    private string? _announced;   // the layout line last written to the log, so a reload does not repeat it
 
     public int Run()
     {
@@ -45,6 +47,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         using var trayIcon = tray ? new TrayIcon(win) : null;
         using var watcher = new LayoutWatcher(store, () => win.Post(WakeKind.LayoutChanged));
         _win = win;
+        _watcher = watcher;
         var exit = false;
 
         if (trayIcon is not null)
@@ -101,6 +104,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
 
         log.Info("daemon stop");
         _win = null;
+        _watcher = null;
         return 0;
     }
 
@@ -149,15 +153,20 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
 
     private Active? Activate(MonitorInfo monitor)
     {
-        store.Reload();   // layouts.json may have been written by a second process (deskwall layouts set)
+        store.Reload();      // layouts.json may have been written by a second process (deskwall layouts set)
+        _watcher?.Rescan();  // and it may now name a layout in a directory nobody was watching
         var res = store.Resolve(monitor.Signature);
         if (res is null)
         {
+            _announced = null;
             log.Warn($"no layout for {monitor.Signature.Key}; waiting (deskwall layouts set <path>)");
             return null;
         }
-        if (res.Scaled) log.Info($"scaled layout {res.SourcePath} from {res.SourceSignature.Key} to {monitor.Signature.Key}");
-        else log.Info($"layout {res.SourcePath} for {monitor.Signature.Key}");
+        // Every layout edit reactivates, so say which layout is in force only when the answer changes.
+        var announce = res.Scaled
+            ? $"scaled layout {res.SourcePath} from {res.SourceSignature.Key} to {monitor.Signature.Key}"
+            : $"layout {res.SourcePath} for {monitor.Signature.Key}";
+        if (announce != _announced) { log.Info(announce); _announced = announce; }
 
         var registry = new SourceRegistry { StaleAfter = StaleAfter };
         registry.StaleChanged += (name, stale) =>
