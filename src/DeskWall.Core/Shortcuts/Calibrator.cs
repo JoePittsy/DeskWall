@@ -1,11 +1,6 @@
-using System.Runtime.InteropServices;
-using DeskWall.Core.Display;
+﻿using DeskWall.Core.Display;
 using DeskWall.Core.Render;
 using DeskWall.Core.Wallpaper;
-using Windows.Win32;
-using Windows.Win32.System.Com;
-using Windows.Win32.UI.Shell;
-using ShellCoClass = Windows.Win32.UI.Shell.Shell;
 
 namespace DeskWall.Core.Shortcuts;
 
@@ -119,7 +114,7 @@ public static class Calibrator
             Thread.Sleep(700);
             say($"probe at ({itemX},{itemY}); placed at {DesktopView.GetPosition(lnk)}");
 
-            MinimizeAll(true);
+            ShellDesktop.MinimizeAll();
             Thread.Sleep(800);
             using var shot = Screenshot.Capture(monitor.Bounds);
             shot.SavePng(Paths.InRuntime("calibrate-shot.png"));
@@ -147,25 +142,7 @@ public static class Calibrator
             DesktopView.SetFlags(DesktopFolderFlags.HideFileNames, flagsBefore & DesktopFolderFlags.HideFileNames);
             if (originalWallpaper is not null) WallpaperSetter.Set(monitor.WallpaperMonitorId, originalWallpaper);
             if (File.Exists(lnk)) File.Delete(lnk);
-            MinimizeAll(false);
+            ShellDesktop.UndoMinimizeAll();
         }
-    }
-
-    /// <summary>Shell.Application MinimizeAll / UndoMinimizeALL, the same pair poc/verify.ps1 uses to
-    /// expose the desktop for a screenshot. Best effort: a failure here is not worth losing the run.</summary>
-    private static unsafe void MinimizeAll(bool minimize)
-    {
-        Com.EnsureInitialized();
-        IShellDispatch* shell;
-        var clsid = typeof(ShellCoClass).GUID;
-        var iid = typeof(IShellDispatch).GUID;
-        if (PInvoke.CoCreateInstance(&clsid, null, CLSCTX.CLSCTX_LOCAL_SERVER, &iid, (void**)&shell).Failed) return;
-        try
-        {
-            if (minimize) shell->MinimizeAll();
-            else shell->UndoMinimizeALL();
-        }
-        catch (COMException) { }
-        finally { shell->Release(); }
     }
 }

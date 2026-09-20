@@ -1,3 +1,4 @@
+﻿using System.Globalization;
 using DeskWall.Core;
 using DeskWall.Core.Diagnostics;
 using DeskWall.Core.Display;
@@ -9,6 +10,7 @@ using DeskWall.Core.Scheduling;
 using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
+using DeskWall.Core.Verify;
 using DeskWall.Core.Wallpaper;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -51,6 +53,8 @@ internal static class Program
                     return 0;
                 case "calibrate":
                     return Calibrate();
+                case "verify":
+                    return Verify(opts);
                 case "shortcuts":
                     return Shortcuts(opts).GetAwaiter().GetResult();
                 case "help":
@@ -84,6 +88,10 @@ internal static class Program
         w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
         w.WriteLine("  layouts set <path>         register a layout for this display");
         w.WriteLine("  paths                      the runtime directory");
+        w.WriteLine("  calibrate                  measure the shell's shortcut-arrow overlay");
+        w.WriteLine("  shortcuts [--layout <path>]  planned vs actual icon positions (read-only)");
+        w.WriteLine("  verify [--pad N] [--threshold N] [--json]");
+        w.WriteLine("                             screenshot the desktop and measure the arrow padding per slot");
     }
 
     /// <summary>deskwall run [--no-tray] [--no-shortcuts]. One daemon per session: a second one hands the
@@ -326,6 +334,44 @@ internal static class Program
             throw;
         }
         finally { File.WriteAllLines(logFile, lines); }
+    }
+
+    /// <summary>deskwall verify [--pad N] [--threshold N] [--json] - screenshot the live desktop, diff
+    /// it against the frame the last tick composed and measure the shortcut-arrow padding for every
+    /// slot. Exit 0 when every slot is at the wanted pad, 4 when any is not. Read-only: it minimises the
+    /// windows for about a second and puts them back, and writes only into the runtime dir.</summary>
+    private static int Verify(List<string> opts)
+    {
+        var json = opts.Contains("--json");
+        var pad = IntOption(opts, "--pad") ?? ShortcutPlan.DefaultPad;
+        var threshold = IntOption(opts, "--threshold") ?? 60;
+        // MinimizeAll takes the console with it and a WinExe's redirected stdout does not survive
+        // AttachConsole, so the progress lines are teed to a file exactly as `calibrate` does.
+        var logFile = Paths.InRuntime("verify-log.txt");
+        var lines = new List<string>();
+        try
+        {
+            var report = Verifier.Run(pad, threshold, lines.Add);
+            var text = json ? report.ToJson() : report.ToText();
+            lines.Add(text);
+            Console.WriteLine(text);
+            return report.Ok ? 0 : 4;
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"FAILED: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"verify log: {logFile}");
+            throw;
+        }
+        finally { File.WriteAllLines(logFile, lines); }
+    }
+
+    private static int? IntOption(List<string> opts, string name)
+    {
+        if (OptValue(opts, name) is not { } v) return null;
+        if (!int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+            throw new ArgumentException($"{name} needs a whole number, not '{v}'");
+        return n;
     }
 
     private static string? OptValue(List<string> opts, string name)
