@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using DeskWall.Core.Values;
 
@@ -5,7 +6,8 @@ namespace DeskWall.Core.Sources;
 
 /// <summary>Any JSON document to the Value tree. Objects -> RecordValue; arrays of objects -> ListValue
 /// with KeyField = the first of ("id","appid","key","letter","name") present in every item, else null;
-/// arrays of scalars -> ListValue of { "value": scalar }; numbers -> NumberValue; strings -> TextValue;
+/// arrays of scalars -> ListValue of { "value": scalar }; numbers -> NumberValue (an integer past 2^53
+/// stays TextValue so a SteamID64 renders whole); strings -> TextValue;
 /// bool -> BoolValue; null -> omitted. A top-level array becomes { "items": [...] }.
 /// unixTimeFields: field names whose numbers are Unix seconds and become TimeValue (local).</summary>
 public static class JsonValues
@@ -65,6 +67,11 @@ public static class JsonValues
         JsonValueKind.Array => List(e, unix),
         JsonValueKind.String => new TextValue(e.GetString()!),
         JsonValueKind.Number when unix is not null && unix.Contains(name) && e.TryGetInt64(out var secs) => new TimeValue(DateTimeOffset.FromUnixTimeSeconds(secs).ToLocalTime()),
+        // An integer too big for a double stays text rather than becoming 7.6561198E+16: a SteamID64
+        // or a Discord snowflake has to render whole and has to match a [key] lookup, which compares
+        // the value's text. Every number that does round-trip is still a NumberValue, so arithmetic,
+        // bars and numeric format strings are untouched.
+        JsonValueKind.Number when e.TryGetInt64(out var big) && (long)(double)big != big => new TextValue(big.ToString(CultureInfo.InvariantCulture)),
         JsonValueKind.Number => new NumberValue(e.GetDouble()),
         JsonValueKind.True => new BoolValue(true),
         JsonValueKind.False => new BoolValue(false),

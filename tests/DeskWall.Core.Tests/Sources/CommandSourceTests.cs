@@ -28,6 +28,18 @@ public class CommandSourceTests
         Assert.Null(v.Get("stderr"));
     }
 
+    /// <summary>Finding 15: a non-zero exit with nothing on stdout has no values to publish, and
+    /// text = "" over the last good text is the partial-record-over-last-good spec 3.2 decides against.
+    /// A non-zero exit that did print is still a success - scripts use the code as a flag, which the
+    /// "echo hello &amp; exit 3" test above pins.</summary>
+    [Fact]
+    public async Task Nonzero_Exit_With_No_Output_Throws_So_The_Last_Good_Values_Stay()
+    {
+        var src = CommandSource.FromDef(Def("cmd.exe", "/c exit 4"), new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets());
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () => await src.RefreshAsync(default));
+        Assert.Contains("exited 4", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Json_Stdout_Is_Parsed()
     {

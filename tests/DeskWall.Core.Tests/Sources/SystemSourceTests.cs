@@ -29,10 +29,22 @@ public class SystemSourceTests
         Assert.Null(v.Get("lastCrashAt"));
     }
 
+    /// <summary>The probes swallow every exception internally, so "does not throw" asserted nothing.
+    /// What is worth pinning is the shape of the answer and, for the crash probe, that the 2000-entry
+    /// event-log walk is paid once per process and then remembered (finding 7: it runs inline on the
+    /// tick thread, which in the daemon is also the message pump).</summary>
     [Fact]
-    public void Real_Probes_Do_Not_Throw()
+    public void Real_Probes_Answer_In_Range_And_The_Crash_Scan_Is_Cached()
     {
-        _ = SystemSource.NewestCrashEvent();
-        _ = SystemSource.RebootPending();
+        var first = SystemSource.CachedCrashEvent();
+        Assert.True(first is null || first <= DateTimeOffset.Now, "a crash cannot be in the future");
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var second = SystemSource.CachedCrashEvent();
+        sw.Stop();
+        Assert.Equal(first, second);
+        Assert.True(sw.ElapsedMilliseconds < 50, $"the second probe re-scanned the event log ({sw.ElapsedMilliseconds} ms)");
+
+        _ = SystemSource.RebootPending();   // a registry read; either answer is legitimate on this machine
     }
 }

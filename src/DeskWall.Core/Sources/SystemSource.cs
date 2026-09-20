@@ -27,14 +27,35 @@ public sealed class SystemSource(string name, TimeSpan every, IClock clock, Func
             ["user"] = new TextValue(Environment.UserName),
             ["pendingReboot"] = new BoolValue((rebootProbe ?? RebootPending)()),
         };
-        var crash = (crashProbe ?? NewestCrashEvent)();
+        var crash = (crashProbe ?? CachedCrashEvent)();
         d["daysSinceCrash"] = new NumberValue(crash is null ? -1 : Math.Floor((now - crash.Value).TotalDays));
         if (crash is not null) d["lastCrashAt"] = new TimeValue(crash.Value);
         return new(new RecordValue(d));
     }
 
+    /// <summary>The crash time for this boot, scanned once and then remembered.
+    /// <para>
+    /// SystemSource is a PeriodicSource, so RefreshAsync runs inline on the tick thread - and in the
+    /// daemon the tick thread is the message pump, so a multi-second scan blocks the tray, the
+    /// display-change wake and the layout watcher with it. The answer cannot change while the machine
+    /// is up (the next crash is by definition the next boot), so the 2000-entry walk of the System
+    /// .evtx is paid once per process instead of every 15 minutes.
+    /// </para>
+    /// <para>Single-threaded by construction: only a tick calls it, and ticks do not overlap.</para></summary>
+    public static DateTimeOffset? CachedCrashEvent()
+    {
+        if (s_crashProbed) return s_crash;
+        s_crash = NewestCrashEvent();
+        s_crashProbed = true;
+        return s_crash;
+    }
+
+    private static DateTimeOffset? s_crash;
+    private static bool s_crashProbed;
+
     /// <summary>Newest System-log entry with InstanceId 41 (Kernel-Power) or 1001 (BugCheck),
-    /// scanning at most the last 2000 entries. Null if none found or the log is unavailable.</summary>
+    /// scanning at most the last 2000 entries. Null if none found or the log is unavailable.
+    /// Seconds, not milliseconds, on a busy machine: call <see cref="CachedCrashEvent"/> instead.</summary>
     public static DateTimeOffset? NewestCrashEvent()
     {
         try

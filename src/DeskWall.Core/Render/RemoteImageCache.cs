@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using DeskWall.Core.Sources;
 
 namespace DeskWall.Core.Render;
 
@@ -18,6 +19,11 @@ public sealed class RemoteImageCache(string dir, HttpMessageHandler? handler = n
     private readonly ConcurrentDictionary<string, Task> _inFlight = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _negative = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan NegativeTtl = TimeSpan.FromMinutes(10);
+    /// <summary>Ceiling on one downloaded image. A 600x900 cover is well under 1 MB; 20 MB is room
+    /// for a very large PNG and still small next to the disk headroom the tool reports.</summary>
+    private const long MaxBytes = 20 * 1024 * 1024;
+    /// <summary>How many negative entries are tolerated before the expired ones are swept.</summary>
+    private const int NegativeCap = 512;
 
     public event Action<string>? Landed;
 
@@ -48,7 +54,15 @@ public sealed class RemoteImageCache(string dir, HttpMessageHandler? handler = n
     /// starting a second concurrent request for the same image.</summary>
     public Task DownloadAsync(string url, CancellationToken ct)
     {
-        if (_negative.TryGetValue(url, out var until) && until > DateTimeOffset.UtcNow) return Task.CompletedTask;
+        if (_negative.TryGetValue(url, out var until))
+        {
+            if (until > DateTimeOffset.UtcNow) return Task.CompletedTask;
+            _negative.TryRemove(new KeyValuePair<string, DateTimeOffset>(url, until));   // expired: try again, and stop remembering it
+        }
+        // A layout that cycles through URLs that all fail would otherwise grow this without bound.
+        if (_negative.Count > NegativeCap)
+            foreach (var kv in _negative)
+                if (kv.Value <= DateTimeOffset.UtcNow) _negative.TryRemove(kv);
         return _inFlight.GetOrAdd(url, u =>
         {
             var t = DoDownloadAsync(u, ct);
@@ -61,6 +75,7 @@ public sealed class RemoteImageCache(string dir, HttpMessageHandler? handler = n
     {
         Directory.CreateDirectory(dir);
         var file = FileFor(url); var meta = MetaFor(url);
+        var landed = false;
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
@@ -78,24 +93,56 @@ public sealed class RemoteImageCache(string dir, HttpMessageHandler? handler = n
                 return;
             }
             var tmp = file + ".tmp";
-            await using (var fs = File.Create(tmp)) await res.Content.CopyToAsync(fs, ct);
+            try
+            {
+                // Bounded: a 600x900 cover is well under 1 MB, and an image/* content type is no
+                // promise about size. Without a cap a mistyped URL writes until the disk is full -
+                // the disk this tool exists to report the headroom of.
+                await using (var fs = File.Create(tmp))
+                    await BoundedHttp.CopyAsync(await res.Content.ReadAsStreamAsync(ct), fs, MaxBytes, url, ct);
+            }
+            catch
+            {
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { }
+                throw;
+            }
             File.Move(tmp, file, overwrite: true);
             File.WriteAllLines(meta, [url, res.Headers.ETag?.ToString() ?? "", DateTimeOffset.UtcNow.ToString("O")]);
-            Landed?.Invoke(url);
+            landed = true;
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
             _negative[url] = DateTimeOffset.UtcNow + NegativeTtl;   // network down: back off, keep any old file
         }
+        // Outside the try: a subscriber that throws used to be caught by the catch above, which then
+        // wrote a negative-cache entry for a download that had in fact succeeded and blocked the URL
+        // for ten minutes.
+        if (landed)
+        {
+            _negative.TryRemove(url, out _);   // and a URL that works again is not still backed off
+            try { Landed?.Invoke(url); }
+            catch (Exception) { }              // a subscriber's failure is not this download's failure
+        }
     }
 
+    /// <summary>Delete cache files nobody has looked up for 30 days. One file the renderer happens to
+    /// have open must not abort the rest of the sweep.</summary>
     public int Sweep()
     {
         if (!Directory.Exists(dir)) return 0;
         var n = 0;
         foreach (var f in Directory.EnumerateFiles(dir, "*.img"))
-            if (DateTime.UtcNow - File.GetLastAccessTimeUtc(f) > TimeSpan.FromDays(30))
-            { File.Delete(f); var m = Path.ChangeExtension(f, ".meta"); if (File.Exists(m)) File.Delete(m); n++; }
+        {
+            try
+            {
+                if (DateTime.UtcNow - File.GetLastAccessTimeUtc(f) <= TimeSpan.FromDays(30)) continue;
+                File.Delete(f);
+                var m = Path.ChangeExtension(f, ".meta");
+                if (File.Exists(m)) File.Delete(m);
+                n++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
         return n;
     }
 }

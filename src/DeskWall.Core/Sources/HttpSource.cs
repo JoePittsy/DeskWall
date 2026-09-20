@@ -12,6 +12,8 @@ public sealed class HttpSource(string name, TimeSpan every, TimeSpan timeout, st
     string? parse, IReadOnlySet<string> unixTimeFields, Secrets secrets, IClock clock, HttpMessageHandler? handler = null) : AsyncSource(name, every, timeout)
 {
     private const long MaxBody = 4 * 1024 * 1024;
+    /// <summary>The hard ceiling on one fetch, as a multiple of the source's own timeout.</summary>
+    private TimeSpan HardCeiling => Timeout * 6;
     private static readonly HttpClient s_shared = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(10), PooledConnectionLifetime = TimeSpan.FromMinutes(5) }) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     private readonly HttpClient _client = handler is null ? s_shared : new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
 
@@ -36,14 +38,23 @@ public sealed class HttpSource(string name, TimeSpan every, TimeSpan timeout, st
         if (_etag is not null) req.Headers.IfNoneMatch.ParseAdd(_etag);
         if (_lastModified is not null) req.Headers.TryAddWithoutValidation("If-Modified-Since", _lastModified);
 
+        // AsyncSource deliberately hands FetchAsync an uncancellable token: the work must finish and
+        // report so the next tick can use it. That is not a reason for it to run forever. A server
+        // that completes the handshake and then dribbles the body never trips ConnectTimeout, and
+        // while the task is in flight every RefreshAsync throws TimeoutException at once - one hung
+        // endpoint used to kill the source for the life of the daemon. Ceiling: six timeouts, which
+        // is long enough for a slow-but-working fetch to land between two ticks and short enough
+        // that the source comes back.
+        using var hard = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        hard.CancelAfter(HardCeiling);
+        ct = hard.Token;
+
         using var res = await _client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (res.StatusCode == HttpStatusCode.NotModified && _lastBody is not null)
             return Publish(_lastBody, 304, fromCache: true);
         if (!res.IsSuccessStatusCode) throw new HttpRequestException($"{(int)res.StatusCode} from {urlTemplate}");
-        if (res.Content.Headers.ContentLength is > MaxBody) throw new HttpRequestException($"body over {MaxBody} bytes from {urlTemplate}");
 
-        var body = await res.Content.ReadAsStringAsync(ct);
-        if (body.Length > MaxBody) throw new HttpRequestException($"body over {MaxBody} bytes from {urlTemplate}");
+        var body = await BoundedHttp.ReadStringAsync(res.Content, MaxBody, urlTemplate, ct);
         _etag = res.Headers.ETag?.ToString();
         _lastModified = res.Content.Headers.LastModified?.ToString("R");
 

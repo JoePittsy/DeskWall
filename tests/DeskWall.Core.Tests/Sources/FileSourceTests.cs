@@ -29,12 +29,20 @@ public class FileSourceTests
         Assert.True(((NumberValue)v.Get("size")!).Number > 10);
     }
 
+    /// <summary>Spec 3.2: a missing file is a failure, not a successful { exists: false }. The partial
+    /// record installed itself over the last good values, so a producer that writes its JSON by
+    /// delete-then-create blanked the column for a tick instead of holding the last list.</summary>
     [Fact]
-    public async Task Missing_File_Publishes_Exists_False_Without_Throwing()
+    public async Task Missing_File_Throws_So_The_Last_Good_Values_Stay()
     {
-        var v = await FileSource.FromDef(Def(Temp("nope.json")), new FixedClock(DateTimeOffset.UnixEpoch)).RefreshAsync(default);
-        Assert.False(((BoolValue)v.Get("exists")!).Flag);
-        Assert.Null(v.Get("json"));
+        var src = FileSource.FromDef(Def(Temp("nope.json")), new FixedClock(DateTimeOffset.UnixEpoch));
+        var ex = await Assert.ThrowsAsync<FileNotFoundException>(async () => await src.RefreshAsync(default));
+        Assert.Contains("nope.json", ex.Message, StringComparison.Ordinal);
+
+        // What the tick then does with it: the previous values stay published.
+        var good = new RecordValue(new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase) { ["text"] = new TextValue("last good") });
+        var failed = SourceSnapshot.Initial("hearth").Succeeded(good, DateTimeOffset.UnixEpoch).Failed(ex.Message);
+        Assert.Equal("last good", ((TextValue)failed.Values!.Get("text")!).Text);
     }
 
     [Fact]
