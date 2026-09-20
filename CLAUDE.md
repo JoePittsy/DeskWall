@@ -51,7 +51,11 @@ U3425WE, Windows 11, i7-6700K). Branch `poc`; no `main` yet.
 - Bash heredocs do not parse in the PowerShell tool. Use the Bash tool for git commits.
 - **No non-ASCII in `.ps1` files.** PS 5.1 reads BOM-less UTF-8 as ANSI; an em dash becomes
   `â€”` and the `”` byte is accepted as a string terminator, which breaks parsing far from
-  the actual line. Source files are saved UTF-8 *with* BOM as a second line of defence.
+  the actual line. `.ps1`/`.cs` are saved UTF-8 *with* BOM as a second line of defence.
+- **`tick.vbs` must be plain ASCII with NO BOM.** VBScript fails at (1,1) "Invalid character"
+  on a BOM, wscript shows a modal error dialog every minute, the task stays "running"
+  (0x41301) and every following tick is skipped (`MultipleInstances IgnoreNew`). This
+  happened on 2026-09-20 after a blanket re-encode; never bulk-re-encode `*.vbs`.
 
 **Playnite**
 - Locks `%APPDATA%\Playnite\library\games.db` exclusively while running. Close cleanly with
