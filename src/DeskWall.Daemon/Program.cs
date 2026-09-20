@@ -73,8 +73,8 @@ internal static class Program
     private static void Usage(TextWriter w)
     {
         w.WriteLine("deskwall [--home <dir>] <command>");
-        w.WriteLine("  run [--no-tray]            resident daemon (the default with no command)");
-        w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply]");
+        w.WriteLine("  run [--no-tray] [--no-shortcuts]   resident daemon (the default with no command)");
+        w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply] [--no-shortcuts]");
         w.WriteLine("  install                    start at sign-in, and start now");
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
         w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
@@ -82,8 +82,9 @@ internal static class Program
         w.WriteLine("  paths                      the runtime directory");
     }
 
-    /// <summary>deskwall run [--no-tray]. One daemon per session: a second one hands the running
-    /// daemon a Manual wake (so `run` doubles as "refresh now" from a script) and exits happy.</summary>
+    /// <summary>deskwall run [--no-tray] [--no-shortcuts]. One daemon per session: a second one hands the
+    /// running daemon a Manual wake (so `run` doubles as "refresh now" from a script) and exits happy.
+    /// --no-shortcuts leaves the desktop alone: the wallpaper still updates, no .lnk is written or moved.</summary>
     private static int Run(List<string> opts)
     {
         using var single = new Mutex(initiallyOwned: true, @"Local\DeskWall.Daemon", out var mine);
@@ -96,7 +97,8 @@ internal static class Program
         }
         var log = RollingLog.Default();
         var store = LayoutStore.Default(log.Warn);
-        return new DaemonLoop(log, store, SystemClock.Instance, tray: !opts.Contains("--no-tray")).Run();
+        return new DaemonLoop(log, store, SystemClock.Instance, tray: !opts.Contains("--no-tray"))
+        { Shortcuts = !opts.Contains("--no-shortcuts") }.Run();
     }
 
     /// <summary>deskwall install: HKCU Run entry, a restore point for the wallpaper we are about to
@@ -138,8 +140,10 @@ internal static class Program
         Startup.Uninstall();
         try
         {
-            // Phase 3: drop every slot shortcut we own and put the desktop folder flags back.
-            var removed = new ShortcutManager(Calibration.Load()).RemoveAll();
+            // Phase 3: drop the slot shortcuts recorded in shortcuts-owned.json and put the desktop
+            // folder flags back. Scoped to what we wrote: the v0 PowerShell POC owns slots 0..3 with
+            // the same file names and must survive `deskwall uninstall`.
+            var removed = new ShortcutManager(Calibration.Load()).RemoveOwned();
             DesktopFlags.Restore();
             Console.WriteLine($"removed {removed} desktop shortcut(s); desktop flags restored");
         }

@@ -128,20 +128,27 @@ public sealed class TickRunner(
         LastShortcutOutcome = null;
         if (shortcuts is not null)
         {
-            var fingerprint = shortcuts.Fingerprint(LastShortcuts, monitor.Signature.ScalePercent);
-            if (force || fingerprint != state.ShortcutsFingerprint)
+            try
             {
-                try
+                // Inside the try: Fingerprint throws on a duplicate slot (two shortcut components, or a
+                // standalone one colliding with a repeater's base), and a layout mistake must not make
+                // every tick throw after the wallpaper is applied and before state.Save.
+                var fingerprint = shortcuts.Fingerprint(LastShortcuts, monitor.Signature.ScalePercent);
+                if (force || fingerprint != state.ShortcutsFingerprint)
                 {
-                    LastShortcutOutcome = shortcuts.Reconcile(LastShortcuts, monitor.Signature.ScalePercent);
-                    state.ShortcutsFingerprint = fingerprint;
+                    var outcome = shortcuts.Reconcile(LastShortcuts, monitor.Signature.ScalePercent);
+                    LastShortcutOutcome = outcome;
+                    // A slot that could not be written or positioned leaves the fingerprint unstored,
+                    // so the next tick reconciles again instead of the icon staying missing until the
+                    // game list or the layout happens to change.
+                    state.ShortcutsFingerprint = outcome.SlotFailed ? "" : fingerprint;
                 }
-                catch (Exception ex)
-                {
-                    // The desktop view can be gone (Explorer restarting). Record it and retry next tick.
-                    LastShortcutOutcome = new ShortcutOutcome(0, 0, 0, [$"{ex.GetType().Name}: {ex.Message}"]);
-                    state.ShortcutsFingerprint = "";
-                }
+            }
+            catch (Exception ex)
+            {
+                // The desktop view can be gone (Explorer restarting). Record it and retry next tick.
+                LastShortcutOutcome = new ShortcutOutcome(0, 0, 0, [$"{ex.GetType().Name}: {ex.Message}"]) { SlotFailed = true };
+                state.ShortcutsFingerprint = "";
             }
         }
         t.ShortcutsMs = sw.ElapsedMilliseconds - s0;

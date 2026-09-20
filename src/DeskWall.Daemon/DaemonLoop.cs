@@ -4,6 +4,7 @@ using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Scheduling;
+using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
 using DeskWall.Core.Wallpaper;
@@ -21,6 +22,11 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     /// <summary>Spec 3.2: a source that has missed this many of its own schedules stops publishing
     /// its last good values, so a bound component falls back instead of showing a frozen number.</summary>
     private const int StaleAfter = 3;
+
+    /// <summary>False under `deskwall run --no-shortcuts`: the wallpaper still updates, but no desktop
+    /// .lnk is written, moved or deleted. An init property rather than a constructor parameter so the
+    /// constructor keeps its shape.</summary>
+    public bool Shortcuts { get; init; } = true;
 
     private sealed record Active(
         MonitorInfo Monitor,
@@ -136,6 +142,11 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             }
             _last = _active.Runner.RunAsync(force, apply: true, CancellationToken.None).GetAwaiter().GetResult();
             log.Info($"tick {why}: {(_last.Skipped ? "skipped" : $"redrawn {_last.Redrawn}")} total {_last.TotalMs} ms cpu {_last.CpuMs:N0} ms");
+            if (_active.Runner.LastShortcutOutcome is { } sc)
+            {
+                log.Info($"shortcuts: placed {sc.Positioned} / removed {sc.Removed} (written {sc.Written}) in {_last.ShortcutsMs} ms");
+                foreach (var w in sc.Warnings) log.Warn($"shortcuts: {w}");
+            }
             _nextWake = _active.Scheduler.NextWake(clock.Now);
         }
         catch (Exception ex)
@@ -178,7 +189,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         foreach (var s in sources.OfType<AsyncSource>())
             s.Completed += _ => _win?.Post(WakeKind.SourceCompleted);   // a fetch that overran its timeout has landed
 
-        var runner = new TickRunner(res.Layout, sources, registry, clock, monitor, images: _images);
+        var runner = new TickRunner(res.Layout, sources, registry, clock, monitor, images: _images, shortcuts: Shortcuts ? new ShortcutManager(Calibration.Load()) : null);
         return new Active(monitor, res, sources, registry, new Scheduler(sources, registry), runner, monitor.Signature.Key);
     }
 
