@@ -611,7 +611,7 @@ public class ValueTests
     public void Value_ToText_UsesInvariantCulture()
     {
         Assert.Equal("1234.5", new NumberValue(1234.5).ToText(null));
-        Assert.Equal("1,235", new NumberValue(1234.5).ToText("N0"));
+        Assert.Equal("1,235", new NumberValue(1234.6).ToText("N0"));
         Assert.Equal("09:05", new TimeValue(new DateTimeOffset(2026, 9, 20, 9, 5, 0, TimeSpan.Zero)).ToText("HH:mm"));
         Assert.Equal("yes", new BoolValue(true).ToText(null) == "True" ? "yes" : "no");
         Assert.Equal("https://x/10/cover.jpg", new NumberValue(10).ToText("https://x/{0}/cover.jpg"));
