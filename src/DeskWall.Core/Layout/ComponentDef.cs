@@ -1,0 +1,65 @@
+using System.Text.Json.Serialization;
+
+namespace DeskWall.Core.Layout;
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
+[JsonDerivedType(typeof(TextDef), "text")]
+[JsonDerivedType(typeof(ImageDef), "image")]
+[JsonDerivedType(typeof(BarDef), "bar")]
+[JsonDerivedType(typeof(ShortcutDef), "shortcut")]
+[JsonDerivedType(typeof(RepeaterDef), "repeater")]
+public abstract class ComponentDef
+{
+    public required string Id { get; set; }
+    [JsonConverter(typeof(RectConverter))] public required Rect Rect { get; set; }
+    public int Z { get; set; }
+}
+
+public sealed class TextDef : ComponentDef
+{
+    public required PropertyValue Text { get; set; }
+    public PropertyValue Font { get; set; } = PropertyValue.Literal("Segoe UI");
+    public PropertyValue Size { get; set; } = PropertyValue.Literal(16);
+    public PropertyValue Weight { get; set; } = PropertyValue.Literal(400);
+    public PropertyValue Color { get; set; } = PropertyValue.Literal("#EBFFFFFF");
+    public PropertyValue Align { get; set; } = PropertyValue.Literal("left");
+    public PropertyValue Effect { get; set; } = PropertyValue.Literal("shadow");
+    public PropertyValue EffectRadius { get; set; } = PropertyValue.Literal(6);
+    public PropertyValue EffectColor { get; set; } = PropertyValue.Literal("#A0000000");
+}
+
+public sealed class ImageDef : ComponentDef
+{
+    public required PropertyValue Source { get; set; }
+    public PropertyValue Fit { get; set; } = PropertyValue.Literal("cover");
+    public PropertyValue Radius { get; set; } = PropertyValue.Literal(0);
+    public PropertyValue Opacity { get; set; } = PropertyValue.Literal(1);
+}
+
+public sealed class BarDef : ComponentDef
+{
+    public required PropertyValue Fraction { get; set; }
+    public PropertyValue Track { get; set; } = PropertyValue.Literal("#46FFFFFF");
+    public PropertyValue Fill { get; set; } = PropertyValue.Literal("#EBFFFFFF");
+    public PropertyValue Threshold { get; set; } = PropertyValue.Literal(1);
+    public PropertyValue ThresholdFill { get; set; } = PropertyValue.Literal("#D13438");
+    public PropertyValue Direction { get; set; } = PropertyValue.Literal("horizontal");
+}
+
+public sealed class ShortcutDef : ComponentDef
+{
+    public required PropertyValue Target { get; set; }
+    public PropertyValue Tooltip { get; set; } = PropertyValue.Literal("");
+    /// <summary>Base slot; repeater children add their index.</summary>
+    public int Slot { get; set; }
+}
+
+public sealed class RepeaterDef : ComponentDef
+{
+    public required PropertyValue Items { get; set; }
+    public Axis Axis { get; set; } = Axis.Vertical;
+    public int Gap { get; set; }
+    /// <summary>Pixels, or "auto" to take the height from the first image child's aspect ratio.</summary>
+    public PropertyValue CellHeight { get; set; } = PropertyValue.Literal("auto");
+    public required List<ComponentDef> Template { get; set; }
+}
