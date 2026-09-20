@@ -68,14 +68,14 @@ public static class LayoutResolver
                 for (var idx = 0; idx < list.Items.Count; idx++)
                 {
                     var item = list.Items[idx];
-                    var cell = CellExtent(r, item);
+                    var cell = CellExtent(r, item, out var imageExtent);
                     if (cursor + cell > limit) break;   // never overflow the block
                     var origin = vertical ? rect.Offset(0, cursor) : rect.Offset(cursor, 0);
                     foreach (var child in r.Template)
                     {
                         var childRect = child.Rect.Offset(origin.X, origin.Y);
-                        if (child is ImageDef && IsAuto(r.CellHeight)) childRect = vertical ? childRect with { H = cell } : childRect with { W = cell };
-                        Emit(child, item, childRect, $"{id}[{idx}].{child.Id}", slotOffset + idx, result);
+                        if (child is ImageDef && IsAuto(r.CellHeight)) childRect = vertical ? childRect with { H = imageExtent } : childRect with { W = imageExtent };
+                        Emit(child, item, ClampToCell(childRect, origin, cell, rect, vertical), $"{id}[{idx}].{child.Id}", slotOffset + idx, result);
                     }
                     cursor += cell + r.Gap;
                 }
@@ -85,20 +85,63 @@ public static class LayoutResolver
 
     private static bool IsAuto(PropertyValue p) => !p.IsBound && string.Equals(p.LiteralText, "auto", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Cell extent along the axis: the literal number, or for "auto" the first image
-    /// child's aspect ratio applied to its template width (or height for horizontal).</summary>
-    private static int CellExtent(RepeaterDef r, RecordValue item)
+    /// <summary>
+    /// Cell extent along the axis: the larger of the declared extent (the literal number, or for
+    /// "auto" the first image child's aspect ratio applied to its template width / height) and the
+    /// furthest template child's Bottom (vertical) or Right (horizontal). Taking only the declared
+    /// extent let a child that sits below the image spill into the next item's cell.
+    /// </summary>
+    /// <param name="imageExtent">the auto-sized extent for the first image child alone, so that
+    /// widening the cell to fit a sibling does not stretch the cover out of its aspect ratio.</param>
+    private static int CellExtent(RepeaterDef r, RecordValue item, out int imageExtent)
     {
-        if (!IsAuto(r.CellHeight)) return (int)Math.Round(PropertyReader.Number(r.CellHeight, item) ?? 0);
-        var img = r.Template.OfType<ImageDef>().FirstOrDefault();
-        if (img is null) return r.Template.Count == 0 ? 0 : r.Template.Max(c => r.Axis == Axis.Vertical ? c.Rect.Bottom : c.Rect.Right);
-        var path = PropertyReader.Text(img.Source, item);
         var vertical = r.Axis == Axis.Vertical;
+        imageExtent = AutoImageExtent(r, item, vertical);
+        var declared = IsAuto(r.CellHeight) ? imageExtent : (int)Math.Round(PropertyReader.Number(r.CellHeight, item) ?? 0);
+        var children = r.Template.Count == 0 ? 0 : r.Template.Max(c => vertical ? c.Rect.Bottom : c.Rect.Right);
+        return Math.Max(Math.Max(declared, children), 0);
+    }
+
+    /// <summary>The first image child's own extent along the axis, from its aspect ratio. Zero when
+    /// the template has no image child.</summary>
+    private static int AutoImageExtent(RepeaterDef r, RecordValue item, bool vertical)
+    {
+        var img = r.Template.OfType<ImageDef>().FirstOrDefault();
+        if (img is null) return 0;
+        var path = PropertyReader.Text(img.Source, item);
         if (path is null || !File.Exists(path))
             return vertical ? (int)Math.Round(img.Rect.W * 1.5) : (int)Math.Round(img.Rect.H / 1.5);   // 2:3 placeholder, as the POC did
         using var s = Surface.Load(path);
         return vertical
             ? (int)Math.Round((double)img.Rect.W * s.Height / s.Width)
             : (int)Math.Round((double)img.Rect.H * s.Width / s.Height);
+    }
+
+    /// <summary>
+    /// Keep a template child inside its cell on the main axis and inside the repeater on the cross
+    /// axis. Children are clamped, never dropped: a too-wide child paints a narrower box rather than
+    /// painting over whatever sits beside the block, and the resolved rect stays an honest
+    /// description of the pixels so the dirty-rect bookkeeping still holds.
+    /// </summary>
+    private static Rect ClampToCell(Rect child, Rect origin, int cell, Rect block, bool vertical)
+    {
+        var mainLo = vertical ? origin.Y : origin.X;
+        var mainHi = mainLo + cell;
+        var crossLo = vertical ? block.X : block.Y;
+        var crossHi = vertical ? block.Right : block.Bottom;
+        if (crossHi < crossLo) crossHi = crossLo;
+
+        int x0 = child.X, y0 = child.Y, x1 = child.Right, y1 = child.Bottom;
+        if (vertical)
+        {
+            y0 = Math.Clamp(y0, mainLo, mainHi); y1 = Math.Clamp(y1, mainLo, mainHi);
+            x0 = Math.Clamp(x0, crossLo, crossHi); x1 = Math.Clamp(x1, crossLo, crossHi);
+        }
+        else
+        {
+            x0 = Math.Clamp(x0, mainLo, mainHi); x1 = Math.Clamp(x1, mainLo, mainHi);
+            y0 = Math.Clamp(y0, crossLo, crossHi); y1 = Math.Clamp(y1, crossLo, crossHi);
+        }
+        return new Rect(x0, y0, x1 - x0, y1 - y0);
     }
 }

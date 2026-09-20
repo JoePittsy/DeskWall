@@ -87,3 +87,96 @@ public class LayoutResolverTests
         Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "unbalanced")).Text);
     }
 }
+
+/// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was
+/// sized from the auto image alone) and were unbounded on the cross axis.</summary>
+public class RepeaterOverflowTests
+{
+    private static RecordValue Items(int n)
+    {
+        var rows = new List<RecordValue>();
+        for (var i = 0; i < n; i++)
+            rows.Add(new RecordValue(new Dictionary<string, Value>
+            {
+                ["name"] = new TextValue("row" + i),
+                ["cover"] = new TextValue(Path.Combine(Path.GetTempPath(), "deskwall-tests", "no-such-cover.png")),
+            }));
+        return ValueTree.Of(("games", new RecordValue(new Dictionary<string, Value> { ["list"] = new ListValue(rows, "name") })));
+    }
+
+    [Fact]
+    public void Vertical_Cell_Covers_Every_Child_And_Cross_Axis_Is_Clamped()
+    {
+        var layout = LayoutFile.Parse("""
+        {
+          "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [
+            { "type": "repeater", "id": "g", "rect": [0, 1000, 100, 340], "items": { "bind": "games.list" }, "axis": "vertical", "cellHeight": "auto",
+              "template": [
+                { "type": "image", "id": "cover", "rect": [0, 0, 100, 150], "source": { "bind": "cover" } },
+                { "type": "text", "id": "name", "rect": [0, 150, 400, 20], "text": { "bind": "name" } }
+              ] }
+          ]
+        }
+        """);
+        var r = LayoutResolver.Resolve(layout, Items(3), new Rect(0, 0, 3440, 1440));
+
+        // auto image extent is 150 (100 wide at the 2:3 placeholder aspect), but the name child ends
+        // at 170, so the cell is 170: two of three rows fit in 340 px, not three.
+        var names = r.OfType<ResolvedText>().ToList();
+        Assert.Equal(2, names.Count);
+        Assert.Equal(1150, names[0].Rect.Y);
+        Assert.Equal(1320, names[1].Rect.Y);
+        Assert.Equal(1170, r.OfType<ResolvedImage>().ElementAt(1).Rect.Y);   // row 1 starts after the whole cell
+
+        // every child stays inside the repeater's 100 px width and inside its own cell
+        Assert.All(names, t => Assert.Equal(100, t.Rect.W));
+        Assert.All(r, c => Assert.True(c.Rect.Right <= 100 && c.Rect.Bottom <= 1340, $"{c.Id} escapes the block: {c.Rect}"));
+
+        // widening the cell to fit the name must not stretch the cover out of its aspect ratio
+        Assert.All(r.OfType<ResolvedImage>(), i => Assert.Equal(150, i.Rect.H));
+    }
+
+    [Fact]
+    public void Horizontal_Cell_Covers_Every_Child_And_Cross_Axis_Is_Clamped()
+    {
+        var layout = LayoutFile.Parse("""
+        {
+          "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [
+            { "type": "repeater", "id": "g", "rect": [0, 0, 400, 80], "items": { "bind": "games.list" }, "axis": "horizontal", "cellHeight": 100,
+              "template": [
+                { "type": "text", "id": "a", "rect": [0, 0, 60, 20], "text": { "bind": "name" } },
+                { "type": "text", "id": "b", "rect": [120, 0, 60, 20], "text": { "bind": "name" } },
+                { "type": "text", "id": "c", "rect": [0, 0, 60, 200], "text": { "bind": "name" } }
+              ] }
+          ]
+        }
+        """);
+        var r = LayoutResolver.Resolve(layout, Items(3), new Rect(0, 0, 3440, 1440));
+
+        // declared cell 100, but child "b" ends at 180, so the cell is 180: two of three rows fit in 400 px.
+        Assert.Equal(180, r.Single(c => c.Id == "g[1].a").Rect.X);
+        Assert.DoesNotContain(r, c => c.Id.StartsWith("g[2]."));
+        Assert.Equal(300, r.Single(c => c.Id == "g[1].b").Rect.X);
+
+        // child "c" is 200 px tall in an 80 px block: clamped, not painted over whatever is below
+        Assert.Equal(80, r.Single(c => c.Id == "g[0].c").Rect.H);
+        Assert.All(r, c => Assert.True(c.Rect.Right <= 400 && c.Rect.Bottom <= 80, $"{c.Id} escapes the block: {c.Rect}"));
+    }
+}
+
+public class ContentKeyTests
+{
+    [Fact]
+    public void Key_Changes_With_Content_Not_With_Identity()
+    {
+        var a = new ResolvedText("x", new Rect(0, 0, 10, 10), 0, "14:32", TextStyle.Default);
+        var b = new ResolvedText("y", new Rect(0, 0, 10, 10), 0, "14:32", TextStyle.Default);
+        var c = new ResolvedText("x", new Rect(0, 0, 10, 10), 0, "14:33", TextStyle.Default);
+        var d = new ResolvedText("x", new Rect(1, 0, 10, 10), 0, "14:32", TextStyle.Default);
+        Assert.Equal(ContentKey.Of(a), ContentKey.Of(b));
+        Assert.NotEqual(ContentKey.Of(a), ContentKey.Of(c));
+        Assert.NotEqual(ContentKey.Of(a), ContentKey.Of(d));
+    }
+}
