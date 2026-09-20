@@ -25,7 +25,7 @@ System.Text.Json source generation, xUnit.
 - Budget for the clock-only tick after Task 10: 60 ms wall, 40 ms CPU on JOES-PC.
 - Sources ASCII only. Runtime dir is `%LOCALAPPDATA%\DeskWall`.
 - Lane order (master plan): Tasks 0, 1, 2 sequential by the seam owner. Then lanes
-  `v1/p1-binding` (Tasks 3, 4), `v1/p1-sources` (Tasks 5, 7), `v1/p1-render` (Tasks 8, 9).
+  `lane/p1-binding` (Tasks 3, 4), `lane/p1-sources` (Tasks 5, 7), `lane/p1-render` (Tasks 8, 9).
   Then Tasks 6, 10, 11 by the integrator on `v1`.
 
 ## File structure
@@ -946,7 +946,7 @@ Fan-out starts here. Create the three lane worktrees from `v1`.
 
 ---
 
-### Task 3: Binding parser and resolver (lane `v1/p1-binding`)
+### Task 3: Binding parser and resolver (lane `lane/p1-binding`)
 
 **Files:**
 - Create: `src/DeskWall.Core/Bindings/Binding.cs`, `src/DeskWall.Core/Bindings/BindingParser.cs`,
@@ -1189,7 +1189,7 @@ git commit -m "Binding: path+format parser and resolver over the value tree"
 
 ---
 
-### Task 4: Layout JSON model (lane `v1/p1-binding`)
+### Task 4: Layout JSON model (lane `lane/p1-binding`)
 
 **Files:**
 - Create: `src/DeskWall.Core/Layout/PropertyValue.cs`, `src/DeskWall.Core/Layout/ComponentDef.cs`,
@@ -1542,11 +1542,11 @@ git add src/DeskWall.Core/Layout tests/DeskWall.Core.Tests/Layout
 git commit -m "Layout: polymorphic component defs, PropertyValue literal-or-bind, source-generated JSON"
 ```
 
-Lane `v1/p1-binding` is complete: rebase on `v1`, `dotnet test`, fast-forward merge.
+Lane `lane/p1-binding` is complete: rebase on `v1`, `dotnet test`, fast-forward merge.
 
 ---
 
-### Task 5: `time` and `disks` sources plus the factory (lane `v1/p1-sources`)
+### Task 5: `time` and `disks` sources plus the factory (lane `lane/p1-sources`)
 
 **Files:**
 - Create: `src/DeskWall.Core/Sources/TimeSource.cs`, `src/DeskWall.Core/Sources/DisksSource.cs`,
@@ -1756,7 +1756,7 @@ git commit -m "Sources: time (minute-aligned), disks (fixed drives), factory, IC
 
 ---
 
-### Task 7: Display signature and monitor enumeration (lane `v1/p1-sources`)
+### Task 7: Display signature and monitor enumeration (lane `lane/p1-sources`)
 
 **Files:**
 - Create: `src/DeskWall.Core/Display/DisplaySignature.cs`, `src/DeskWall.Core/Display/Monitors.cs`
@@ -1951,11 +1951,11 @@ git add src/DeskWall.Core/Display src/DeskWall.Core/NativeMethods.txt tests/Desk
 git commit -m "Display: signature key/similarity and monitor enumeration joined with IDesktopWallpaper ids"
 ```
 
-Lane `v1/p1-sources` is complete: rebase on `v1`, `dotnet test`, fast-forward merge.
+Lane `lane/p1-sources` is complete: rebase on `v1`, `dotnet test`, fast-forward merge.
 
 ---
 
-### Task 8: `Surface`, `BaseCache` and `FrameRenderer` (lane `v1/p1-render`)
+### Task 8: `Surface`, `BaseCache` and `FrameRenderer` (lane `lane/p1-render`)
 
 Written against the spike results file. Copy the verified call shapes from there; the code
 below shows the intended structure and the public API, which is frozen.
@@ -2327,7 +2327,7 @@ git commit -m "Render: Surface over software Direct2D/WIC, raw base cache, Frame
 
 ---
 
-### Task 9: `WallpaperSetter` (lane `v1/p1-render`)
+### Task 9: `WallpaperSetter` (lane `lane/p1-render`)
 
 **Files:**
 - Create: `src/DeskWall.Core/Wallpaper/WallpaperSetter.cs`
@@ -2457,7 +2457,7 @@ git add src/DeskWall.Core/Wallpaper tests/DeskWall.Core.Tests/Wallpaper
 git commit -m "Wallpaper: per-monitor IDesktopWallpaper set/get and restore point"
 ```
 
-Lane `v1/p1-render` is complete: rebase on `v1`, `dotnet test`, fast-forward merge.
+Lane `lane/p1-render` is complete: rebase on `v1`, `dotnet test`, fast-forward merge.
 
 ---
 

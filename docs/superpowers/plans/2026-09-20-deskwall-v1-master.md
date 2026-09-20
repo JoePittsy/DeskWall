@@ -40,10 +40,10 @@ Copied from the spec. Every task in every phase plan inherits these.
 ```
 poc            existing branch, frozen after Phase 1 Task 0 lands
 v1             integration branch, created from poc; every lane merges here
-v1/<lane>      one branch per parallel lane, checked out in ../DeskWall-<lane>
+lane/<lane>      one branch per parallel lane, checked out in ../DeskWall-<lane>
 ```
 
-Create a lane: `git worktree add ../DeskWall-<lane> -b v1/<lane> v1` (or the Agent tool's
+Create a lane: `git worktree add ../DeskWall-<lane> -b lane/<lane> v1` (or the Agent tool's
 `isolation: "worktree"`, which does the same). Finish a lane: rebase onto `v1`, run
 `dotnet test`, run `deskwall tick --measure` if the render path was touched, fast-forward
 merge into `v1`, remove the worktree. Never merge a lane that widens the budget.
@@ -101,31 +101,31 @@ Rules:
 ### Per-phase lane assignment
 
 **P1** (detailed in the phase plan): Fable does Tasks 0 to 2 sequentially (scaffold, spike,
-value model = the seam). Then three lanes: `v1/p1-binding` (Sonnet: parser, layout JSON),
-`v1/p1-sources` (Sonnet: time, disks, display signature), `v1/p1-render` (Fable: Surface,
+value model = the seam). Then three lanes: `lane/p1-binding` (Sonnet: parser, layout JSON),
+`lane/p1-sources` (Sonnet: time, disks, display signature), `lane/p1-render` (Fable: Surface,
 renderer, wallpaper apply). Fable integrates: resolver, `tick`, incremental redraw.
 
-**P2**: `v1/p2-host` (Fable: hidden window, message pump, waitable timer, tray, trim) and
-`v1/p2-plumbing` (Sonnet: `Scheduler` next-wake maths with fake clock, rolling log, layout
+**P2**: `lane/p2-host` (Fable: hidden window, message pump, waitable timer, tray, trim) and
+`lane/p2-plumbing` (Sonnet: `Scheduler` next-wake maths with fake clock, rolling log, layout
 store watcher, `install`/`uninstall` Run key and wallpaper restore). Fable wires them.
 
-**P3**: one lane `v1/p3-shortcuts` (Fable: port `DeskIcons.cs` to CsWin32, folder flags,
+**P3**: one lane `lane/p3-shortcuts` (Fable: port `DeskIcons.cs` to CsWin32, folder flags,
 slot files, ICO, `calibrate`). Sonnet may take the ICO writer and the `.lnk` writer as
 sub-tasks inside the lane if Fable hands them off with tests.
 
 **P4**: five lanes, one per source, all Sonnet, all against the frozen `ISource`:
-`v1/p4-http` (plus the remote image cache and secrets reference, since http needs both),
-`v1/p4-rss`, `v1/p4-file`, `v1/p4-command`, `v1/p4-system`. Fable reviews each and merges in
+`lane/p4-http` (plus the remote image cache and secrets reference, since http needs both),
+`lane/p4-rss`, `lane/p4-file`, `lane/p4-command`, `lane/p4-system`. Fable reviews each and merges in
 the order they finish. Escalate rss or command to Opus if parsing edge cases stall.
 
-**P5**: `v1/p5-canvas` (Fable: WPF canvas, drag, resize, snap, undo, live Core render),
-`v1/p5-panels` (Sonnet: sources panel, properties panel with binding picker, z-list),
-`v1/p5-settings` (Sonnet: settings page, secrets editor, footprint panel, first-run starter
+**P5**: `lane/p5-canvas` (Fable: WPF canvas, drag, resize, snap, undo, live Core render),
+`lane/p5-panels` (Sonnet: sources panel, properties panel with binding picker, z-list),
+`lane/p5-settings` (Sonnet: settings page, secrets editor, footprint panel, first-run starter
 picker). Fable integrates and applies the design doctrine gates.
 
-**P6**: `v1/p6-verify` (Fable: screenshot, pixel diff, arrow padding report, clock crop),
-`v1/p6-tests` (Sonnet: golden images, budget test harness, `.gitignore` scoping),
-`v1/p6-docs` (Sonnet: layout format reference, source reference, starter layouts, README
+**P6**: `lane/p6-verify` (Fable: screenshot, pixel diff, arrow padding report, clock crop),
+`lane/p6-tests` (Sonnet: golden images, budget test harness, `.gitignore` scoping),
+`lane/p6-docs` (Sonnet: layout format reference, source reference, starter layouts, README
 rewrite, `poc/` removal after the parity gate).
 
 ## Parity gate (end of P6)
