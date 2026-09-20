@@ -46,9 +46,14 @@ public sealed class LayoutStore
     public void Remove(DisplaySignature sig) { if (_entries.Remove(sig.Key)) Save(); }
 
     /// <summary>Exact match, else the closest by Similarity (ties: most recently written file), scaled
-    /// to sig. Null when the store is empty or nothing in it can be read. A layout whose version this
-    /// build does not understand is reported through onError and skipped, exactly as a missing file is:
-    /// the daemon then keeps the wallpaper it already applied instead of drawing a half-understood one.</summary>
+    /// to sig. Null when the store is empty or nothing in it can be read.
+    /// <para>
+    /// A layout registered for <em>this</em> signature that is missing, unreadable, or written by a
+    /// future build is an error, not an invitation to substitute another display's layout: it is
+    /// reported through onError and Resolve returns null, so the daemon keeps the wallpaper it already
+    /// applied (spec 3.2) and the tray tooltip says to look in the log. Closest-match only applies
+    /// when this signature has no entry at all (finding 4).
+    /// </para></summary>
     public LayoutResolution? Resolve(DisplaySignature sig)
     {
         // One parse and, more importantly, one complaint per file per call: the exact-match branch and
@@ -62,8 +67,18 @@ public sealed class LayoutStore
             return file;
         }
 
-        if (_entries.TryGetValue(sig.Key, out var exact) && File.Exists(Resolve(exact)) && Load(Resolve(exact)) is { } hit)
-            return new LayoutResolution(hit, Resolve(exact), sig, Scaled: false);
+        if (_entries.TryGetValue(sig.Key, out var exact))
+        {
+            var path = Resolve(exact);
+            if (!File.Exists(path))
+            {
+                _onError?.Invoke($"layout {path} registered for {sig.Key} is missing");
+                return null;
+            }
+            // Load reports why through onError; either way this display's own layout is broken and
+            // no other display's layout is an acceptable stand-in for it.
+            return Load(path) is { } hit ? new LayoutResolution(hit, path, sig, Scaled: false) : null;
+        }
 
         LayoutResolution? best = null; var bestScore = -1; DateTime bestWrite = DateTime.MinValue;
         foreach (var (key, rel) in _entries)

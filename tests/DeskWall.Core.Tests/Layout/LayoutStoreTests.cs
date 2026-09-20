@@ -95,6 +95,54 @@ public class LayoutStoreTests
         Assert.All(errors, e => Assert.Contains($"up to {LayoutStore.MaxVersion}", e));
     }
 
+    /// <summary>Finding 4: the owner has both his monitor and his Apollo session registered. When he
+    /// saves a syntax error into the layout for the display he is looking at, the daemon must keep the
+    /// last good wallpaper and say so - not silently paint the other display's layout scaled up.</summary>
+    [Fact]
+    public void A_Broken_Layout_For_This_Display_Does_Not_Fall_Back_To_Another()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = new LayoutStore(Path.Combine(dir, "layouts.json"), errors.Add);
+        var desk = new DisplaySignature("A", 3440, 1440, 100);
+        var apollo = new DisplaySignature("B", 1920, 1080, 100);
+        store.Set(apollo, WriteLayout(dir, "apollo.json", 1920));   // readable, and otherwise a fine candidate
+        var broken = Path.Combine(dir, "desk.json");
+        File.WriteAllText(broken, """{ "version": 1, "baseImage": """);   // truncated
+        store.Set(desk, broken);
+
+        Assert.Null(store.Resolve(desk));
+        Assert.Single(errors);
+        Assert.Contains("desk.json", errors[0]);
+
+        errors.Clear();
+        File.Delete(broken);
+        Assert.Null(store.Resolve(desk));           // missing is the same answer as unparseable
+        Assert.Single(errors);
+        Assert.Contains("is missing", errors[0]);
+    }
+
+    /// <summary>The other half of finding 4: closest-match still applies when this signature has no
+    /// entry of its own, which is the case spec 5's scaling rules exist for.</summary>
+    [Fact]
+    public void A_Signature_With_No_Entry_Still_Gets_The_Closest_Match()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = new LayoutStore(Path.Combine(dir, "layouts.json"), errors.Add);
+        var apollo = new DisplaySignature("B", 1920, 1080, 100);
+        store.Set(apollo, WriteLayout(dir, "apollo.json", 1920));
+        var broken = Path.Combine(dir, "desk.json");
+        File.WriteAllText(broken, """{ "version": 1, "baseImage": """);
+        store.Set(new DisplaySignature("A", 3440, 1440, 100), broken);
+
+        var r = store.Resolve(new DisplaySignature("C", 3840, 2160, 150));
+        Assert.NotNull(r);
+        Assert.True(r!.Scaled);
+        Assert.Equal(apollo, r.SourceSignature);   // the broken entry for another signature is skipped
+        Assert.All(errors, e => Assert.Contains("desk.json", e));
+    }
+
     [Fact]
     public void A_Version_1_Layout_Is_Still_Accepted_And_Reports_Nothing()
     {

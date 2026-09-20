@@ -97,7 +97,9 @@ internal static class Program
             return 0;
         }
         var log = RollingLog.Default();
-        var store = LayoutStore.Default(log.Warn);
+        // Error, not Warn: a layout that cannot be read means no new frame, and RollingLog.LastError
+        // is what puts ". ERROR see log" in the tray tooltip (finding 4).
+        var store = LayoutStore.Default(m => log.Error(m));
         return new DaemonLoop(log, store, SystemClock.Instance, tray: !opts.Contains("--no-tray")).Run();
     }
 
