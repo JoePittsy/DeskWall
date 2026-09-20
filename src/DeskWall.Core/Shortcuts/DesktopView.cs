@@ -22,6 +22,9 @@ public enum DesktopFolderFlags : uint
     SnapToGrid = 0x0004,
     /// <summary>FWF_NOICONS</summary>
     NoIcons = 0x1000,
+    /// <summary>FWF_HIDEFILENAMES. The calibrator sets it for the length of one measurement so no icon
+    /// label lands in the pixel diff, then puts it back.</summary>
+    HideFileNames = 0x20000,
 }
 
 /// <summary>

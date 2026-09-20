@@ -189,6 +189,41 @@ public sealed unsafe class Surface : IDisposable
         return (a, r, g, b);
     }
 
+    /// <summary>Wrap a block of straight BGRA rows (top-down, tightly packed) as a surface. The caller
+    /// must already have set alpha to 255 on opaque pixels: storage here is premultiplied.
+    /// One lock, one copy; used by the screen capture path.</summary>
+    internal static Surface FromBgra(int w, int h, ReadOnlySpan<byte> bgra)
+    {
+        var rowBytes = w * 4;
+        if (bgra.Length < (long)rowBytes * h) throw new ArgumentException("bgra is shorter than width*height*4", nameof(bgra));
+        var s = Create(w, h);
+        fixed (byte* src = bgra)
+        {
+            var from = (IntPtr)src;
+            s.WithLock(LockWrite, new Rect(0, 0, w, h), (ptr, stride) =>
+            {
+                for (var y = 0; y < h; y++)
+                    Buffer.MemoryCopy((byte*)from + (long)y * rowBytes, (byte*)ptr + (long)y * stride, rowBytes, rowBytes);
+            });
+        }
+        return s;
+    }
+
+    /// <summary>Copy <paramref name="r"/> out as tightly packed BGRA rows. One lock, one copy; the
+    /// calibrator's pixel comparison runs over the managed copy rather than through GetPixel.</summary>
+    internal void ReadRegion(Rect r, byte[] dst)
+    {
+        ArgumentNullException.ThrowIfNull(dst);
+        if (r.W <= 0 || r.H <= 0 || r.X < 0 || r.Y < 0 || r.Right > Width || r.Bottom > Height)
+            throw new ArgumentOutOfRangeException(nameof(r), "region is outside the surface");
+        var rowBytes = r.W * 4;
+        if (dst.Length < rowBytes * r.H) throw new ArgumentException("dst is shorter than the region", nameof(dst));
+        WithLock(LockRead, r, (ptr, stride) =>
+        {
+            for (var y = 0; y < r.H; y++) Marshal.Copy((IntPtr)((byte*)ptr + (long)y * stride), dst, y * rowBytes, rowBytes);
+        });
+    }
+
     /// <summary>Replace the pixels of <paramref name="r"/> with the same rect from <paramref name="src"/>. Same-size surfaces.</summary>
     public void CopyRect(Surface src, Rect r)
     {
