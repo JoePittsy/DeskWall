@@ -5,6 +5,7 @@ using DeskWall.Daemon.Host;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
+using DeskWall.Core.Scheduling;
 using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
@@ -15,19 +16,35 @@ namespace DeskWall.Daemon;
 
 internal static class Program
 {
+    /// <summary>The hidden host window's class name, which is also how a second process finds a
+    /// running daemon: there is no other handle on it (no taskbar entry, no main window).</summary>
+    private const string HostClass = "DeskWallHost";
+
     private static int Main(string[] argv)
     {
-        var cmd = argv.Length == 0 ? "run" : argv[0];
-        var opts = argv.Skip(1).ToList();
+        var args = argv.ToList();
+        // --home is consumed before anything reads Paths.RuntimeDir, which caches its answer for the
+        // life of the process: the budget test and any scratch run depend on winning that race.
+        var home = TakeOption(args, "--home");
+        if (home is not null) Environment.SetEnvironmentVariable("DESKWALL_HOME", Path.GetFullPath(home));
+
+        var cmd = args.Count == 0 ? "run" : args[0];
+        var opts = args.Skip(1).ToList();
         PInvoke.AttachConsole(PInvoke.ATTACH_PARENT_PROCESS);   // WinExe: borrow the caller's console when there is one
         try
         {
             switch (cmd)
             {
+                case "run":
+                    return Run(opts);
                 case "tick":
                     return Tick(opts).GetAwaiter().GetResult();
-                case "host-test":
-                    return HostTest(opts);
+                case "install":
+                    return Install();
+                case "uninstall":
+                    return Uninstall();
+                case "layouts":
+                    return Layouts(opts);
                 case "paths":
                     Console.WriteLine(Paths.RuntimeDir);
                     return 0;
@@ -35,8 +52,14 @@ internal static class Program
                     return Calibrate();
                 case "shortcuts":
                     return Shortcuts(opts).GetAwaiter().GetResult();
+                case "help":
+                case "--help":
+                case "-h":
+                    Usage(Console.Out);
+                    return 0;
                 default:
-                    Console.Error.WriteLine($"deskwall: unknown or not yet implemented command '{cmd}'");
+                    Console.Error.WriteLine($"deskwall: unknown command '{cmd}'");
+                    Usage(Console.Error);
                     return 2;
             }
         }
@@ -47,37 +70,144 @@ internal static class Program
         }
     }
 
-    /// <summary>Temporary manual harness for the host window, waitable timer and tray icon.
-    /// Task 8 replaces it with the real run loop.</summary>
-    private static int HostTest(List<string> opts)
+    private static void Usage(TextWriter w)
     {
-        var rounds = opts.Count > 0 && int.TryParse(opts[0], out var n) ? n : 6;
-        using var win = new HostWindow();
-        using var tray = new TrayIcon(win);
-        using var timer = new WaitableTimer();
-        tray.Command += c =>
+        w.WriteLine("deskwall [--home <dir>] <command>");
+        w.WriteLine("  run [--no-tray]            resident daemon (the default with no command)");
+        w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply]");
+        w.WriteLine("  install                    start at sign-in, and start now");
+        w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
+        w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
+        w.WriteLine("  layouts set <path>         register a layout for this display");
+        w.WriteLine("  paths                      the runtime directory");
+    }
+
+    /// <summary>deskwall run [--no-tray]. One daemon per session: a second one hands the running
+    /// daemon a Manual wake (so `run` doubles as "refresh now" from a script) and exits happy.</summary>
+    private static int Run(List<string> opts)
+    {
+        using var single = new Mutex(initiallyOwned: true, @"Local\DeskWall.Daemon", out var mine);
+        if (!mine)
         {
-            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} tray: {c}");
-            if (c == TrayCommand.TogglePause) tray.Paused = !tray.Paused;
-        };
-        Console.WriteLine($"host-test: tray added={tray.Added}. Change resolution, lock/unlock, click the tray icon, or wait 5 s.");
-        for (var i = 0; i < rounds; i++)
-        {
-            tray.SetTooltip($"DeskWall test {i}");
-            timer.SetDue(DateTimeOffset.UtcNow.AddSeconds(5));
-            foreach (var r in win.WaitAndPump(timer)) Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} wake: {r}");
+            var hwnd = PInvoke.FindWindow(HostClass, null);
+            if (!hwnd.IsNull) PInvoke.PostMessage(hwnd, HostWindow.WM_APP_WAKE, (nuint)(int)WakeKind.Manual, 0);
+            Console.WriteLine("deskwall: already running; asked it to refresh");
+            return 0;
         }
-        Console.WriteLine($"footprint: {Footprint.Current().Short()}");
+        var log = RollingLog.Default();
+        var store = LayoutStore.Default(log.Warn);
+        return new DaemonLoop(log, store, SystemClock.Instance, tray: !opts.Contains("--no-tray")).Run();
+    }
+
+    /// <summary>deskwall install: HKCU Run entry, a restore point for the wallpaper we are about to
+    /// replace, and the daemon started now so the user does not have to sign out to see it work.</summary>
+    private static int Install()
+    {
+        var exe = Environment.ProcessPath ?? throw new InvalidOperationException("cannot determine this executable's path");
+        Startup.Install(exe);
+        WallpaperSetter.RecordRestorePoint();
+        Console.WriteLine($"installed: {Startup.Installed()}");
+        if (!PInvoke.FindWindow(HostClass, null).IsNull)
+        {
+            Console.WriteLine("already running");
+            return 0;
+        }
+        // UseShellExecute, deliberately: with it false the daemon inherits this process's std handles
+        // and holds them open for its whole life, so `deskwall install` from any redirected caller
+        // (a pipe, a test harness, a script capturing output) hangs on a pipe that never closes.
+        var psi = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true };
+        psi.ArgumentList.Add("run");
+        using var p = System.Diagnostics.Process.Start(psi);
+        Console.WriteLine($"started pid {p?.Id}");
         return 0;
     }
 
-    /// <summary>deskwall tick [--layout path] [--force] [--measure] [--no-apply] [--no-shortcuts]</summary>
+    /// <summary>deskwall uninstall: stop the daemon, drop the Run entry, put the old wallpaper back.
+    /// Also removes the slot shortcuts and restores the desktop folder flags (Phase 3).</summary>
+    private static int Uninstall()
+    {
+        var hwnd = PInvoke.FindWindow(HostClass, null);
+        if (!hwnd.IsNull)
+        {
+            PInvoke.PostMessage(hwnd, PInvoke.WM_CLOSE, 0, 0);
+            // Restoring the wallpaper while the daemon is still awake would just get overwritten by
+            // the tick it is in the middle of, so give it a moment to actually go.
+            for (var i = 0; i < 50 && !PInvoke.FindWindow(HostClass, null).IsNull; i++) Thread.Sleep(100);
+            Console.WriteLine(PInvoke.FindWindow(HostClass, null).IsNull ? "stopped the running daemon" : "the running daemon did not stop; restoring anyway");
+        }
+        Startup.Uninstall();
+        try
+        {
+            // Phase 3: drop every slot shortcut we own and put the desktop folder flags back.
+            var removed = new ShortcutManager(Calibration.Load()).RemoveAll();
+            DesktopFlags.Restore();
+            Console.WriteLine($"removed {removed} desktop shortcut(s); desktop flags restored");
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"shortcut cleanup failed: {ex.Message}"); }
+        WallpaperSetter.Restore();
+        Console.WriteLine("uninstalled; previous wallpaper restored");
+        return 0;
+    }
+
+    /// <summary>deskwall layouts list | layouts set &lt;path&gt;.</summary>
+    private static int Layouts(List<string> opts)
+    {
+        var store = LayoutStore.Default(Console.Error.WriteLine);
+        var sub = opts.Count == 0 ? "list" : opts[0];
+        var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
+        switch (sub)
+        {
+            case "set":
+                if (opts.Count < 2) { Console.Error.WriteLine("usage: deskwall layouts set <path>"); return 2; }
+                if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
+                var path = Path.GetFullPath(opts[1]);
+                if (!File.Exists(path)) { Console.Error.WriteLine($"no layout at {path}"); return 3; }
+                LayoutFile.Load(path);   // fail here, with the parse error, rather than silently at the next tick
+                store.Set(monitor.Signature, path);
+                Console.WriteLine($"{monitor.Signature.Key} -> {path}");
+                return 0;
+            case "list":
+                foreach (var (key, file) in store.Entries) Console.WriteLine($"{key} -> {file}");
+                if (store.Entries.Count == 0) Console.WriteLine("(no layouts registered)");
+                if (monitor is not null)
+                {
+                    var res = store.Resolve(monitor.Signature);
+                    Console.WriteLine($"this display: {monitor.Signature.Key}");
+                    Console.WriteLine(res is null ? "  resolves to: nothing"
+                        : $"  resolves to: {res.SourcePath}{(res.Scaled ? $" (scaled from {res.SourceSignature.Key})" : "")}");
+                }
+                return 0;
+            default:
+                Console.Error.WriteLine($"deskwall layouts: unknown subcommand '{sub}'");
+                return 2;
+        }
+    }
+
+    /// <summary>deskwall tick [--layout path] [--force] [--measure] [--no-apply] [--no-shortcuts]. Without --layout it
+    /// resolves the layout exactly as the daemon does, through the store, so a scripted one-shot tick
+    /// and the resident one draw the same thing. --layout still bypasses the store, for scripting.</summary>
     private static async Task<int> Tick(List<string> opts)
     {
-        var layoutPath = OptValue(opts, "--layout") ?? Paths.InRuntime("layout.json");
-        if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return 3; }
-        var layout = LayoutFile.Load(layoutPath);
-        var monitor = Monitors.Enumerate().First(m => m.IsPrimary);
+        var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
+        if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
+        LayoutFile layout;
+        var layoutPath = OptValue(opts, "--layout");
+        if (layoutPath is not null)
+        {
+            if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return 3; }
+            layout = LayoutFile.Load(layoutPath);
+        }
+        else
+        {
+            var res = LayoutStore.Default(Console.Error.WriteLine).Resolve(monitor.Signature);
+            if (res is null)
+            {
+                Console.Error.WriteLine($"no layout for {monitor.Signature.Key}; use: deskwall layouts set <path>");
+                return 3;
+            }
+            if (res.Scaled) Console.WriteLine($"scaled layout {res.SourcePath} from {res.SourceSignature.Key}");
+            layout = res.Layout;
+        }
         var clock = SystemClock.Instance;
         var sources = layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
         var registry = new SourceRegistry();
@@ -112,7 +242,7 @@ internal static class Program
             catch (Exception ex) { registry.Set(snap.Failed(ex.Message)); }
         }
 
-        var resolved = LayoutResolver.Resolve(layout, registry.Tree(), new Rect(0, 0, monitor.Bounds.W, monitor.Bounds.H));
+        var resolved = LayoutResolver.Resolve(layout, registry.Tree());
         var shortcuts = ShortcutPlan.Ordered(resolved.OfType<ResolvedShortcut>().ToList());
         if (shortcuts.Count == 0) { Console.WriteLine("no shortcut components in the layout"); return 0; }
 
@@ -182,5 +312,15 @@ internal static class Program
     {
         var i = opts.IndexOf(name);
         return i >= 0 && i + 1 < opts.Count ? opts[i + 1] : null;
+    }
+
+    /// <summary>Remove "--name value" from anywhere in the argument list and return the value.</summary>
+    private static string? TakeOption(List<string> args, string name)
+    {
+        var i = args.IndexOf(name);
+        if (i < 0 || i + 1 >= args.Count) return null;
+        var value = args[i + 1];
+        args.RemoveRange(i, 2);
+        return value;
     }
 }

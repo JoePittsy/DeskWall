@@ -35,7 +35,7 @@ public class LayoutResolverTests
     [Fact]
     public void Resolves_Text_With_Style()
     {
-        var r = LayoutResolver.Resolve(Layout(), Tree(), new Rect(0, 0, 3440, 1440));
+        var r = LayoutResolver.Resolve(Layout(), Tree());
         var clock = Assert.IsType<ResolvedText>(r.Single(c => c.Id == "clock"));
         Assert.Equal("14:32", clock.Text);
         Assert.Equal("Segoe UI Light", clock.Style.Font);
@@ -47,7 +47,7 @@ public class LayoutResolverTests
     [Fact]
     public void Expands_Repeater_Within_Bounds_And_Assigns_Slots()
     {
-        var r = LayoutResolver.Resolve(Layout(), Tree(), new Rect(0, 0, 3440, 1440));
+        var r = LayoutResolver.Resolve(Layout(), Tree());
         // 92 px tall, 46 px cells: only 2 of 3 drives fit
         var letters = r.OfType<ResolvedText>().Where(t => t.Id.StartsWith("drives[")).ToList();
         Assert.Equal(["C:", "D:"], letters.Select(t => t.Text));
@@ -63,7 +63,7 @@ public class LayoutResolverTests
     [Fact]
     public void Missing_Bindings_Fallback()
     {
-        var r = LayoutResolver.Resolve(Layout(), Tree(), new Rect(0, 0, 3440, 1440));
+        var r = LayoutResolver.Resolve(Layout(), Tree());
         Assert.Equal("", ((ResolvedText)r.Single(c => c.Id == "missing")).Text);
         Assert.DoesNotContain(r, c => c.Id == "nolink");
     }
@@ -82,7 +82,7 @@ public class LayoutResolverTests
           ]
         }
         """);
-        var r = LayoutResolver.Resolve(layout, Tree(), new Rect(0, 0, 3440, 1440));
+        var r = LayoutResolver.Resolve(layout, Tree());
         Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "toomany")).Text);
         Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "unbalanced")).Text);
     }
@@ -98,7 +98,7 @@ public class LayoutResolverTests
           { "type": "text", "id": "a", "rect": [20, 0, 10, 10], "text": "y" }
         ] }
         """);
-        var ex = Assert.Throws<InvalidOperationException>(() => LayoutResolver.Resolve(layout, ValueTree.Empty, new Rect(0, 0, 100, 100)));
+        var ex = Assert.Throws<InvalidOperationException>(() => LayoutResolver.Resolve(layout, ValueTree.Empty));
         Assert.Contains("a", ex.Message);
     }
 }
@@ -134,7 +134,7 @@ public class RepeaterOverflowTests
           ]
         }
         """);
-        var r = LayoutResolver.Resolve(layout, Items(3), new Rect(0, 0, 3440, 1440));
+        var r = LayoutResolver.Resolve(layout, Items(3));
 
         // auto image extent is 150 (100 wide at the 2:3 placeholder aspect), but the name child ends
         // at 170, so the cell is 170: two of three rows fit in 340 px, not three.
@@ -168,7 +168,7 @@ public class RepeaterOverflowTests
           ]
         }
         """);
-        var r = LayoutResolver.Resolve(layout, Items(3), new Rect(0, 0, 3440, 1440));
+        var r = LayoutResolver.Resolve(layout, Items(3));
 
         // declared cell 100, but child "b" ends at 180, so the cell is 180: two of three rows fit in 400 px.
         Assert.Equal(180, r.Single(c => c.Id == "g[1].a").Rect.X);

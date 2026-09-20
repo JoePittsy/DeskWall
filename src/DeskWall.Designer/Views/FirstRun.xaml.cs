@@ -71,7 +71,7 @@ public partial class FirstRun : Window
     {
         var w = _signature.Width; var h = _signature.Height;
         var basePath = BaseCache.Ensure(layout.BaseImage, w, h, layout.BaseFit);
-        var resolved = LayoutResolver.Resolve(layout, ValueTree.Empty, new CoreRect(0, 0, w, h));
+        var resolved = LayoutResolver.Resolve(layout, ValueTree.Empty);
         using var frame = new FrameRenderer(w, h).RenderAll(basePath, resolved);
         var pixels = new byte[w * h * 4];
         frame.CopyTo(pixels);

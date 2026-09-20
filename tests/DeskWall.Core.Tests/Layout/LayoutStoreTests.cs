@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using Xunit;
@@ -73,5 +73,52 @@ public class LayoutStoreTests
         Assert.Null(store.Resolve(sig));   // entry exists but file is gone: treated as absent, not thrown
         store.Remove(sig);
         Assert.Empty(store.Entries);
+    }
+
+    /// <summary>Finding 16: version was parsed and never checked. A layout written by a future build
+    /// must be refused and reported, not half-read into a frame the user cannot explain.</summary>
+    [Fact]
+    public void A_Layout_From_A_Future_Version_Is_Refused_And_Reported()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = new LayoutStore(Path.Combine(dir, "layouts.json"), errors.Add);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        var path = Path.Combine(dir, "v2.json");
+        File.WriteAllText(path, """{ "version": 2, "baseImage": "x.jpg", "sources": [], "components": [] }""");
+        store.Set(sig, path);
+
+        Assert.Null(store.Resolve(sig));                       // exact match, but unreadable
+        Assert.Null(store.Resolve(new DisplaySignature("B", 1920, 1080, 100)));   // and not a scaling candidate either
+        Assert.Equal(2, errors.Count);
+        Assert.All(errors, e => Assert.Contains("is version 2", e));
+        Assert.All(errors, e => Assert.Contains($"up to {LayoutStore.MaxVersion}", e));
+    }
+
+    [Fact]
+    public void A_Version_1_Layout_Is_Still_Accepted_And_Reports_Nothing()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = new LayoutStore(Path.Combine(dir, "layouts.json"), errors.Add);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteLayout(dir, "ok.json", 3440));
+        Assert.NotNull(store.Resolve(sig));
+        Assert.Empty(errors);
+    }
+
+    /// <summary>The daemon holds one store for its whole life; `deskwall layouts set` writes the file
+    /// from a different process, so the running daemon only sees it after Reload.</summary>
+    [Fact]
+    public void Reload_Picks_Up_An_Entry_Written_By_Another_Process()
+    {
+        var (store, dir) = Fresh();
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        var other = new LayoutStore(Path.Combine(dir, "layouts.json"));
+        other.Set(sig, WriteLayout(dir, "late.json", 3440));
+
+        Assert.Null(store.Resolve(sig));
+        store.Reload();
+        Assert.NotNull(store.Resolve(sig));
     }
 }

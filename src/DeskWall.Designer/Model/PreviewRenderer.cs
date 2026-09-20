@@ -146,7 +146,7 @@ public sealed class PreviewRenderer : IDisposable
 
         if (layout is not null)
         {
-            try { resolved = LayoutResolver.Resolve(layout, _valueTree(), canvas); }
+            try { resolved = LayoutResolver.Resolve(layout, _valueTree()); }
             catch (Exception ex) { error = Describe("resolve", ex); }
         }
 

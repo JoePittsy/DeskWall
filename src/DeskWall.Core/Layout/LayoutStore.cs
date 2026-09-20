@@ -10,33 +10,60 @@ public sealed record LayoutResolution(LayoutFile Layout, string SourcePath, Disp
 /// Layout paths are absolute or relative to the runtime dir.</summary>
 public sealed class LayoutStore
 {
+    /// <summary>The only layout schema this build understands. Spec 5's migration chain starts here:
+    /// a file from a future version is refused rather than half-read (finding 16).</summary>
+    public const int MaxVersion = 1;
+
     private readonly string _storePath;
     private readonly string _baseDir;
+    private readonly Action<string>? _onError;
     private Dictionary<string, string> _entries = new(StringComparer.OrdinalIgnoreCase);
 
-    public LayoutStore(string storePath)
+    /// <param name="onError">Where a rejected or unreadable layout file is reported. The daemon
+    /// passes RollingLog.Error; a caller with no log passes null and gets silence plus a null
+    /// resolution.</param>
+    public LayoutStore(string storePath, Action<string>? onError = null)
     {
         _storePath = Path.GetFullPath(storePath);
         _baseDir = Path.GetDirectoryName(_storePath)!;
+        _onError = onError;
         Load();
     }
 
-    public static LayoutStore Default() => new(Paths.InRuntime("layouts.json"));
+    public static LayoutStore Default(Action<string>? onError = null) => new(Paths.InRuntime("layouts.json"), onError);
 
     public IReadOnlyDictionary<string, string> Entries => _entries.ToDictionary(kv => kv.Key, kv => Resolve(kv.Value), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Every file the daemon must watch: the store itself and all layout files.</summary>
     public IReadOnlyList<string> WatchPaths => [_storePath, .. _entries.Values.Select(Resolve)];
 
+    /// <summary>Re-read layouts.json from disk. The daemon holds one store for its whole life, so an
+    /// entry added by `deskwall layouts set` (a second process) is only visible after this.</summary>
+    public void Reload() => Load();
+
     public void Set(DisplaySignature sig, string layoutPath) { _entries[sig.Key] = Path.GetFullPath(layoutPath); Save(); }
 
     public void Remove(DisplaySignature sig) { if (_entries.Remove(sig.Key)) Save(); }
 
-    /// <summary>Exact match, else the closest by Similarity (ties: most recently written file), scaled to sig. Null when the store is empty.</summary>
+    /// <summary>Exact match, else the closest by Similarity (ties: most recently written file), scaled
+    /// to sig. Null when the store is empty or nothing in it can be read. A layout whose version this
+    /// build does not understand is reported through onError and skipped, exactly as a missing file is:
+    /// the daemon then keeps the wallpaper it already applied instead of drawing a half-understood one.</summary>
     public LayoutResolution? Resolve(DisplaySignature sig)
     {
-        if (_entries.TryGetValue(sig.Key, out var exact) && File.Exists(Resolve(exact)))
-            return new LayoutResolution(LayoutFile.Load(Resolve(exact)), Resolve(exact), sig, Scaled: false);
+        // One parse and, more importantly, one complaint per file per call: the exact-match branch and
+        // the closest-match loop both look at the same entry.
+        var loaded = new Dictionary<string, LayoutFile?>(StringComparer.OrdinalIgnoreCase);
+        LayoutFile? Load(string p)
+        {
+            if (loaded.TryGetValue(p, out var cached)) return cached;
+            var file = TryLoad(p);
+            loaded[p] = file;
+            return file;
+        }
+
+        if (_entries.TryGetValue(sig.Key, out var exact) && File.Exists(Resolve(exact)) && Load(Resolve(exact)) is { } hit)
+            return new LayoutResolution(hit, Resolve(exact), sig, Scaled: false);
 
         LayoutResolution? best = null; var bestScore = -1; DateTime bestWrite = DateTime.MinValue;
         foreach (var (key, rel) in _entries)
@@ -49,11 +76,29 @@ public sealed class LayoutStore
             var write = File.GetLastWriteTimeUtc(path);
             if (score > bestScore || (score == bestScore && write > bestWrite))
             {
+                if (Load(path) is not { } file) continue;
                 bestScore = score; bestWrite = write;
-                best = new LayoutResolution(LayoutScaler.Scale(LayoutFile.Load(path), candidate, sig), path, candidate, Scaled: true);
+                best = new LayoutResolution(LayoutScaler.Scale(file, candidate, sig), path, candidate, Scaled: true);
             }
         }
         return best;
+    }
+
+    private LayoutFile? TryLoad(string path)
+    {
+        LayoutFile file;
+        try { file = LayoutFile.Load(path); }
+        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
+        {
+            _onError?.Invoke($"layout {path} cannot be read: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+        if (file.Version > MaxVersion)
+        {
+            _onError?.Invoke($"layout {path} is version {file.Version}; this build understands up to {MaxVersion}");
+            return null;
+        }
+        return file;
     }
 
     private string Resolve(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(_baseDir, p));

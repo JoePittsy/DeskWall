@@ -8,10 +8,14 @@ namespace DeskWall.Core.Resolve;
 public static class LayoutResolver
 {
     /// <summary>Expand a layout against the current value tree into concrete components with
-    /// absolute rects and content keys. <paramref name="canvas"/> is the monitor's canvas.
+    /// absolute rects and content keys.
     /// <paramref name="remote"/>, when given, maps a remote image URL to a local file (or null on a
-    /// miss) for the repeater's "auto" cell-height measurement; TickRunner passes images.Lookup.</summary>
-    public static IReadOnlyList<Resolved> Resolve(LayoutFile layout, RecordValue tree, Rect canvas, Func<string, string?>? remote = null)
+    /// miss) for the repeater's "auto" cell-height measurement; TickRunner passes images.Lookup.
+    /// <para>Finding 16: there is deliberately no canvas parameter. Layout rects are absolute, in the
+    /// layout's own coordinate space; fitting them to a different display is LayoutScaler's job and
+    /// happens before resolution. The old canvas argument was never read, and clipping to it would
+    /// have silently dropped a component the designer can still see.</para></summary>
+    public static IReadOnlyList<Resolved> Resolve(LayoutFile layout, RecordValue tree, Func<string, string?>? remote = null)
     {
         var result = new List<Resolved>();
         foreach (var def in layout.Components) Emit(def, tree, def.Rect, def.Id, 0, result, remote);
