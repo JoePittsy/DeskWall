@@ -3,11 +3,13 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>deskwall</AssemblyName>
     <RootNamespace>DeskWall.Daemon</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
     <PublishAot>true</PublishAot>
     <OptimizationPreference>Size</OptimizationPreference>
-    <StackTraceSupport>false</StackTraceSupport>
-    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <StackTraceSupport>true</StackTraceSupport>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>deskwall.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.*" PrivateAssets="all" />

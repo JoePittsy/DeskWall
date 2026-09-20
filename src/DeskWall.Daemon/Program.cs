@@ -1,5 +1,7 @@
 using DeskWall.Core;
+using DeskWall.Core.Diagnostics;
 using DeskWall.Core.Display;
+using DeskWall.Daemon.Host;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Shortcuts;
@@ -23,6 +25,8 @@ internal static class Program
             {
                 case "tick":
                     return Tick(opts).GetAwaiter().GetResult();
+                case "host-test":
+                    return HostTest(opts);
                 case "paths":
                     Console.WriteLine(Paths.RuntimeDir);
                     return 0;
@@ -38,6 +42,30 @@ internal static class Program
             Console.Error.WriteLine($"deskwall {cmd}: {ex.GetType().Name}: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>Temporary manual harness for the host window, waitable timer and tray icon.
+    /// Task 8 replaces it with the real run loop.</summary>
+    private static int HostTest(List<string> opts)
+    {
+        var rounds = opts.Count > 0 && int.TryParse(opts[0], out var n) ? n : 6;
+        using var win = new HostWindow();
+        using var tray = new TrayIcon(win);
+        using var timer = new WaitableTimer();
+        tray.Command += c =>
+        {
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} tray: {c}");
+            if (c == TrayCommand.TogglePause) tray.Paused = !tray.Paused;
+        };
+        Console.WriteLine($"host-test: tray added={tray.Added}. Change resolution, lock/unlock, click the tray icon, or wait 5 s.");
+        for (var i = 0; i < rounds; i++)
+        {
+            tray.SetTooltip($"DeskWall test {i}");
+            timer.SetDue(DateTimeOffset.UtcNow.AddSeconds(5));
+            foreach (var r in win.WaitAndPump(timer)) Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff} wake: {r}");
+        }
+        Console.WriteLine($"footprint: {Footprint.Current().Short()}");
+        return 0;
     }
 
     /// <summary>deskwall tick [--layout path] [--force] [--measure] [--no-apply]</summary>
