@@ -22,7 +22,8 @@ public sealed class FrameRenderer(int width, int height)
 
     /// <summary>
     /// Incremental render: start from the previous frame, repaint the base under every dirty rect
-    /// (changed components plus components that vanished since the previous frame), then redraw in
+    /// (changed components, their previous rects, plus components that vanished since the previous
+    /// frame), then redraw in
     /// z-order every component that intersects a dirty rect. Pixels outside the dirty rects are the
     /// previous frame's, untouched. <paramref name="previous"/> is modified in place and returned;
     /// the caller owns it either way.
@@ -33,6 +34,7 @@ public sealed class FrameRenderer(int width, int height)
         if (previous.Width != width || previous.Height != height) throw new InvalidOperationException("previous frame size mismatch");
         var dirty = new List<Rect>();
         foreach (var c in all) if (changedIds.Contains(c.Id)) dirty.Add(c.Rect);
+        foreach (var id in changedIds) if (previousRects.TryGetValue(id, out var pr)) dirty.Add(pr);
         var liveIds = all.Select(c => c.Id).ToHashSet();
         foreach (var (id, rect) in previousRects) if (!liveIds.Contains(id)) dirty.Add(rect);
         if (dirty.Count == 0) return previous;

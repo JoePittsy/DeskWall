@@ -147,4 +147,25 @@ public class FrameRendererTests
         var same = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect>());
         Assert.Same(first, same);
     }
+
+    /// <summary>
+    /// Finding 2. A component that moves keeps its identity, so it is in changedIds but its old
+    /// rect was never added to the dirty set: the previous pixels stayed on screen until the next
+    /// forced tick.
+    /// </summary>
+    [Fact]
+    public void RenderIncremental_Restores_Base_Where_A_Component_Moved_From()
+    {
+        var raw = BlueBase("base5.png");
+        var r = new FrameRenderer(40, 20);
+        Resolved atLeft = new ResolvedBar("b", new Rect(0, 0, 10, 20), 1, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
+        using var first = r.RenderAll(raw, [atLeft]);
+        Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), first.GetPixel(5, 10));
+
+        Resolved moved = new ResolvedBar("b", new Rect(20, 0, 10, 20), 1, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
+        using var second = r.RenderIncremental(first, raw, [moved], new HashSet<string> { "b" },
+            new Dictionary<string, Rect> { ["b"] = atLeft.PaintBounds });
+        Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), second.GetPixel(5, 10));    // old location back to the base
+        Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), second.GetPixel(25, 10));   // new location painted
+    }
 }
