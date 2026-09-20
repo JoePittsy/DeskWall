@@ -38,9 +38,9 @@ src/DeskWall.Core/NativeMethods.txt         CsWin32 surface
 src/DeskWall.Core/NativeMethods.json        { "allowMarshaling": false }
 src/DeskWall.Core/Values/Value.cs           Value hierarchy (Task 2)
 src/DeskWall.Core/Values/ValueTree.cs       root record helpers (Task 2)
-src/DeskWall.Core/Binding/Binding.cs        Binding, PathSegment (Task 3)
-src/DeskWall.Core/Binding/BindingParser.cs  (Task 3)
-src/DeskWall.Core/Binding/BindingResolver.cs (Task 3)
+src/DeskWall.Core/Bindings/Binding.cs        Binding, PathSegment (Task 3)
+src/DeskWall.Core/Bindings/BindingParser.cs  (Task 3)
+src/DeskWall.Core/Bindings/BindingResolver.cs (Task 3)
 src/DeskWall.Core/Layout/PropertyValue.cs   literal-or-binding + JSON converter (Task 4)
 src/DeskWall.Core/Layout/ComponentDef.cs    polymorphic defs (Task 4)
 src/DeskWall.Core/Layout/SourceDef.cs       (Task 4)
@@ -64,6 +64,7 @@ src/DeskWall.Core/Wallpaper/WallpaperSetter.cs (Task 9)
 src/DeskWall.Core/Tick/TickRunner.cs        (Task 10)
 src/DeskWall.Core/Tick/TickTimings.cs       (Task 10)
 src/DeskWall.Core/Paths.cs                  runtime dir (Task 0)
+src/DeskWall.Core/Com.cs                    per-thread COM init (Task 2)
 src/DeskWall.Daemon/DeskWall.Daemon.csproj  WinExe, PublishAot
 src/DeskWall.Daemon/Program.cs              subcommand dispatch (Task 0, Task 10)
 tests/DeskWall.Core.Tests/DeskWall.Core.Tests.csproj
@@ -577,7 +578,7 @@ Everything the three lanes build against. Frozen once merged; changes go through
 integrator.
 
 **Files:**
-- Create: `src/DeskWall.Core/Values/Value.cs`, `src/DeskWall.Core/Values/ValueTree.cs`,
+- Create: `src/DeskWall.Core/Values/Value.cs`, `src/DeskWall.Core/Values/ValueTree.cs`, `src/DeskWall.Core/Com.cs`,
   `src/DeskWall.Core/Sources/ISource.cs`, `src/DeskWall.Core/Sources/SourceSnapshot.cs`,
   `src/DeskWall.Core/Resolve/Resolved.cs`, `src/DeskWall.Core/Render/Color.cs`,
   `src/DeskWall.Core/Render/TextStyle.cs`, `src/DeskWall.Core/Geometry.cs`
@@ -647,6 +648,27 @@ Run: `dotnet test --filter "FullyQualifiedName~ValueTests|FullyQualifiedName~Col
 Expected: build errors, types missing.
 
 - [ ] **Step 3: Implement the seam**
+
+`src/DeskWall.Core/Com.cs` (needs `CoInitializeEx` and `COINIT` in `NativeMethods.txt`):
+
+```csharp
+using Windows.Win32;
+using Windows.Win32.System.Com;
+
+namespace DeskWall.Core;
+
+/// <summary>Per-thread COM init, idempotent. Every lane that touches a COM interface calls this first.</summary>
+public static class Com
+{
+    [ThreadStatic] private static bool _done;
+    public static void EnsureInitialized()
+    {
+        if (_done) return;
+        PInvoke.CoInitializeEx(null, COINIT.COINIT_APARTMENTTHREADED);   // S_FALSE if already initialised; ignored
+        _done = true;
+    }
+}
+```
 
 `src/DeskWall.Core/Geometry.cs`:
 
@@ -927,9 +949,9 @@ Fan-out starts here. Create the three lane worktrees from `v1`.
 ### Task 3: Binding parser and resolver (lane `v1/p1-binding`)
 
 **Files:**
-- Create: `src/DeskWall.Core/Binding/Binding.cs`, `src/DeskWall.Core/Binding/BindingParser.cs`,
-  `src/DeskWall.Core/Binding/BindingResolver.cs`
-- Test: `tests/DeskWall.Core.Tests/Binding/BindingParserTests.cs`, `tests/DeskWall.Core.Tests/Binding/BindingResolverTests.cs`
+- Create: `src/DeskWall.Core/Bindings/Binding.cs`, `src/DeskWall.Core/Bindings/BindingParser.cs`,
+  `src/DeskWall.Core/Bindings/BindingResolver.cs`
+- Test: `tests/DeskWall.Core.Tests/Bindings/BindingParserTests.cs`, `tests/DeskWall.Core.Tests/Bindings/BindingResolverTests.cs`
 
 **Interfaces:**
 - Consumes: `Value` hierarchy, `RecordValue.Get`, `ListValue.ByKey`, `Value.ToText` (Task 2).
@@ -947,7 +969,7 @@ otherwise a key.
 - [ ] **Step 1: Failing parser tests**
 
 ```csharp
-using DeskWall.Core.Binding;
+using DeskWall.Core.Bindings;
 using Xunit;
 
 public class BindingParserTests
@@ -994,7 +1016,7 @@ public class BindingParserTests
 - [ ] **Step 2: Failing resolver tests**
 
 ```csharp
-using DeskWall.Core.Binding;
+using DeskWall.Core.Bindings;
 using DeskWall.Core.Values;
 using Xunit;
 
@@ -1035,10 +1057,10 @@ Run: `dotnet test --filter FullyQualifiedName~Binding`
 
 - [ ] **Step 4: Implement**
 
-`src/DeskWall.Core/Binding/Binding.cs`:
+`src/DeskWall.Core/Bindings/Binding.cs`:
 
 ```csharp
-namespace DeskWall.Core.Binding;
+namespace DeskWall.Core.Bindings;
 
 public abstract record PathSegment;
 public sealed record NameSegment(string Name) : PathSegment { public override string ToString() => Name; }
@@ -1064,10 +1086,10 @@ public sealed record Binding(IReadOnlyList<PathSegment> Path, string? Format)
 }
 ```
 
-`src/DeskWall.Core/Binding/BindingParser.cs`:
+`src/DeskWall.Core/Bindings/BindingParser.cs`:
 
 ```csharp
-namespace DeskWall.Core.Binding;
+namespace DeskWall.Core.Bindings;
 
 public static class BindingParser
 {
@@ -1122,12 +1144,12 @@ public static class BindingParser
 }
 ```
 
-`src/DeskWall.Core/Binding/BindingResolver.cs`:
+`src/DeskWall.Core/Bindings/BindingResolver.cs`:
 
 ```csharp
 using DeskWall.Core.Values;
 
-namespace DeskWall.Core.Binding;
+namespace DeskWall.Core.Bindings;
 
 public static class BindingResolver
 {
@@ -1305,7 +1327,7 @@ Run: `dotnet test --filter FullyQualifiedName~LayoutFile`
 ```csharp
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DeskWall.Core.Binding;
+using DeskWall.Core.Bindings;
 
 namespace DeskWall.Core.Layout;
 
@@ -1315,13 +1337,13 @@ namespace DeskWall.Core.Layout;
 public sealed class PropertyValue
 {
     public string? LiteralText { get; }
-    public Binding.Binding? Binding { get; }
+    public Binding? Binding { get; }
 
-    private PropertyValue(string? literal, Binding.Binding? binding) { LiteralText = literal; Binding = binding; }
+    private PropertyValue(string? literal, Binding? binding) { LiteralText = literal; Binding = binding; }
 
     public static PropertyValue Literal(string s) => new(s, null);
     public static PropertyValue Literal(double d) => new(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture), null);
-    public static PropertyValue Bound(Binding.Binding b) => new(null, b);
+    public static PropertyValue Bound(Binding b) => new(null, b);
     public bool IsBound => Binding is not null;
     public override string ToString() => IsBound ? $"{{bind {Binding}}}" : LiteralText ?? "";
 }
@@ -1345,7 +1367,7 @@ public sealed class PropertyValueConverter : JsonConverter<PropertyValue>
                     else r.Skip();
                 }
                 if (bind is null) throw new JsonException("property object needs \"bind\"");
-                return PropertyValue.Bound(Binding.Binding.Parse(bind));
+                return PropertyValue.Bound(Binding.Parse(bind));
             default: throw new JsonException($"bad property token {r.TokenType}");
         }
     }
@@ -1911,18 +1933,6 @@ public static unsafe class Monitors
         return true;
     }
 }
-
-/// <summary>Per-thread COM init, idempotent.</summary>
-public static class Com
-{
-    [ThreadStatic] private static bool _done;
-    public static void EnsureInitialized()
-    {
-        if (_done) return;
-        PInvoke.CoInitializeEx(null, COINIT.COINIT_APARTMENTTHREADED);   // S_FALSE if already; ignore
-        _done = true;
-    }
-}
 ```
 
 Adjust names to what CsWin32 emits (the spike results file lists the `IDesktopWallpaper`
@@ -2324,7 +2334,7 @@ git commit -m "Render: Surface over software Direct2D/WIC, raw base cache, Frame
 - Test: `tests/DeskWall.Core.Tests/Wallpaper/WallpaperSetterTests.cs`
 
 **Interfaces:**
-- Consumes: `Com.EnsureInitialized` (Task 7), `MonitorInfo.WallpaperMonitorId` (Task 7).
+- Consumes: `Com.EnsureInitialized` (Task 2), `MonitorInfo.WallpaperMonitorId` (Task 7).
 - Produces:
   - `WallpaperSetter.Set(string monitorId, string imagePath)`: `IDesktopWallpaper::SetWallpaper(monitorId, path)` after `SetPosition(DWPOS_FILL)`.
   - `WallpaperSetter.Get(string monitorId) : string?`: current path.
@@ -2507,7 +2517,7 @@ public class LayoutResolverTests
           "template": [
             { "type": "text", "id": "letter", "rect": [0, 0, 60, 24], "text": { "bind": "letter | \"{0}:\"" } },
             { "type": "bar", "id": "bar", "rect": [0, 26, 172, 6], "fraction": { "bind": "usedFraction" }, "threshold": 0.85, "thresholdFill": "#FFD13438" },
-            { "type": "shortcut", "id": "go", "rect": [0, 0, 172, 46], "slot": 10, "target": { "bind": "letter | \"explorer.exe {0}:\\\\\"" } }
+            { "type": "shortcut", "id": "go", "rect": [0, 0, 172, 46], "slot": 10, "target": { "bind": "letter | \"explorer.exe {0}:\\\"" } }
           ] },
         { "type": "text", "id": "missing", "rect": [0, 0, 10, 10], "text": { "bind": "nope.value" } },
         { "type": "shortcut", "id": "nolink", "rect": [0, 0, 10, 10], "target": { "bind": "nope.value" } }
@@ -2600,7 +2610,7 @@ public static class ContentKey
 
 ```csharp
 using System.Globalization;
-using DeskWall.Core.Binding;
+using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Values;
 
@@ -2644,7 +2654,7 @@ public static class PropertyReader
 `src/DeskWall.Core/Resolve/LayoutResolver.cs`:
 
 ```csharp
-using DeskWall.Core.Binding;
+using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Values;
@@ -2991,6 +3001,7 @@ package reference and a `NativeMethods.json` identical to Core's):
 ```
 AttachConsole
 FreeConsole
+ATTACH_PARENT_PROCESS
 ```
 
 `src/DeskWall.Daemon/Program.cs`:
@@ -3171,11 +3182,10 @@ public void RenderIncremental_Restores_Base_Where_A_Component_Vanished()
 }
 ```
 
-Add to `TickRunnerTests`, at the end of the existing test:
+Add to `TickRunnerTests`, at the end of the existing test (no timing assertions: a 320x180 canvas is too small for wall-clock differences to be stable):
 
 ```csharp
-Assert.Equal(1, t3.Redrawn);   // already asserted; now also assert the frame stage was cheaper than a full render
-Assert.True(t3.DrawMs <= t1.DrawMs);
+Assert.Equal(1, t3.Redrawn);   // incremental path: only the clock was redrawn (RenderIncremental sets Redrawn = changed ids)
 ```
 
 - [ ] **Step 2: Run, expect compile failure**
@@ -3291,4 +3301,4 @@ Phase 1 exit criteria, all ticked before Phase 2 through 4 plans are written:
 - Spec 6 pipeline: steps 1 to 6 and 8 across Tasks 8 to 11; step 7 is Phase 3.
 - Type names: `Rect`, `Fit`, `Axis`, `Align` in `DeskWall.Core`; `Color`, `TextStyle`,
   `TextEffect` in `DeskWall.Core.Render`; `Binding` type sits in namespace
-  `DeskWall.Core.Binding`, which is why `PropertyValue` writes `Binding.Binding`.
+  `DeskWall.Core.Binding`, which is why `PropertyValue` writes `Binding`.
