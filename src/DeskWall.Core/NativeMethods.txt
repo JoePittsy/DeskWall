@@ -119,3 +119,6 @@ ROP_CODE
 DIB_USAGE
 Shell
 IShellDispatch
+SHChangeNotify
+SHCNE_ID
+SHCNF_FLAGS
