@@ -58,13 +58,15 @@ a component to its `stderr`.
 ## Using a layout
 
 ```powershell
-deskwall layouts set layouts\steam-recent.json    # register for the current display (Phase 2 command)
-deskwall tick --force --measure                   # render once
-deskwall shortcuts                                # verify icon placement (Phase 3 command)
+deskwall layouts set layouts\steam-recent.json    # register for the current display
+deskwall tick --force --measure                   # render once, using whatever is registered
+deskwall shortcuts                                # read-only: planned vs actual desktop-icon positions
 ```
 
-Until the daemon (`deskwall run`) exists, `deskwall tick --layout layouts\clock-disks.json --force`
-renders a file directly.
+`deskwall tick --layout layouts\clock-disks.json --force` renders a file directly, bypassing the
+layout store entirely -- useful for trying a file out before registering it, or in a script.
+Add `--no-apply` to render without touching the wallpaper, and `--no-shortcuts` to also leave the
+desktop icons alone (both are safe against a scratch `--home`; without them a tick is a real tick).
 
 ## Base image
 
