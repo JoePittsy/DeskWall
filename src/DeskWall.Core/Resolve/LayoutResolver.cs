@@ -8,18 +8,20 @@ namespace DeskWall.Core.Resolve;
 public static class LayoutResolver
 {
     /// <summary>Expand a layout against the current value tree into concrete components with
-    /// absolute rects and content keys. <paramref name="canvas"/> is the monitor's canvas.</summary>
-    public static IReadOnlyList<Resolved> Resolve(LayoutFile layout, RecordValue tree, Rect canvas)
+    /// absolute rects and content keys. <paramref name="canvas"/> is the monitor's canvas.
+    /// <paramref name="remote"/>, when given, maps a remote image URL to a local file (or null on a
+    /// miss) for the repeater's "auto" cell-height measurement; TickRunner passes images.Lookup.</summary>
+    public static IReadOnlyList<Resolved> Resolve(LayoutFile layout, RecordValue tree, Rect canvas, Func<string, string?>? remote = null)
     {
         var result = new List<Resolved>();
-        foreach (var def in layout.Components) Emit(def, tree, def.Rect, def.Id, 0, result);
+        foreach (var def in layout.Components) Emit(def, tree, def.Rect, def.Id, 0, result, remote);
         for (var i = 0; i < result.Count; i++) result[i] = result[i] with { ContentKey = ContentKey.Of(result[i]) };
         return result;
     }
 
     /// <param name="scope">record bindings resolve against (the tree, or a repeater item)</param>
     /// <param name="rect">absolute rect for this instance</param>
-    private static void Emit(ComponentDef def, RecordValue scope, Rect rect, string id, int slotOffset, List<Resolved> result)
+    private static void Emit(ComponentDef def, RecordValue scope, Rect rect, string id, int slotOffset, List<Resolved> result, Func<string, string?>? remote)
     {
         switch (def)
         {
@@ -68,14 +70,14 @@ public static class LayoutResolver
                 for (var idx = 0; idx < list.Items.Count; idx++)
                 {
                     var item = list.Items[idx];
-                    var cell = CellExtent(r, item, out var imageExtent);
+                    var cell = CellExtent(r, item, out var imageExtent, remote);
                     if (cursor + cell > limit) break;   // never overflow the block
                     var origin = vertical ? rect.Offset(0, cursor) : rect.Offset(cursor, 0);
                     foreach (var child in r.Template)
                     {
                         var childRect = child.Rect.Offset(origin.X, origin.Y);
                         if (child is ImageDef && IsAuto(r.CellHeight)) childRect = vertical ? childRect with { H = imageExtent } : childRect with { W = imageExtent };
-                        Emit(child, item, ClampToCell(childRect, origin, cell, rect, vertical), $"{id}[{idx}].{child.Id}", slotOffset + idx, result);
+                        Emit(child, item, ClampToCell(childRect, origin, cell, rect, vertical), $"{id}[{idx}].{child.Id}", slotOffset + idx, result, remote);
                     }
                     cursor += cell + r.Gap;
                 }
@@ -93,22 +95,25 @@ public static class LayoutResolver
     /// </summary>
     /// <param name="imageExtent">the auto-sized extent for the first image child alone, so that
     /// widening the cell to fit a sibling does not stretch the cover out of its aspect ratio.</param>
-    private static int CellExtent(RepeaterDef r, RecordValue item, out int imageExtent)
+    private static int CellExtent(RepeaterDef r, RecordValue item, out int imageExtent, Func<string, string?>? remote)
     {
         var vertical = r.Axis == Axis.Vertical;
-        imageExtent = AutoImageExtent(r, item, vertical);
+        imageExtent = AutoImageExtent(r, item, vertical, remote);
         var declared = IsAuto(r.CellHeight) ? imageExtent : (int)Math.Round(PropertyReader.Number(r.CellHeight, item) ?? 0);
         var children = r.Template.Count == 0 ? 0 : r.Template.Max(c => vertical ? c.Rect.Bottom : c.Rect.Right);
         return Math.Max(Math.Max(declared, children), 0);
     }
 
     /// <summary>The first image child's own extent along the axis, from its aspect ratio. Zero when
-    /// the template has no image child.</summary>
-    private static int AutoImageExtent(RepeaterDef r, RecordValue item, bool vertical)
+    /// the template has no image child. A remote URL is resolved through <paramref name="remote"/>
+    /// (the image cache's Lookup) rather than File.Exists; a cache miss falls back to the same 2:3
+    /// placeholder as a missing local file, and the landing wake re-resolves with the real aspect.</summary>
+    private static int AutoImageExtent(RepeaterDef r, RecordValue item, bool vertical, Func<string, string?>? remote)
     {
         var img = r.Template.OfType<ImageDef>().FirstOrDefault();
         if (img is null) return 0;
         var path = PropertyReader.Text(img.Source, item);
+        if (path is not null && RemoteImageCache.IsRemote(path)) path = remote?.Invoke(path);
         if (path is null || !File.Exists(path))
             return vertical ? (int)Math.Round(img.Rect.W * 1.5) : (int)Math.Round(img.Rect.H / 1.5);   // 2:3 placeholder, as the POC did
         using var s = Surface.Load(path);

@@ -3,9 +3,10 @@ using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
-/// <summary>Settings: path (required; %ENV% expanded); parse = json | text (default by extension: .json, else text);
-/// every (default 30 s: the cheap re-check of mtime; the daemon also wakes on the file watcher in Phase 2 style, Task 8);
-/// unixTimeFields as for http. Publishes: json | text, plus modifiedAt (TimeValue), size (NumberValue), exists (BoolValue).
+/// <summary>Settings: path (required; %ENV% expanded); parse = json | text | rss (default by extension: .json,
+/// .xml/.rss/.atom => rss, else text); every (default 30 s: the cheap re-check of mtime; the daemon also
+/// wakes on the file watcher in Phase 2 style, Task 8); unixTimeFields as for http. Publishes: json | text |
+/// (for rss) title/link/items, plus modifiedAt (TimeValue), size (NumberValue), exists (BoolValue).
 /// NextDue returns now when the file's mtime changed since the last refresh, so the tick picks a change up on any wake.</summary>
 #pragma warning disable CS9113 // clock is kept for parity with SourceFactory.Create(def, clock) / FromDef; this source derives due-ness from file mtime, not the clock, until Phase 2 Task 8 wires the file watcher.
 public sealed class FileSource(string name, TimeSpan every, string path, string? parse, IReadOnlySet<string> unixTimeFields, IClock clock) : ISource
@@ -43,10 +44,13 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
         var info = new FileInfo(Path);
         _seenMtime = info.LastWriteTimeUtc;
         var text = File.ReadAllText(Path);
-        var mode = parse ?? (info.Extension.ToLowerInvariant() switch { ".json" => "json", _ => "text" });
+        var mode = parse ?? (info.Extension.ToLowerInvariant() switch { ".json" => "json", ".xml" or ".rss" or ".atom" => "rss", _ => "text" });
         switch (mode)
         {
             case "json": d["json"] = JsonValues.Parse(text, unixTimeFields); break;
+            case "rss":
+                foreach (var (k, v) in RssSource.ParseFeed(text, 50).Fields) d[k] = v;
+                break;
             default: d["text"] = new TextValue(text); break;
         }
         d["exists"] = new BoolValue(true);

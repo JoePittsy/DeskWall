@@ -18,7 +18,8 @@ public sealed class TickRunner(
     MonitorInfo monitor,
     string? statePath = null,
     string? outPath = null,
-    string? framePath = null)
+    string? framePath = null,
+    RemoteImageCache? images = null)
 {
     private readonly string _statePath = statePath ?? Paths.InRuntime("frame-state.json");
     private readonly string _outPath = outPath ?? Paths.InRuntime(layout.Encode == "png" ? "deskwall.png" : "deskwall.jpg");
@@ -47,7 +48,7 @@ public sealed class TickRunner(
 
         // 2. resolve + diff
         var canvas = new Rect(0, 0, monitor.Bounds.W, monitor.Bounds.H);
-        var resolved = LayoutResolver.Resolve(layout, registry.Tree(), canvas);
+        var resolved = MapRemoteImages(LayoutResolver.Resolve(layout, registry.Tree(), canvas, images is null ? null : images.Lookup));
         LastShortcuts = resolved.OfType<ResolvedShortcut>().ToList();
         var state = FrameState.Load(_statePath);
         var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey).ToList();
@@ -113,5 +114,24 @@ public sealed class TickRunner(
         t.TotalMs = sw.ElapsedMilliseconds;
         t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
         return t;
+    }
+
+    /// <summary>Replace every ResolvedImage whose Path is a remote URL with the cache's local file
+    /// (or "" on a miss, so FrameRenderer draws the missing-image plate until the download lands).</summary>
+    private IReadOnlyList<Resolved> MapRemoteImages(IReadOnlyList<Resolved> all)
+    {
+        if (images is null) return all;
+        var outList = new List<Resolved>(all.Count);
+        foreach (var c in all)
+        {
+            if (c is ResolvedImage img && RemoteImageCache.IsRemote(img.Path))
+            {
+                var local = images.Lookup(img.Path) ?? "";
+                var mapped = img with { Path = local };
+                outList.Add(mapped with { ContentKey = ContentKey.Of(mapped) });
+            }
+            else outList.Add(c);
+        }
+        return outList;
     }
 }
