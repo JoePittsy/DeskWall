@@ -1,2 +1,11 @@
 CoInitializeEx
 COINIT
+EnumDisplayMonitors
+GetMonitorInfo
+MONITORINFOEXW
+GetDpiForMonitor
+MONITOR_DPI_TYPE
+IDesktopWallpaper
+DesktopWallpaper
+CoCreateInstance
+CoTaskMemFree
