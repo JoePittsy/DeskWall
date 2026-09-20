@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -125,11 +125,21 @@ public partial class PropertiesPanel : UserControl
         foreach (var (name, label) in _previewLabels)
         {
             var prop = PropertySchema.For(f.Def).FirstOrDefault(p => p.Name == name);
-            if (prop?.Get(f.Def) is { IsBound: true } value) label.Text = Preview(value.Binding!, tree);
+            if (prop?.Get(f.Def) is { Binding: { } binding }) label.Text = Preview(binding, tree);
         }
     }
 
     private static string Preview(Binding binding, RecordValue tree) => BindingResolver.ResolveText(binding, tree) ?? "(no value yet)";
+
+    /// <summary>Commit a literal, unless the property already says exactly that. Enter commits and
+    /// then clears focus, which raises LostFocus on the box it just detached and would commit the
+    /// identical value a second time: two undo entries per Enter, so the first Ctrl+Z did nothing
+    /// visible.</summary>
+    private void SetLiteral(PropertySchema.Prop prop, string text)
+    {
+        if (CurrentFound() is { } f && prop.Get(f.Def) is { Binding: null } current && current.LiteralText == text) return;
+        EditCurrent($"Set {prop.Name}", d => prop.Set(d, PropertyValue.Literal(text)));
+    }
 
     // ---- geometry ---------------------------------------------------------------------------
 
@@ -140,7 +150,12 @@ public partial class PropertiesPanel : UserControl
         {
             panel.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 2, 0) });
             var box = new TextBox { Width = 48, Text = get(def).ToString(System.Globalization.CultureInfo.InvariantCulture) };
-            void Commit() { if (int.TryParse(box.Text.Trim(), out var v)) EditCurrent($"Set {name}", d => set(d, v)); }
+            void Commit()
+            {
+                if (!int.TryParse(box.Text.Trim(), out var v)) return;
+                if (CurrentFound() is { } f && get(f.Def) == v) return;   // see SetLiteral
+                EditCurrent($"Set {name}", d => set(d, v));
+            }
             box.LostFocus += (_, _) => Commit();
             box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); Keyboard.ClearFocus(); } };
             panel.Children.Add(box);
@@ -162,45 +177,73 @@ public partial class PropertiesPanel : UserControl
 
         var value = prop.Get(def) ?? PropertyValue.Literal("");
 
-        if (prop.Editor == PropertySchema.Editor.Binding)
+        // A bound Binding-editor property edits through its own text: there is no literal editor to
+        // offer it, and so no Bind toggle either.
+        if (prop.Editor == PropertySchema.Editor.Binding && value.Binding is { } only)
         {
-            body.Children.Add(BuildBoundDisplay(prop, value));
+            body.Children.Add(BuildBoundDisplay(prop, only));
             return row;
         }
 
-        var bindBox = new CheckBox { Content = "Bind", IsChecked = value.IsBound, Margin = new Thickness(0, 0, 0, 4) };
-        bindBox.Checked += (_, _) =>
+        body.Children.Add(BuildBindBox(prop, value));
+        if (value.Binding is { } bound) body.Children.Add(BuildBoundDisplay(prop, bound));
+        else if (prop.Editor == PropertySchema.Editor.Binding)
         {
-            var picker = new BindingPicker(PickerRoot(), null) { Owner = Window.GetWindow(this) };
-            if (picker.ShowDialog() == true && picker.Result is { } bound) EditCurrent($"Bind {prop.Name}", d => prop.Set(d, bound));
-            else bindBox.IsChecked = false;
-        };
-        bindBox.Unchecked += (_, _) => EditCurrent($"Unbind {prop.Name}", d => prop.Set(d, PropertyValue.Literal("")));
-        body.Children.Add(bindBox);
-        body.Children.Add(value.IsBound ? BuildBoundDisplay(prop, value) : BuildLiteralEditor(prop, value));
+            // "items": "drives" parses as a literal, so an unbound Items is loadable and the resolver
+            // already refuses it at render time. The panel shows what is there and says so in one
+            // line rather than dereferencing a Binding that is null.
+            body.Children.Add(new TextBlock { Text = value.LiteralText ?? "" });
+            body.Children.Add(Note($"{prop.Name.ToLowerInvariant()} must be a binding"));
+        }
+        else body.Children.Add(BuildLiteralEditor(prop, value));
         return row;
     }
 
-    private FrameworkElement BuildBoundDisplay(PropertySchema.Prop prop, PropertyValue value)
+    /// <summary>The Bind toggle. Checking it opens the picker, and cancelling has to put the box
+    /// back - a programmatic reset that raises Unchecked, which used to commit Literal("") over the
+    /// value the owner was only looking at. The guard lets the box follow the model without firing
+    /// an edit, and Unchecked is an unbind only when there is a binding to remove.</summary>
+    private CheckBox BuildBindBox(PropertySchema.Prop prop, PropertyValue value)
+    {
+        var bindBox = new CheckBox { Content = "Bind", IsChecked = value.IsBound, Margin = new Thickness(0, 0, 0, 4) };
+        var syncing = false;
+        bindBox.Checked += (_, _) =>
+        {
+            if (syncing) return;
+            var picker = new BindingPicker(PickerRoot(), null) { Owner = Window.GetWindow(this) };
+            if (picker.ShowDialog() == true && picker.Result is { } bound) EditCurrent($"Bind {prop.Name}", d => prop.Set(d, bound));
+            else { syncing = true; try { bindBox.IsChecked = false; } finally { syncing = false; } }
+        };
+        bindBox.Unchecked += (_, _) =>
+        {
+            if (syncing || !value.IsBound) return;
+            EditCurrent($"Unbind {prop.Name}", d => prop.Set(d, PropertyValue.Literal("")));
+        };
+        return bindBox;
+    }
+
+    private static TextBlock Note(string text) => new()
+    {
+        Text = text,
+        Foreground = SystemColors.GrayTextBrush,
+        FontSize = SystemFonts.MessageFontSize - 1,
+    };
+
+    private FrameworkElement BuildBoundDisplay(PropertySchema.Prop prop, Binding binding)
     {
         var panel = new StackPanel();
         var text = new TextBlock
         {
-            Text = value.Binding!.ToString(),
+            Text = binding.ToString(),
             Cursor = Cursors.Hand,
             TextDecorations = TextDecorations.Underline,
         };
         text.MouseLeftButtonUp += (_, _) =>
         {
-            var picker = new BindingPicker(PickerRoot(), value.Binding) { Owner = Window.GetWindow(this) };
+            var picker = new BindingPicker(PickerRoot(), binding) { Owner = Window.GetWindow(this) };
             if (picker.ShowDialog() == true && picker.Result is { } bound) EditCurrent($"Set {prop.Name} binding", d => prop.Set(d, bound));
         };
-        var preview = new TextBlock
-        {
-            Foreground = SystemColors.GrayTextBrush,
-            FontSize = SystemFonts.MessageFontSize - 1,
-            Text = Preview(value.Binding!, PickerRoot()),
-        };
+        var preview = Note(Preview(binding, PickerRoot()));
         _previewLabels[prop.Name] = preview;
         panel.Children.Add(text);
         panel.Children.Add(preview);
@@ -219,7 +262,7 @@ public partial class PropertiesPanel : UserControl
     private FrameworkElement BuildTextEditor(PropertySchema.Prop prop, PropertyValue value)
     {
         var box = new TextBox { Text = value.LiteralText ?? "" };
-        void Commit() => EditCurrent($"Set {prop.Name}", d => prop.Set(d, PropertyValue.Literal(box.Text)));
+        void Commit() => SetLiteral(prop, box.Text);
         box.LostFocus += (_, _) => Commit();
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); Keyboard.ClearFocus(); } };
         return box;
@@ -229,7 +272,7 @@ public partial class PropertiesPanel : UserControl
     {
         var choices = prop.Choices ?? [];
         var combo = new ComboBox { ItemsSource = choices, SelectedItem = MatchChoice(choices, value.LiteralText) };
-        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s) EditCurrent($"Set {prop.Name}", d => prop.Set(d, PropertyValue.Literal(s))); };
+        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s) SetLiteral(prop, s); };
         return combo;
     }
 
@@ -241,7 +284,7 @@ public partial class PropertiesPanel : UserControl
         var families = Fonts.SystemFontFamilies.OrderBy(f => f.Source, StringComparer.OrdinalIgnoreCase).ToList();
         var combo = new ComboBox { ItemsSource = families, DisplayMemberPath = "Source" };
         combo.SelectedItem = families.FirstOrDefault(f => string.Equals(f.Source, value.LiteralText, StringComparison.OrdinalIgnoreCase));
-        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is FontFamily f) EditCurrent($"Set {prop.Name}", d => prop.Set(d, PropertyValue.Literal(f.Source))); };
+        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is FontFamily f) SetLiteral(prop, f.Source); };
         return combo;
     }
 
@@ -256,7 +299,7 @@ public partial class PropertiesPanel : UserControl
             try { swatch.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(box.Text.Trim())); }
             catch (FormatException) { swatch.Fill = Brushes.Transparent; }
         }
-        void Commit() => EditCurrent($"Set {prop.Name}", d => prop.Set(d, PropertyValue.Literal(box.Text.Trim())));
+        void Commit() => SetLiteral(prop, box.Text.Trim());
 
         ApplySwatch();
         box.TextChanged += (_, _) => ApplySwatch();
@@ -275,7 +318,7 @@ public partial class PropertiesPanel : UserControl
         DockPanel.SetDock(browse, Dock.Right);
         var box = new TextBox { Text = value.LiteralText ?? "" };
 
-        void Commit() => EditCurrent($"Set {prop.Name}", d => prop.Set(d, PropertyValue.Literal(box.Text.Trim())));
+        void Commit() => SetLiteral(prop, box.Text.Trim());
         box.LostFocus += (_, _) => Commit();
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); Keyboard.ClearFocus(); } };
 
