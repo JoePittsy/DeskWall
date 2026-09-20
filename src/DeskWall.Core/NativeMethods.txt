@@ -79,3 +79,9 @@ GetProcessMemoryInfo
 PROCESS_MEMORY_COUNTERS_EX
 GetProcessHandleCount
 SetProcessWorkingSetSize
+IShellLinkW
+ShellLink
+IPersistFile
+SLGP_FLAGS
+STGM
+SHOW_WINDOW_CMD
