@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -179,6 +179,9 @@ public partial class MainWindow : Window
     /// the daemon will ever pick it up.</summary>
     private bool Apply()
     {
+        // Property edits commit on LostFocus; Ctrl+S never moves focus, so without this the value
+        // being typed is not in the document that gets written (and the dirty marker clears).
+        Keyboard.ClearFocus();
         var created = _model.Path is null;
         var dest = _model.Path ?? ShellState.LayoutPathFor(_model.Signature);
         try

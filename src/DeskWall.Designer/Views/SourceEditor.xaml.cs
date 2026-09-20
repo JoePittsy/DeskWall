@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using DeskWall.Core.Layout;
 
@@ -24,16 +24,23 @@ public partial class SourceEditor : Window
     };
 
     private readonly bool _editingExisting;
+    private readonly HashSet<string> _otherNames;
 
     /// <summary>Set after ShowDialog() returns true.</summary>
     public SourceDef? Result { get; private set; }
 
-    public SourceEditor() : this(null) { }
+    public SourceEditor() : this(null, null) { }
 
-    public SourceEditor(SourceDef? existing)
+    public SourceEditor(SourceDef? existing) : this(existing, null) { }
+
+    /// <param name="otherNames">The names already in the layout, so this dialog can refuse a
+    /// duplicate rather than let it shadow the earlier source in the registry.</param>
+    public SourceEditor(SourceDef? existing, IEnumerable<string>? otherNames)
     {
         InitializeComponent();
         _editingExisting = existing is not null;
+        _otherNames = new HashSet<string>(otherNames ?? [], StringComparer.OrdinalIgnoreCase);
+        if (existing is not null) _otherNames.Remove(existing.Name);
 
         TypeCombo.ItemsSource = SourceTypes;
         if (_editingExisting)
@@ -91,10 +98,20 @@ public partial class SourceEditor : Window
 
     private void AddSettingButton_Click(object sender, RoutedEventArgs e) => AddSettingRow("", "");
 
+    private void Refuse(string why) => MessageBox.Show(this, why, "Source", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+    /// <summary>BindingParser.ReadName's grammar. A source called "steam news" or "2fa" is a root
+    /// field of the value tree that no binding can ever name, so nothing in it can be used.</summary>
+    private static bool IsBindableName(string name)
+        => (char.IsAsciiLetter(name[0]) || name[0] == '_')
+           && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+
     private void OkButton_Click(object sender, RoutedEventArgs e)
     {
         var name = NameBox.Text.Trim();
-        if (name.Length == 0) { MessageBox.Show(this, "Name is required.", "Source", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+        if (name.Length == 0) { Refuse("Name is required."); return; }
+        if (!IsBindableName(name)) { Refuse("Name must start with a letter or _ and hold only letters, digits, _ or -; nothing else can be referenced by a binding."); return; }
+        if (_otherNames.Contains(name)) { Refuse($"There is already a source called '{name}'."); return; }
 
         var settings = new Dictionary<string, string>();
         foreach (var child in SettingsList.Children)

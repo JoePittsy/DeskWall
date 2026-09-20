@@ -219,7 +219,7 @@ public partial class SourcesPanel : UserControl
     private void AddButton_Click(object sender, RoutedEventArgs e)
     {
         if (_model is null) return;
-        var editor = new SourceEditor { Owner = Window.GetWindow(this) };
+        var editor = new SourceEditor(null, _model.Layout.Sources.Select(s => s.Name)) { Owner = Window.GetWindow(this) };
         if (editor.ShowDialog() == true && editor.Result is { } def)
             _model.Edit("Add source", l => l.Sources.Add(def));
     }
@@ -243,7 +243,7 @@ public partial class SourcesPanel : UserControl
         if ((List.SelectedItem as FrameworkElement)?.Tag is not string name) return;
         var existing = _model.Layout.Sources.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is null) return;
-        var editor = new SourceEditor(existing) { Owner = Window.GetWindow(this) };
+        var editor = new SourceEditor(existing, _model.Layout.Sources.Select(s => s.Name)) { Owner = Window.GetWindow(this) };
         if (editor.ShowDialog() == true && editor.Result is { } updated)
             _model.Edit("Edit source", l =>
             {
