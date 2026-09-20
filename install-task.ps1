@@ -1,4 +1,4 @@
-# Registers (or replaces) the per-minute tick as a Task Scheduler job for the current user.
+﻿# Registers (or replaces) the per-minute tick as a Task Scheduler job for the current user.
 # Runs only while logged on (needed: SystemParametersInfo must hit the interactive desktop).
 # No admin required. Remove with:  Unregister-ScheduledTask -TaskName 'DeskWall Tick' -Confirm:$false
 param([switch]$Uninstall)

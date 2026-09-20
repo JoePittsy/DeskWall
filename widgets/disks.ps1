@@ -1,4 +1,4 @@
-# Disks tile: one row per drive — letter, GB free, used-space bar (red under 15% free). Every 5 min.
+﻿# Disks tile: one row per drive - letter, GB free, used-space bar (red under 15% free). Every 5 min.
 function Render-disks($gr, $w, $h) {
   $font = New-Object Drawing.Font('Segoe UI', 15, [Drawing.FontStyle]::Regular, [Drawing.GraphicsUnit]::Pixel)
   $rowH = 46; $barH = 6; $y = 0

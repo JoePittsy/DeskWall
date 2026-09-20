@@ -1,4 +1,4 @@
-<#
+﻿<#
 Compositor. Runs every minute from the scheduled task.
   1. Each widget in $Widgets renders a transparent PNG tile into $DataDir\tiles when its tile
      is missing, older than its Every (seconds), or -Force is given. Widgets are dot-sourced

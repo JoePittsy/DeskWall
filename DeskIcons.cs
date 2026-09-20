@@ -1,4 +1,4 @@
-using System; using System.Reflection; using System.Runtime.InteropServices;
+﻿using System; using System.Reflection; using System.Runtime.InteropServices;
 public static class DeskIcons {
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int x; public int y; }
   [ComImport, Guid("6d5140c1-7436-11ce-8034-00aa006009fa"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

@@ -1,4 +1,4 @@
-# Shared data for the DeskWall dry run.
+﻿# Shared data for the DeskWall dry run.
 # Outputs $Games (top N installed, most recent first), $Disks and $CoverRects.
 # Recency = later of Playnite LastActivity and Steam's own LastPlayed (localconfig.vdf),
 # because Playnite only records sessions it launched itself.

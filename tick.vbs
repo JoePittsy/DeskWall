@@ -1,4 +1,4 @@
-' Launches compose.ps1 -Apply with no console window. Task Scheduler runs this every minute.
+﻿' Launches compose.ps1 -Apply with no console window. Task Scheduler runs this every minute.
 ' (powershell -WindowStyle Hidden still flashes a console; wscript with window style 0 does not.)
 Dim sh, dir
 Set sh = CreateObject("WScript.Shell")

@@ -1,4 +1,4 @@
-# Games tile: covers of the most recently played installed games, stacked. Every 10 min.
+﻿# Games tile: covers of the most recently played installed games, stacked. Every 10 min.
 # Returns a key of game ids + geometry; when it changes the compositor re-places the shortcuts.
 function Render-games($gr, $w, $h) {
   $tileFont = New-Object Drawing.Font('Segoe UI', 18, [Drawing.FontStyle]::Regular, [Drawing.GraphicsUnit]::Pixel)

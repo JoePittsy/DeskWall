@@ -1,4 +1,4 @@
-. "$PSScriptRoot\data.ps1" -Top 4
+﻿. "$PSScriptRoot\data.ps1" -Top 4
 $out = $DataDir   # set by data.ps1: %LOCALAPPDATA%\DeskWall
 "data source: $DataSource"
 

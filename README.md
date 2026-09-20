@@ -49,7 +49,9 @@ line in `$Widgets`.
 | `widgets\clock.ps1`, `widgets\disks.ps1`, `widgets\games.ps1` | One render function each. |
 | `shortcuts.ps1` | Creates one transparent-icon shortcut per cover (named with N non-breaking spaces so no label shows) and positions it via the shell's `IFolderView::SelectAndPositionItems`. |
 | `DeskIcons.cs` | COM interop for the desktop view: get/set icon positions. |
+| `verify.ps1` | Screenshots the desktop, pixel-diffs it against the composed JPEG and reports the arrow padding per cover. |
 | `tick.vbs` | Runs `compose.ps1 -Apply` with no console window. |
+| `CLAUDE.md` | Agent hand-off notes: gotchas, conventions, open threads. Read it first. |
 | `install-task.ps1` | Registers the `DeskWall Tick` scheduled task: every minute while logged on, and on logon. `-Uninstall` removes it. No admin needed. |
 
 Runtime state lives in `%LOCALAPPDATA%\DeskWall`, not in the repo: `state.json` (library
