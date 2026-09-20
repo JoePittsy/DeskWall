@@ -33,7 +33,12 @@ public class VerifierTests
     /// <paramref name="left"/> px from the cover's left and whose bottom edge is <paramref name="bottom"/>
     /// px above the cover's bottom.</summary>
     private static void PaintArrow(Surface shot, Rect cover, int left, int bottom)
-        => shot.FillRect(new Rect(cover.X + left, cover.Bottom - bottom - Arrow, Arrow, Arrow), Color.White);
+        => PaintBox(shot, cover, left, bottom, Arrow);
+
+    /// <summary>A square of any size at the same bottom-left corner the arrow would occupy. This is what
+    /// an opaque icon looks like to the diff, and the reason the corner alone cannot be trusted.</summary>
+    private static void PaintBox(Surface shot, Rect cover, int left, int bottom, int size)
+        => shot.FillRect(new Rect(cover.X + left, cover.Bottom - bottom - size, size, size), Color.White);
 
     [Fact]
     public void Arrow_At_The_Wanted_Pad_Is_Ok()
@@ -119,8 +124,11 @@ public class VerifierTests
             shot.FillRect(new Rect(180, 20, 1, 1), new Color(255, 160, 128, 128));
             var c = Verifier.CheckSlot(shot, composed, Slot(cover), (5, 242), (5, 242), Pad, 10);
             // The box now stretches from the blip to the arrow. Its left and bottom edges still happen
-            // to be the arrow's, so the pads read 5/5: the box is the evidence, not the verdict.
+            // to be the arrow's, so the pads read 5/5 - and the size check is what still fails the slot.
             Assert.Equal(new Rect(5, 20, 176, 275), c.ArrowBox);
+            Assert.Equal(Pad, c.LeftPad);
+            Assert.Equal(Pad, c.BottomPad);
+            Assert.False(c.Ok);
         }
     }
 
@@ -147,6 +155,83 @@ public class VerifierTests
         }
     }
 
+    /// <summary>The defect the live pass found. Explorer drew an opaque 48x48 icon over every cover and
+    /// verify still reported 5/5, because the arrow sits at the icon box's bottom-left corner and so
+    /// shares its minX and maxY. The pads are exactly right here; the slot must still fail.</summary>
+    [Fact]
+    public void An_Opaque_Icon_Box_Fails_Although_Its_Corner_Is_Exactly_Right()
+    {
+        var cover = new Rect(0, 0, CoverW, CoverH);
+        var (shot, composed) = Pair();
+        using (shot)
+        using (composed)
+        {
+            PaintBox(shot, cover, Pad, Pad, 48);
+            var c = Verifier.CheckSlot(shot, composed, Slot(cover), (5, 242), (5, 242), Pad, 60, Arrow);
+            // The corner measurements that used to be the whole verdict are still perfect.
+            Assert.Equal(Pad, c.LeftPad);
+            Assert.Equal(Pad, c.BottomPad);
+            Assert.Equal(new Rect(5, 247, 48, 48), c.ArrowBox);
+            Assert.False(c.Ok);
+            Assert.Equal("unexpected 48x48 box (arrow is 13x13): icon not transparent?", c.Note);
+        }
+    }
+
+    /// <summary>Two px either way is JPEG ringing at a hard edge; three is something else. Both sides of
+    /// the bound are asserted, so the tolerance is a measurement and not a number that happens to let
+    /// everything through.</summary>
+    [Theory]
+    [InlineData(11, true)]
+    [InlineData(15, true)]
+    [InlineData(10, false)]
+    [InlineData(16, false)]
+    public void The_Box_May_Miss_The_Arrow_Size_By_Two_Px_And_No_More(int size, bool ok)
+    {
+        var cover = new Rect(0, 0, CoverW, CoverH);
+        var (shot, composed) = Pair();
+        using (shot)
+        using (composed)
+        {
+            PaintBox(shot, cover, Pad, Pad, size);
+            var c = Verifier.CheckSlot(shot, composed, Slot(cover), (5, 242), (5, 242), Pad, 60, Arrow);
+            Assert.Equal(ok, c.Ok);
+        }
+    }
+
+    /// <summary>The bound is the arrow calibrated for this display, not a constant: a 20 px box passes
+    /// when 20 is what calibrate measured, and fails against the seeded 13.</summary>
+    [Fact]
+    public void The_Bound_Is_The_Calibrated_Arrow_Not_A_Hard_Coded_Thirteen()
+    {
+        var cover = new Rect(0, 0, CoverW, CoverH);
+        var (shot, composed) = Pair();
+        using (shot)
+        using (composed)
+        {
+            PaintBox(shot, cover, Pad, Pad, 20);
+            Assert.True(Verifier.CheckSlot(shot, composed, Slot(cover), (5, 242), (5, 242), Pad, 60, 20).Ok);
+            Assert.False(Verifier.CheckSlot(shot, composed, Slot(cover), (5, 242), (5, 242), Pad, 60,
+                Verifier.SeedArrowSize).Ok);
+        }
+    }
+
+    /// <summary>A wrong pad is reported as a wrong pad even when the box is also the wrong size: the pad
+    /// is the more specific complaint and naming it first is what the reader can act on.</summary>
+    [Fact]
+    public void A_Wrong_Pad_Still_Wins_The_Note_Over_A_Wrong_Size()
+    {
+        var cover = new Rect(0, 0, CoverW, CoverH);
+        var (shot, composed) = Pair();
+        using (shot)
+        using (composed)
+        {
+            PaintBox(shot, cover, Pad + 1, Pad, 48);
+            var c = Verifier.CheckSlot(shot, composed, Slot(cover), (5, 242), (6, 242), Pad, 60, Arrow);
+            Assert.False(c.Ok);
+            Assert.Equal("PAD OFF BY (1,0)", c.Note);
+        }
+    }
+
     [Fact]
     public void Report_Text_Names_Every_Slot_And_Ends_With_The_Verdict()
     {
@@ -159,8 +244,10 @@ public class VerifierTests
 
         var text = report.ToText();
         Assert.Contains(sig.Key, text, StringComparison.Ordinal);
-        Assert.Contains("left pad 5, bottom pad 5  OK", text, StringComparison.Ordinal);
-        Assert.Contains("left pad -, bottom pad -  NO ICON FOUND", text, StringComparison.Ordinal);
+        // The box size is on the line: the pads alone cannot distinguish a bare arrow from an opaque
+        // icon, so a reader who only ever sees this text needs the number that can.
+        Assert.Contains("box 13x13  left pad 5, bottom pad 5  OK", text, StringComparison.Ordinal);
+        Assert.Contains("box -  left pad -, bottom pad -  NO ICON FOUND", text, StringComparison.Ordinal);
         Assert.EndsWith("RESULT: FAIL", text, StringComparison.Ordinal);
     }
 

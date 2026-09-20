@@ -25,10 +25,16 @@ public sealed record SlotCheck(
     bool Ok,
     string? Note)
 {
+    /// <summary>The box size is printed, not just the pads: the pads alone cannot tell a bare arrow
+    /// from an opaque icon drawn over the cover, because both share the same bottom-left corner.</summary>
     public string ToLine() =>
         $"slot {Slot,2}  {Id,-28}  cover ({Cover.X},{Cover.Y},{Cover.W},{Cover.H})  " +
         $"wanted ({Wanted.X},{Wanted.Y})  got {(Got is null ? "-" : $"({Got.Value.X},{Got.Value.Y})")}  " +
-        $"left pad {Pad(LeftPad)}, bottom pad {Pad(BottomPad)}  {(Ok ? "OK" : Note ?? "FAIL")}";
+        $"box {BoxSize}  left pad {Pad(LeftPad)}, bottom pad {Pad(BottomPad)}  {(Ok ? "OK" : Note ?? "FAIL")}";
+
+    private string BoxSize => ArrowBox is { } b
+        ? $"{b.W.ToString(CultureInfo.InvariantCulture)}x{b.H.ToString(CultureInfo.InvariantCulture)}"
+        : "-";
 
     private static string Pad(int n) => n < 0 ? "-" : n.ToString(CultureInfo.InvariantCulture);
 }

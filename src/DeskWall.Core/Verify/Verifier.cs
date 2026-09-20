@@ -30,17 +30,35 @@ public static class Verifier
 
     private const int SettleMs = 800;
 
+    /// <summary>How far the diff box may be from the calibrated arrow in each dimension and still be
+    /// called an arrow. A pixel or two of JPEG ringing survives the threshold at a hard edge; half an
+    /// icon does not.</summary>
+    public const int SizeTolerance = 2;
+
+    /// <summary>Used when no calibration has been measured: the POC's arrow, and the value seeded into
+    /// <see cref="Calibration.Seed"/>.</summary>
+    public const int SeedArrowSize = 13;
+
     private static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(5);
 
-    /// <summary>Pure: find the arrow overlay for one cover and measure its padding.
+    /// <summary>Pure: find the arrow overlay for one cover, measure its padding, and check that what
+    /// was found is really only the arrow.
     /// <para>
     /// The arrow is whatever differs between the screenshot and the composed frame inside the cover,
     /// inset by 2 px. A fully transparent icon paints nothing else, so the diff box is the arrow. Pads
     /// are -1 and <see cref="SlotCheck.Ok"/> is false when nothing differs: a missing icon must not read
     /// as a pad of zero.
+    /// </para>
+    /// <para>
+    /// The size check is not decoration. The shell draws the arrow at the icon box's bottom-left corner,
+    /// so an opaque 48x48 icon has exactly the same minX and maxY as a bare 13x13 arrow and scores a
+    /// perfect 5/5 pad. That is how a whole lane of green verifies sat on top of black squares painted
+    /// over the owner's covers (live-pass report, defect 2). Only the box's size tells them apart.
     /// </para></summary>
+    /// <param name="arrowSize">The calibrated <see cref="ArrowRect.Size"/> for this display, or
+    /// <see cref="SeedArrowSize"/> when nothing has been measured.</param>
     public static SlotCheck CheckSlot(Surface shot, Surface composed, ResolvedShortcut s,
-        (int X, int Y) wanted, (int X, int Y)? got, int wantPad, int threshold)
+        (int X, int Y) wanted, (int X, int Y)? got, int wantPad, int threshold, int arrowSize = SeedArrowSize)
     {
         ArgumentNullException.ThrowIfNull(shot);
         ArgumentNullException.ThrowIfNull(composed);
@@ -54,9 +72,12 @@ public static class Verifier
 
         var left = arrow.X - cover.X;
         var bottom = cover.Bottom - arrow.Bottom;
-        var ok = left == wantPad && bottom == wantPad;
-        var note = ok ? null : $"PAD OFF BY ({left - wantPad},{bottom - wantPad})";
-        return new SlotCheck(s.Slot, s.Id, cover, wanted, got, arrow, left, bottom, ok, note);
+        var padOk = left == wantPad && bottom == wantPad;
+        var sizeOk = Math.Abs(arrow.W - arrowSize) <= SizeTolerance && Math.Abs(arrow.H - arrowSize) <= SizeTolerance;
+        var note = !padOk ? $"PAD OFF BY ({left - wantPad},{bottom - wantPad})"
+            : sizeOk ? null
+            : $"unexpected {arrow.W}x{arrow.H} box (arrow is {arrowSize}x{arrowSize}): icon not transparent?";
+        return new SlotCheck(s.Slot, s.Id, cover, wanted, got, arrow, left, bottom, padOk && sizeOk, note);
     }
 
     /// <summary>Live. Minimises every window, captures the primary monitor, compares it with
@@ -120,7 +141,7 @@ public static class Verifier
             foreach (var s in shortcuts)
             {
                 var wanted = ShortcutPlan.IconPosition(s.Rect, arrowRect, wantPad);
-                var check = CheckSlot(shot, composed, s, wanted, reported[s.Slot], wantPad, threshold);
+                var check = CheckSlot(shot, composed, s, wanted, reported[s.Slot], wantPad, threshold, arrowRect.Size);
                 say(check.ToLine());
                 checks.Add(check);
             }
