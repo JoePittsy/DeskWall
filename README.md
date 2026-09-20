@@ -23,38 +23,45 @@ maximised one. Top to bottom:
 Recency is the later of Playnite's own `LastActivity` and Steam's `LastPlayed` from
 `userdata\<id>\config\localconfig.vdf`, because Playnite only records sessions it launched.
 
-## How the per-minute render stays cheap
+## Widgets and the compositor
 
-`render.ps1` draws two layers:
+Every widget is a function in `widgets\<name>.ps1` that draws into a transparent tile of its
+own size at 0,0 and returns a content key. `compose.ps1` runs every minute and:
 
-- **base** = photo + covers, cached as PNG in the runtime dir and rebuilt only when the
-  set/order of games, their geometry or the photo changes (~1.6 s, rare);
-- **overlay** = clock + disk bars, drawn onto a copy of the base every run and saved as a
-  ~2 MB JPEG (~370 ms wall, ~190 ms CPU on an i7-6700K).
+1. re-renders each tile whose age exceeds its schedule (`clock` 60 s, `disks` 300 s,
+   `games` 600 s) or that is missing; if a widget's key changed it may run an `After` hook —
+   `games` re-places the desktop shortcuts so icons never drift from the covers;
+2. blits the cached full-size photo plus every tile into one ~2 MB JPEG and applies it.
 
-Measured 2026-09-20. The direction of travel is one step further: every widget renders its
-own tile on its own schedule, and a compositor blits the tiles onto the base.
+Measured on an i7-6700K, 2026-09-20: composite-only tick ~370 ms wall / ~190 ms CPU
+(dominated by the JPEG encode); clock tile adds nothing measurable; cold start with all
+tiles, photo cache and shortcut placement ~5 s. Nothing stays resident between ticks.
+
+Adding a widget = one file with `Render-<name>($gr, $w, $h)`, a rect in `data.ps1`, and a
+line in `$Widgets`.
 
 ## Files
 
 | File | Role |
 |---|---|
 | `data.ps1` | Shared data + geometry: reads Playnite's LiteDB (read-only, via Playnite's own `LiteDB.dll`), merges Steam recency, computes column layout. Caches a snapshot to the runtime dir and falls back to it when Playnite has the DB locked. |
-| `render.ps1` | Two-layer render described above. `-Apply` sets the wallpaper, `-ForceBase` rebuilds the base. Prints timing. |
+| `compose.ps1` | The compositor described above. `-Apply` sets the wallpaper, `-Force` re-renders all tiles, `-Only clock,disks` limits which. Prints timing. |
+| `widgets\clock.ps1`, `widgets\disks.ps1`, `widgets\games.ps1` | One render function each. |
 | `shortcuts.ps1` | Creates one transparent-icon shortcut per cover (named with N non-breaking spaces so no label shows) and positions it via the shell's `IFolderView::SelectAndPositionItems`. |
 | `DeskIcons.cs` | COM interop for the desktop view: get/set icon positions. |
-| `tick.vbs` | Runs `render.ps1 -Apply` with no console window. |
+| `tick.vbs` | Runs `compose.ps1 -Apply` with no console window. |
 | `install-task.ps1` | Registers the `DeskWall Tick` scheduled task: every minute while logged on, and on logon. `-Uninstall` removes it. No admin needed. |
 
 Runtime state lives in `%LOCALAPPDATA%\DeskWall`, not in the repo: `state.json` (library
-cache), `deskwall-base.png` + `.key`, `deskwall.jpg` (the wallpaper), `blank.ico`,
-`restore.txt` (the pre-DeskWall wallpaper path).
+cache), `base.png` + `.key` (scaled photo), `tiles\*.png` + `.key`, `deskwall.jpg` (the
+wallpaper), `blank.ico`, `restore.txt` (the pre-DeskWall wallpaper path).
 
 ## Running
 
 ```powershell
-.\render.ps1 -Apply       # render once and set wallpaper
-.\shortcuts.ps1           # (re)create and place the four shortcuts
+.\compose.ps1 -Apply      # render due tiles, composite, set wallpaper
+.\compose.ps1 -Force      # re-render everything (no apply)
+.\shortcuts.ps1           # (re)create and place the four shortcuts by hand
 .\install-task.ps1        # start the per-minute tick
 .\install-task.ps1 -Uninstall
 ```

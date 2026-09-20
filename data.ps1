@@ -67,9 +67,18 @@ $Disks = @(foreach ($d in (Get-PSDrive C, D)) { [pscustomobject]@{ Letter = $d.N
 # column geometry shared by renderer and shortcut placer (3440x1440, taskbar 48)
 # top-down: clock (ClockH) | gap | covers | ... | disks block anchored to the bottom
 # 172px wide so four 2:3 covers (258 tall) fit between clock and disks: 142 + 4*258 + 3*14 = 1216 <= 1236
-$ColW = 172; $ColLeft = 3440 - 48 - $ColW; $Gap = 14
+$CanvasW = 3440; $CanvasH = 1440; $Taskbar = 48
+$ColW = 172; $ColLeft = $CanvasW - 48 - $ColW; $Gap = 14
 $ClockTop = 48; $ClockH = 70
 $ColTop = $ClockTop + $ClockH + 24
+$DisksH = 92; $DisksTop = $CanvasH - $Taskbar - 40 - $DisksH
+$GamesH = $DisksTop - 24 - $ColTop
+# widget rects (tile-local drawing happens at 0,0; the compositor blits at X,Y)
+$Rects = @{
+  clock = [pscustomobject]@{ X = $ColLeft; Y = $ClockTop; W = $ColW; H = $ClockH }
+  games = [pscustomobject]@{ X = $ColLeft; Y = $ColTop;   W = $ColW; H = $GamesH }
+  disks = [pscustomobject]@{ X = $ColLeft; Y = $DisksTop; W = $ColW; H = $DisksH }
+}
 $CoverRects = @()
 $y = $ColTop
 foreach ($gm in $Games) {
