@@ -90,4 +90,40 @@ public class TickRunnerTests
             Assert.Equal(((byte)255, (byte)200, (byte)0, (byte)0), frame.GetPixel(300, 170));   // new base visible away from the text
         }
     }
+
+    /// <summary>
+    /// Finding 7: RenderIncremental can throw ("previous frame size mismatch") after TickRunner has
+    /// already loaded the previous frame surface with Surface.LoadRaw; that surface used to leak.
+    /// </summary>
+    [Fact]
+    public async Task Incremental_Path_Disposes_The_Previous_Frame_When_RenderIncremental_Throws()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-leak-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var basePng = Path.Combine(dir, "leakbase.png");
+        using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 5, 5, 5)); b.SavePng(basePng); }
+        var layout = LayoutFile.Parse($$"""
+        { "version": 1, "baseImage": {{System.Text.Json.JsonSerializer.Serialize(basePng)}}, "sources": [ { "name": "time", "type": "time" } ],
+          "components": [ { "type": "text", "id": "clock", "rect": [10, 10, 200, 60], "text": { "bind": "time.now | HH:mm" }, "size": 40 } ] }
+        """);
+        var clock = new TickFakeClock(new DateTimeOffset(2026, 9, 20, 14, 32, 5, TimeSpan.Zero));
+        var registry = new SourceRegistry();
+        var sources = layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
+        var monitor = new MonitorInfo(new DisplaySignature("TEST-LEAK", 320, 180, 100), new Rect(0, 0, 320, 180), true, "TEST-LEAK");
+        var framePath = Path.Combine(dir, "frame.raw");
+        var runner = new TickRunner(layout, sources, registry, clock, monitor,
+            statePath: Path.Combine(dir, "state.json"), outPath: Path.Combine(dir, "out.jpg"), framePath: framePath);
+
+        await runner.RunAsync(force: true, apply: false, default);   // establishes state.json + frame.raw at 320x180
+
+        // Corrupt frame.raw to a different size while the recorded signature/base key stay
+        // matching, so the next non-forced tick takes the incremental path and RenderIncremental
+        // throws "previous frame size mismatch" only after Surface.LoadRaw has already succeeded.
+        using (var wrongSize = Surface.Create(10, 10)) { wrongSize.Clear(new Color(255, 9, 9, 9)); wrongSize.SaveRaw(framePath); }
+
+        clock.Now = clock.Now.AddMinutes(1);   // the clock text changes: not a skip
+        var before = Surface.LiveCount;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runner.RunAsync(force: false, apply: false, default));
+        Assert.Equal(before, Surface.LiveCount);   // the previous-frame surface LoadRaw produced must not leak
+    }
 }

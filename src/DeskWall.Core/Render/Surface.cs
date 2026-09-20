@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -10,6 +11,10 @@ using Windows.Win32.Graphics.Imaging.D2D;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Com.StructuredStorage;
 using Windows.Win32.System.Variant;
+
+// Test-only visibility for Surface.LiveCount, which lets the two exception-path-leak regression
+// tests for finding 7 assert no net increase in live surfaces across a call that throws.
+[assembly: InternalsVisibleTo("DeskWall.Core.Tests")]
 
 namespace DeskWall.Core.Render;
 
@@ -37,10 +42,14 @@ public sealed unsafe class Surface : IDisposable
     private IWICBitmap* _bmp;
     private ID2D1RenderTarget* _rt;
 
+    /// <summary>Surfaces created but not yet disposed. Test-only (finding 7 regression tests);
+    /// production code never reads it.</summary>
+    internal static int LiveCount;
+
     public int Width { get; }
     public int Height { get; }
 
-    private Surface(IWICBitmap* bmp, int w, int h) { _bmp = bmp; Width = w; Height = h; }
+    private Surface(IWICBitmap* bmp, int w, int h) { _bmp = bmp; Width = w; Height = h; Interlocked.Increment(ref LiveCount); }
 
     private static void EnsureFactories()
     {
@@ -491,7 +500,7 @@ public sealed unsafe class Surface : IDisposable
     public void Dispose()
     {
         ReleaseRenderTarget();
-        if (_bmp is not null) { _bmp->Release(); _bmp = null; }
+        if (_bmp is not null) { _bmp->Release(); _bmp = null; Interlocked.Decrement(ref LiveCount); }
         GC.SuppressFinalize(this);
     }
 

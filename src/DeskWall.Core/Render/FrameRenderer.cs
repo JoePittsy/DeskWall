@@ -16,7 +16,17 @@ public sealed class FrameRenderer(int width, int height)
             frame.Dispose();
             throw new InvalidOperationException("base cache size mismatch");
         }
-        foreach (var c in components.OrderBy(c => c.Z)) Draw(frame, c);
+        try
+        {
+            foreach (var c in components.OrderBy(c => c.Z)) Draw(frame, c);
+        }
+        catch
+        {
+            // Finding 7: a throw partway through (a corrupt image file, a COM failure) must not
+            // leak the 19.8 MB (at 3440x1440) bitmap this method just loaded.
+            frame.Dispose();
+            throw;
+        }
         return frame;
     }
 

@@ -83,7 +83,18 @@ public sealed class TickRunner(
             var changedIds = changed.Select(c => c.Id).ToHashSet();
             var prevRects = state.RectsById.ToDictionary(kv => kv.Key, kv => new Rect(kv.Value[0], kv.Value[1], kv.Value[2], kv.Value[3]));
             var previous = Surface.LoadRaw(_framePath);
-            frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects);   // mutates previous in place
+            try
+            {
+                frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects);   // mutates previous in place
+            }
+            catch
+            {
+                // Finding 7: RenderIncremental can throw before returning (a size mismatch against
+                // a stale frame.raw at a different canvas size under the same signature key); the
+                // 19.8 MB (at 3440x1440) bitmap LoadRaw just produced must not leak.
+                previous.Dispose();
+                throw;
+            }
             t.Redrawn = changedIds.Count;
         }
         using (frame)

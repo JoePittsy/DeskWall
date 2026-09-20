@@ -256,6 +256,40 @@ public class FrameRendererTests
     }
 }
 
+public class FrameRendererLeakTests
+{
+    private static string TempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>
+    /// Finding 7: a throw partway through RenderAll's draw loop (a corrupt image file, here) used
+    /// to leak the base frame surface it had just loaded, reclaimed only by the GC finalizer.
+    /// </summary>
+    [Fact]
+    public void RenderAll_Disposes_The_Frame_When_A_Component_Throws_Mid_Draw()
+    {
+        var dir = TempDir();
+        var basePng = Path.Combine(dir, "leak-base-" + Guid.NewGuid().ToString("N")[..8] + ".png");
+        using (var b = Surface.Create(20, 20)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(basePng); }
+        var raw = BaseCache.Ensure(basePng, 20, 20, Fit.Cover);
+
+        // Exists, but is not a decodable image: Surface.Load throws from inside FrameRenderer.Draw.
+        var corrupt = Path.Combine(dir, "corrupt-" + Guid.NewGuid().ToString("N")[..8] + ".png");
+        File.WriteAllBytes(corrupt, [1, 2, 3, 4, 5]);
+
+        var r = new FrameRenderer(20, 20);
+        var comps = new Resolved[] { new ResolvedImage("i", new Rect(0, 0, 20, 20), 0, corrupt, Fit.Cover, 0, 1) };
+
+        var before = Surface.LiveCount;
+        Assert.ThrowsAny<Exception>(() => r.RenderAll(raw, comps));
+        Assert.Equal(before, Surface.LiveCount);   // the frame RenderAll loaded must have been disposed, not leaked
+    }
+}
+
 public class PaintBoundsTests
 {
     [Fact]
