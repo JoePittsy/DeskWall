@@ -69,3 +69,8 @@ GENERIC_ACCESS_RIGHTS
 IDesktopWallpaper
 DesktopWallpaper
 DESKTOP_WALLPAPER_POSITION
+EnumDisplayMonitors
+GetMonitorInfo
+MONITORINFOEXW
+GetDpiForMonitor
+MONITOR_DPI_TYPE
