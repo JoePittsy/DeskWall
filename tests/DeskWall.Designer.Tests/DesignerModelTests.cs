@@ -78,6 +78,20 @@ public class DesignerModelTests
         Assert.Equal(new Rect(100, 100, 200, 50), m.Find("clock")!.Rect);
         Assert.Equal(new Rect(100, 100, 200, 50), LayoutFile.Load(m.Path).Components[0].Rect);
     }
+
+    [Fact]
+    public void Duplicate_Clones_With_An_Offset_As_One_Undo_Entry()
+    {
+        var m = Model();
+        var made = m.Duplicate(["clock", "bar"], 16, 16);
+        Assert.Equal(["clock-2", "bar-2"], made);
+        Assert.Equal(new Rect(116, 116, 200, 50), m.Find("clock-2")!.Rect);
+        Assert.Equal(new Rect(100, 100, 200, 50), m.Find("clock")!.Rect);   // the original is untouched
+        m.Undo();
+        Assert.Null(m.Find("clock-2"));
+        Assert.Null(m.Find("bar-2"));
+    }
+
 }
 
 public class SnapTests
@@ -98,5 +112,24 @@ public class SnapTests
         var (r3, g3) = Snap.Apply(new Rect(500, 500, 50, 50), [other], canvas);
         Assert.Equal(new Rect(500, 500, 50, 50), r3);
         Assert.Empty(g3);
+    }
+
+    [Fact]
+    public void Lines_Are_The_Canvas_Edges_And_Each_Others_Edges_And_Centre()
+    {
+        var (xs, ys) = Snap.Lines([new Rect(100, 200, 60, 40)], new Rect(0, 0, 1000, 800));
+        Assert.Equal([0, 1000, 100, 160, 130], xs);
+        Assert.Equal([0, 800, 200, 240, 220], ys);
+    }
+
+    [Fact]
+    public void Edge_Pulls_One_Value_To_The_Nearest_Candidate_In_Range()
+    {
+        Assert.Equal(160, Snap.Edge(157, [100, 160, 400], Snap.Threshold, out var near));
+        Assert.Equal(160, near);
+        Assert.Equal(104, Snap.Edge(103, [100, 104], Snap.Threshold, out var nearest));
+        Assert.Equal(104, nearest);
+        Assert.Equal(300, Snap.Edge(300, [100, 160, 400], Snap.Threshold, out var far));
+        Assert.Null(far);
     }
 }

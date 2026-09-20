@@ -119,6 +119,35 @@ public sealed class DesignerModel
         l.Components.Add(def);
     });
 
+    /// <summary>Deep-copy the components (a JSON round trip through the layout's own serializer, so
+    /// a repeater brings its template), offset them and add them as ONE undo entry. Returns the new
+    /// ids, so the caller can select the copies.
+    /// <para>Added for the canvas's Ctrl+D: <see cref="Add"/> alone cannot clone, and would be one
+    /// undo entry per copy.</para></summary>
+    public IReadOnlyList<string> Duplicate(IEnumerable<string> ids, int dx, int dy)
+    {
+        var originals = ids.Select(Find).OfType<ComponentDef>().ToList();
+        if (originals.Count == 0) return Array.Empty<string>();
+        var clones = Clone(originals);
+        var made = new List<string>(clones.Count);
+        Edit("Duplicate", l =>
+        {
+            foreach (var c in clones)
+            {
+                var baseId = c.Id; var id = baseId; var n = 2;
+                while (l.Components.Any(o => o.Id == id)) id = $"{baseId}-{n++}";
+                c.Id = id;
+                c.Rect = c.Rect.Offset(dx, dy);
+                l.Components.Add(c);
+                made.Add(id);
+            }
+        });
+        return made;
+    }
+
+    private static List<ComponentDef> Clone(List<ComponentDef> defs)
+        => LayoutFile.Parse(new LayoutFile { BaseImage = "", Components = defs }.ToJson()).Components;
+
     public void Remove(IEnumerable<string> ids)
     {
         var set = ids.ToHashSet();
