@@ -1,0 +1,3 @@
+AttachConsole
+FreeConsole
+ATTACH_PARENT_PROCESS

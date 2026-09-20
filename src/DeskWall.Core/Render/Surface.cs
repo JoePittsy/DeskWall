@@ -47,7 +47,7 @@ public sealed unsafe class Surface : IDisposable
             IWICImagingFactory2* wic; var clsid = PInvoke.CLSID_WICImagingFactory2; var iid = typeof(IWICImagingFactory2).GUID;
             PInvoke.CoCreateInstance(&clsid, null, CLSCTX.CLSCTX_INPROC_SERVER, &iid, (void**)&wic).ThrowOnFailure();
             ID2D1Factory* d2d; var iidD2d = typeof(ID2D1Factory).GUID;
-            PInvoke.D2D1CreateFactory(D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_SINGLE_THREADED, &iidD2d, null, (void**)&d2d).ThrowOnFailure();
+            PInvoke.D2D1CreateFactory(D2D1_FACTORY_TYPE.D2D1_FACTORY_TYPE_MULTI_THREADED, &iidD2d, null, (void**)&d2d).ThrowOnFailure();
             IDWriteFactory* dw; var iidDw = typeof(IDWriteFactory).GUID;
             PInvoke.DWriteCreateFactory(DWRITE_FACTORY_TYPE.DWRITE_FACTORY_TYPE_SHARED, &iidDw, (void**)&dw).ThrowOnFailure();
             s_d2d = d2d; s_dw = dw; s_wic = wic;
