@@ -19,7 +19,7 @@
       "template": [
         { "type": "image", "id": "cover", "rect": [0, 0, 172, 258], "radius": 4,
           "source": { "bind": "appid | \"https://cdn.cloudflare.steamstatic.com/steam/apps/{0}/library_600x900.jpg\"" } },
-        { "type": "shortcut", "id": "play", "rect": [0, 0, 172, 258], "slot": 0,
+        { "type": "shortcut", "id": "play", "rect": [0, 0, 172, 258], "slot": 8,
           "target": { "bind": "appid | \"steam://rungameid/{0}\"" }, "tooltip": { "bind": "name | \"Play {0}\"" } }
       ] },
     { "type": "repeater", "id": "drives", "rect": [3220, 1260, 172, 92], "z": 1,

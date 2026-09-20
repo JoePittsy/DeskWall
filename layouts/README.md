@@ -34,6 +34,27 @@ The layout references them as `{secret:steamKey}` and `{secret:steamId}`; the da
 them at request time and never writes them to a log. A wrong key shows up in the log as `403 from
 https://api.steampowered.com/...{secret:steamKey}...` with the placeholder, not the key.
 
+## Shortcut slots
+
+A `shortcut` component names a `slot`: the desktop icon it owns. One `.lnk` per slot lives on the
+desktop, named with non-breaking spaces so no label draws, and DeskWall only ever deletes the slots
+recorded in `shortcuts-owned.json`. Inside a repeater the declared slot is a *base*: the child of
+item `n` gets `slot + n`, so the four-cover column shipped here claims 8..11.
+
+Slots 0..3 are deliberately left alone. The v0 PowerShell proof of concept still writes exactly
+those four file names every minute, and two tools rewriting the same `.lnk` makes Explorer
+re-enumerate the desktop, which is how icon positions get lost. Pick a base of 8 or above until the
+POC is retired, and give two shortcut components in one layout non-overlapping ranges - a duplicate
+slot is a layout error.
+
+## Command source stderr
+
+A `command` source publishes its `stderr` verbatim. A CLI that fails and echoes its own argument
+list back - the usual shape of a usage error - therefore publishes the *substituted* value of any
+`{secret:...}` in `args` into a value a text component can draw on the wallpaper. Nothing else in
+DeskWall does that: logs and exceptions carry the template. If a command takes a secret, do not bind
+a component to its `stderr`.
+
 ## Using a layout
 
 ```powershell
