@@ -67,11 +67,16 @@ public partial class SecretsEditor : Window
             File.WriteAllText(tmp, JsonSerializer.Serialize(map, SecretsFileJsonContext.Default.DictionaryStringString));
             File.Move(tmp, SecretsPath, overwrite: true);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Same tidy-runtime-dir discipline as LayoutFile.Save / Settings.Save.
+            // Same tidy-runtime-dir discipline as LayoutFile.Save / Settings.Save. The failure is a
+            // line the owner can act on, not a rethrow out of a Click handler: the dialog stays open
+            // with the rows still in it, so nothing typed here is lost. The message names the path
+            // only - a secret value never reaches it.
             try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-            throw;
+            MessageBox.Show(this, $"Could not write {SecretsPath}: {ex.Message}", "Secrets",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
         }
         DialogResult = true;
     }

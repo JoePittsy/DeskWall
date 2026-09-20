@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -65,31 +65,37 @@ public partial class SettingsPage : Window
         var exeFound = FindDaemonExe() is not null;
         StartButton.IsEnabled = exeFound;
         RefreshNowButton.IsEnabled = exeFound;
-        VerifyButton.IsEnabled = exeFound;
+        // `shortcuts` reads a layout file, and the only one this page can name is the open model's.
+        VerifyButton.IsEnabled = exeFound && _model?.Path is not null;
 
         var procs = Process.GetProcessesByName("deskwall");
         try
         {
             if (procs.Length == 0)
             {
-                DaemonStatusText.Text = "Daemon: not running";
+                // The section header already says "Daemon"; the line says what it is doing.
+                DaemonStatusText.Text = "not running";
                 DaemonFootprintText.Text = "";
             }
             else
             {
                 var p = procs[0];
-                DaemonStatusText.Text = $"Daemon: running (pid {p.Id})";
+                DaemonStatusText.Text = $"running (pid {p.Id}), up {Uptime(p)}";
+                // Handles and threads are budget-test facts, not owner facts; spec 8 asks for
+                // working set, per-tick timings and uptime.
                 DaemonFootprintText.Text =
-                    $"{p.WorkingSet64 / 1048576.0:0.0} MB working set . {p.PrivateMemorySize64 / 1048576.0:0.0} MB private . " +
-                    $"{p.HandleCount} handles . {p.Threads.Count} threads";
+                    $"{p.WorkingSet64 / 1048576.0:0.0} MB working set . {p.PrivateMemorySize64 / 1048576.0:0.0} MB private";
             }
         }
         finally { foreach (var p in procs) p.Dispose(); }
 
-        var logPath = Paths.InRuntime("deskwall.log");
-        DaemonLogText.Text = File.Exists(logPath)
-            ? string.Join(Environment.NewLine, File.ReadAllLines(logPath).TakeLast(5))
-            : "(no log yet)";
+        var lines = LogTail(5);
+        LastTickText.Text = lines.LastOrDefault(IsTickLine) is { } tick ? TickSummary(tick) : "";
+        LastTickText.Visibility = LastTickText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        DaemonLogText.Text = string.Join(Environment.NewLine, lines);
+        // An empty console is a box that says nothing: both appear only when they have something.
+        LogLabel.Visibility = DaemonLogText.Visibility = lines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ActionOutputText.Visibility = ActionOutputText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         _loading = true;
         StartAtLogonCheck.IsChecked = Startup.Installed() is not null;
@@ -97,11 +103,40 @@ public partial class SettingsPage : Window
         _loading = false;
     }
 
+    private static string Uptime(Process p)
+    {
+        var up = DateTime.Now - p.StartTime;
+        if (up.TotalMinutes < 1) return $"{(int)up.TotalSeconds} s";
+        if (up.TotalHours < 1) return $"{(int)up.TotalMinutes} m";
+        if (up.TotalDays < 1) return $"{(int)up.TotalHours} h {up.Minutes} m";
+        return $"{(int)up.TotalDays} d {up.Hours} h";
+    }
+
+    private static List<string> LogTail(int n)
+    {
+        var path = Paths.InRuntime("deskwall.log");
+        try { return File.Exists(path) ? File.ReadAllLines(path).TakeLast(n).ToList() : new List<string>(); }
+        catch (IOException) { return new List<string>(); }
+    }
+
+    /// <summary>The daemon writes one line per tick ("... [INFO] tick minute: redrawn 2 total 310 ms
+    /// cpu 90 ms"), so the timings spec 8 asks for are already in the log: the page reads them there
+    /// rather than opening a channel of its own to ask.</summary>
+    private static bool IsTickLine(string line) => line.Contains("] tick ", StringComparison.Ordinal);
+
+    private static string TickSummary(string line)
+    {
+        var i = line.IndexOf("] tick ", StringComparison.Ordinal);
+        return "last " + line[(i + 2)..].Trim();
+    }
+
     private void Start_Click(object sender, RoutedEventArgs e)
     {
         var exe = FindDaemonExe();
         if (exe is null) return;
-        try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false }); }
+        // UseShellExecute, and disposed at once: the designer holds no handle on the daemon and the
+        // daemon does not inherit the designer's (the same fix `deskwall install` already carries).
+        try { using var p = Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }); }
         catch (Exception ex) { ActionOutputText.Text = $"Could not start: {ex.Message}"; }
         RefreshDaemonStatus();
     }
@@ -115,18 +150,26 @@ public partial class SettingsPage : Window
         if (hwnd.IsNull)
         {
             ActionOutputText.Text = "DeskWall Host window not found; the daemon is not running.";
+            ActionOutputText.Visibility = Visibility.Visible;
             return;
         }
         PInvoke.PostMessage(hwnd, PInvoke.WM_CLOSE, 0, 0);
         ActionOutputText.Text = "Stop requested.";
+        ActionOutputText.Visibility = Visibility.Visible;
         RefreshDaemonStatus();
     }
 
-    private void RefreshNow_Click(object sender, RoutedEventArgs e)
+    /// <summary>`deskwall run` is the script-facing "refresh now": it hands the resident daemon a
+    /// Manual wake and exits. `tick` would compose, set the wallpaper and reconcile the desktop
+    /// shortcuts from a second, unsynchronised process - the interleaving that costs the owner his
+    /// icon layout - so it is used only when there is no daemon to ask (and would otherwise block
+    /// here, since `run` with no daemon running is the daemon).</summary>
+    private unsafe void RefreshNow_Click(object sender, RoutedEventArgs e)
     {
         var exe = FindDaemonExe();
         if (exe is null) return;
-        RunDaemonCommand(exe, "tick");
+        var running = !PInvoke.FindWindow("DeskWallHost", (string?)null).IsNull;
+        RunDaemonCommand(exe, running ? "run" : "tick");
     }
 
     private void StartAtLogon_Checked(object sender, RoutedEventArgs e)
@@ -137,6 +180,7 @@ public partial class SettingsPage : Window
         {
             _loading = true; StartAtLogonCheck.IsChecked = false; _loading = false;
             ActionOutputText.Text = "deskwall.exe was not found; cannot register it to start at logon.";
+            ActionOutputText.Visibility = Visibility.Visible;
             return;
         }
         Startup.Install(exe);
@@ -162,16 +206,26 @@ public partial class SettingsPage : Window
             var psi = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi) ?? throw new InvalidOperationException("Process.Start returned null");
-            var stdout = p.StandardOutput.ReadToEnd();
-            var stderr = p.StandardError.ReadToEnd();
-            p.WaitForExit();
-            var text = string.Join(Environment.NewLine, new[] { stdout, stderr }.Where(s => !string.IsNullOrWhiteSpace(s)));
-            ActionOutputText.Text = text.Length == 0 ? $"(exit {p.ExitCode}, no output)" : text;
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            // Bounded: every command here is a one-shot, but `run` started in the gap between the
+            // window check and here IS the daemon, and an unbounded read would hold the UI thread
+            // for the rest of the session.
+            if (!p.WaitForExit(10_000))
+            {
+                ActionOutputText.Text = $"deskwall {string.Join(' ', args)}: still running after 10 s; left alone.";
+            }
+            else
+            {
+                var text = string.Join(Environment.NewLine, new[] { stdout.Result, stderr.Result }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                ActionOutputText.Text = text.Length == 0 ? $"(exit {p.ExitCode}, no output)" : text;
+            }
         }
         catch (Exception ex)
         {
             ActionOutputText.Text = $"Failed to run '{exe} {string.Join(' ', args)}': {ex.Message}";
         }
+        ActionOutputText.Visibility = Visibility.Visible;
         RefreshDaemonStatus();
     }
 
@@ -308,12 +362,14 @@ public partial class SettingsPage : Window
     }
 
     /// <summary>Phase 6's `deskwall verify` does not exist yet; until it does, `deskwall shortcuts`
-    /// is the closest thing and its output is shown as-is.</summary>
+    /// is the closest thing and its output is shown as-is. It is handed the open model's layout
+    /// path; the button stays disabled until there is one, because a layout the daemon has never
+    /// been given is not a placement anyone can verify.</summary>
     private void VerifyPlacement_Click(object sender, RoutedEventArgs e)
     {
         var exe = FindDaemonExe();
-        if (exe is null) return;
-        RunDaemonCommand(exe, "shortcuts");
+        if (exe is null || _model?.Path is not { } path) return;
+        RunDaemonCommand(exe, "shortcuts", "--layout", path);
     }
 
     // ---- 4. Secrets -------------------------------------------------------------------------
@@ -334,7 +390,17 @@ public partial class SettingsPage : Window
     private void RemoveLayout_Click(object sender, RoutedEventArgs e)
     {
         if (((Button)sender).Tag is not LayoutEntryRow row) return;
-        _store.Remove(DisplaySignature.Parse(row.SignatureKey));
+        // A key that is not a signature means layouts.json was hand-edited; that is a line of text,
+        // not a reason to take the designer down on a click.
+        DisplaySignature signature;
+        try { signature = DisplaySignature.Parse(row.SignatureKey); }
+        catch (Exception ex) when (ex is FormatException or IndexOutOfRangeException)
+        {
+            ActionOutputText.Text = $"{row.SignatureKey} is not a display signature; remove it from layouts.json by hand.";
+            ActionOutputText.Visibility = Visibility.Visible;
+            return;
+        }
+        _store.Remove(signature);
         LoadLayoutsGrid();
     }
 

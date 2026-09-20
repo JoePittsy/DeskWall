@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using DeskWall.Core;
 using DeskWall.Core.Diagnostics;
 using DeskWall.Core.Display;
@@ -218,24 +218,7 @@ internal static class Program
     {
         var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
         if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
-        LayoutFile layout;
-        var layoutPath = OptValue(opts, "--layout");
-        if (layoutPath is not null)
-        {
-            if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return 3; }
-            layout = LayoutFile.Load(layoutPath);
-        }
-        else
-        {
-            var res = LayoutStore.Default(Console.Error.WriteLine).Resolve(monitor.Signature);
-            if (res is null)
-            {
-                Console.Error.WriteLine($"no layout for {monitor.Signature.Key}; use: deskwall layouts set <path>");
-                return 3;
-            }
-            if (res.Scaled) Console.WriteLine($"scaled layout {res.SourcePath} from {res.SourceSignature.Key}");
-            layout = res.Layout;
-        }
+        if (ResolveLayout(opts, monitor, out var exit) is not { } layout) return exit;
         var clock = SystemClock.Instance;
         var sources = layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
         var registry = new SourceRegistry();
@@ -254,13 +237,15 @@ internal static class Program
     }
 
     /// <summary>deskwall shortcuts [--layout path] - read-only: slot, target, planned position and what
-    /// the desktop actually reports. Never writes or moves anything; `tick` is what places icons.</summary>
+    /// the desktop actually reports. Never writes or moves anything; `tick` is what places icons.
+    /// <para>Without --layout it resolves through the store exactly as `tick` and the daemon do. It
+    /// used to default to runtime\layout.json, a name nothing in the repo ever writes, so the
+    /// designer's "Verify placement" button could only ever report a missing file.</para></summary>
     private static async Task<int> Shortcuts(List<string> opts)
     {
-        var layoutPath = OptValue(opts, "--layout") ?? Paths.InRuntime("layout.json");
-        if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return 3; }
-        var layout = LayoutFile.Load(layoutPath);
-        var monitor = Monitors.Enumerate().First(m => m.IsPrimary);
+        var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
+        if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
+        if (ResolveLayout(opts, monitor, out var exit) is not { } layout) return exit;
         var clock = SystemClock.Instance;
         var registry = new SourceRegistry();
         foreach (var s in layout.Sources.Select(s => SourceFactory.Create(s, clock)))
@@ -372,6 +357,31 @@ internal static class Program
         if (!int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
             throw new ArgumentException($"{name} needs a whole number, not '{v}'");
         return n;
+    }
+
+    /// <summary>The layout a one-shot command works on. --layout wins, for scripting; without it the
+    /// store answers for the primary display exactly as it does for the resident daemon, so `tick`,
+    /// `shortcuts` and the daemon all read the same file. Null means "printed why"; take
+    /// <paramref name="exit"/> as the process exit code.</summary>
+    private static LayoutFile? ResolveLayout(List<string> opts, MonitorInfo monitor, out int exit)
+    {
+        exit = 3;
+        var layoutPath = OptValue(opts, "--layout");
+        if (layoutPath is not null)
+        {
+            if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return null; }
+            exit = 0;
+            return LayoutFile.Load(layoutPath);
+        }
+        var res = LayoutStore.Default(Console.Error.WriteLine).Resolve(monitor.Signature);
+        if (res is null)
+        {
+            Console.Error.WriteLine($"no layout for {monitor.Signature.Key}; use: deskwall layouts set <path>");
+            return null;
+        }
+        if (res.Scaled) Console.WriteLine($"scaled layout {res.SourcePath} from {res.SourceSignature.Key}");
+        exit = 0;
+        return res.Layout;
     }
 
     private static string? OptValue(List<string> opts, string name)

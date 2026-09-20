@@ -27,17 +27,19 @@
                 <StackPanel>
                     <TextBlock Text="Daemon" Style="{StaticResource SectionHeader}" />
                     <TextBlock x:Name="DaemonStatusText" Margin="0,0,0,4" />
-                    <TextBlock x:Name="DaemonFootprintText" Margin="0,0,0,8" />
-                    <TextBlock Text="Last 5 log lines:" Margin="0,0,0,2" />
+                    <TextBlock x:Name="DaemonFootprintText" Margin="0,0,0,4" />
+                    <TextBlock x:Name="LastTickText" Margin="0,0,0,8" Visibility="Collapsed" />
+                    <TextBlock x:Name="LogLabel" Text="Last 5 log lines:" Margin="0,0,0,2" Visibility="Collapsed" />
                     <TextBox x:Name="DaemonLogText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
-                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Height="90" Margin="0,0,0,8" />
+                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Height="90" Margin="0,0,0,8"
+                             Visibility="Collapsed" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <Button x:Name="StartButton" Content="Start" Click="Start_Click" Padding="10,4" Margin="0,0,8,0" />
                         <Button x:Name="StopButton" Content="Stop" Click="Stop_Click" Padding="10,4" Margin="0,0,8,0" />
                         <Button x:Name="RefreshNowButton" Content="Refresh now" Click="RefreshNow_Click" Padding="10,4" />
                     </StackPanel>
                     <TextBox x:Name="ActionOutputText" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas"
-                             VerticalScrollBarVisibility="Auto" Height="50" Margin="0,0,0,8" />
+                             VerticalScrollBarVisibility="Auto" Height="50" Margin="0,0,0,8" Visibility="Collapsed" />
                     <CheckBox x:Name="StartAtLogonCheck" Content="Start at logon" Margin="0,0,0,4"
                               Checked="StartAtLogon_Checked" Unchecked="StartAtLogon_Unchecked" />
                     <CheckBox x:Name="TrayIconCheck" Content="Tray icon (takes effect at next daemon start)"
