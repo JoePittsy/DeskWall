@@ -4,6 +4,7 @@ using DeskWall.Core.Display;
 using DeskWall.Daemon.Host;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
+using DeskWall.Core.Resolve;
 using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
@@ -30,8 +31,10 @@ internal static class Program
                 case "paths":
                     Console.WriteLine(Paths.RuntimeDir);
                     return 0;
-                case "calibrate-test":
-                    return CalibrateTest();
+                case "calibrate":
+                    return Calibrate();
+                case "shortcuts":
+                    return Shortcuts(opts).GetAwaiter().GetResult();
                 default:
                     Console.Error.WriteLine($"deskwall: unknown or not yet implemented command '{cmd}'");
                     return 2;
@@ -68,7 +71,7 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>deskwall tick [--layout path] [--force] [--measure] [--no-apply]</summary>
+    /// <summary>deskwall tick [--layout path] [--force] [--measure] [--no-apply] [--no-shortcuts]</summary>
     private static async Task<int> Tick(List<string> opts)
     {
         var layoutPath = OptValue(opts, "--layout") ?? Paths.InRuntime("layout.json");
@@ -79,17 +82,73 @@ internal static class Program
         var sources = layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
         var registry = new SourceRegistry();
         WallpaperSetter.RecordRestorePoint();
-        var runner = new TickRunner(layout, sources, registry, clock, monitor);
+        var manager = opts.Contains("--no-shortcuts") ? null : new ShortcutManager(Calibration.Load());
+        var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager);
         var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
         if (opts.Contains("--measure")) Console.WriteLine(t.ToTable());
         else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
+        if (runner.LastShortcutOutcome is { } o)
+        {
+            Console.WriteLine($"shortcuts: written={o.Written} positioned={o.Positioned} removed={o.Removed}");
+            foreach (var w in o.Warnings) Console.Error.WriteLine($"shortcuts: {w}");
+        }
         return 0;
     }
 
-    /// <summary>TEMPORARY (lane p3-view). Task 6 replaces this with the real `calibrate` command, which
-    /// passes ShortcutFiles.Write + BlankIcon.Ensure as the probe writer. Until those types exist this
-    /// case supplies its own transparent icon and its own .lnk writer so the measurement can be run.</summary>
-    private static int CalibrateTest()
+    /// <summary>deskwall shortcuts [--layout path] - read-only: slot, target, planned position and what
+    /// the desktop actually reports. Never writes or moves anything; `tick` is what places icons.</summary>
+    private static async Task<int> Shortcuts(List<string> opts)
+    {
+        var layoutPath = OptValue(opts, "--layout") ?? Paths.InRuntime("layout.json");
+        if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return 3; }
+        var layout = LayoutFile.Load(layoutPath);
+        var monitor = Monitors.Enumerate().First(m => m.IsPrimary);
+        var clock = SystemClock.Instance;
+        var registry = new SourceRegistry();
+        foreach (var s in layout.Sources.Select(s => SourceFactory.Create(s, clock)))
+        {
+            var snap = registry.Get(s.Name);
+            try { registry.Set(snap.Succeeded(await s.RefreshAsync(CancellationToken.None), clock.Now)); }
+            catch (Exception ex) { registry.Set(snap.Failed(ex.Message)); }
+        }
+
+        var resolved = LayoutResolver.Resolve(layout, registry.Tree(), new Rect(0, 0, monitor.Bounds.W, monitor.Bounds.H));
+        var shortcuts = ShortcutPlan.Ordered(resolved.OfType<ResolvedShortcut>().ToList());
+        if (shortcuts.Count == 0) { Console.WriteLine("no shortcut components in the layout"); return 0; }
+
+        var calibration = Calibration.Load();
+        var iconSize = DesktopView.IconSize();
+        var scale = monitor.Signature.ScalePercent;
+        var arrow = calibration.Get(iconSize, scale);
+        if (arrow is null)
+        {
+            arrow = calibration.Get(48, 100)!;
+            Console.WriteLine($"no calibration for {Calibration.Key(iconSize, scale)}; using {Calibration.Key(48, 100)}");
+        }
+        Console.WriteLine($"{monitor.Signature.Key}, icon size {iconSize} px, arrow ({arrow.Dx},{arrow.Dy},{arrow.Size})");
+
+        var desktop = ShortcutFiles.DesktopDir();
+        var offBy = 0;
+        foreach (var s in shortcuts)
+        {
+            var path = Path.Combine(desktop, ShortcutPlan.SlotFileName(s.Slot));
+            var (x, y) = ShortcutPlan.IconPosition(s.Rect, arrow);
+            var got = DesktopView.GetPosition(path);
+            string verdict;
+            if (!File.Exists(path)) { verdict = "MISSING"; offBy++; }
+            else if (got is null) { verdict = "NO POSITION"; offBy++; }
+            else if (got.Value.X == x && got.Value.Y == y) verdict = "VERIFY OK";
+            else { verdict = $"OFF BY ({got.Value.X - x},{got.Value.Y - y})"; offBy++; }
+            Console.WriteLine($"slot {s.Slot,2}  {s.Target,-40}  planned ({x},{y})  actual " +
+                              $"{(got is null ? "-" : $"({got.Value.X},{got.Value.Y})")}  {verdict}");
+        }
+        return offBy == 0 ? 0 : 4;
+    }
+
+    /// <summary>deskwall calibrate - measure where the shell draws the shortcut-arrow overlay for the
+    /// current icon size and scale, and store it in calibration.json. Manual command: it borrows the
+    /// wallpaper and the desktop for about five seconds and puts both back.</summary>
+    private static int Calibrate()
     {
         // MinimizeAll takes the console with it, and a WinExe's redirected stdout does not survive
         // AttachConsole, so the log is teed to a file as well.
@@ -101,8 +160,10 @@ internal static class Program
             var monitor = Monitors.Enumerate().First(m => m.IsPrimary);
             var wallpaper = WallpaperSetter.Get(monitor.WallpaperMonitorId) ?? "";
             Say($"current wallpaper: {wallpaper}");
-            var icon = TransparentIcon(Paths.InRuntime("blank-calibrate.ico"));
-            var result = Calibrator.Run(monitor, wallpaper, lnk => WriteShortcut(lnk, icon), Say);
+            var icon = BlankIcon.Ensure();
+            var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            var probe = new ShortcutSpec(Path.Combine(windows, "explorer.exe"), "", windows, "DeskWall calibration probe", icon);
+            var result = Calibrator.Run(monitor, wallpaper, lnk => ShortcutFiles.Write(lnk, probe), Say);
             Say($"RESULT icon={result.IconSize} scale={result.ScalePercent} " +
                 $"arrow=({result.Arrow.Dx},{result.Arrow.Dy},{result.Arrow.Size}) " +
                 $"item=({result.ItemX},{result.ItemY}) pixels={result.Pixels}");
@@ -115,42 +176,6 @@ internal static class Program
             throw;
         }
         finally { File.WriteAllLines(logFile, lines); }
-    }
-
-    /// <summary>A 256 px fully transparent PNG wrapped in an ICO, exactly as poc/shortcuts.ps1 builds it.</summary>
-    private static string TransparentIcon(string path)
-    {
-        var png = path + ".png";
-        using (var s = Surface.Create(256, 256))
-        {
-            s.Clear(Color.Transparent);
-            s.SavePng(png);
-        }
-        var bytes = File.ReadAllBytes(png);
-        File.Delete(png);
-        using var fs = File.Create(path);
-        using var w = new BinaryWriter(fs);
-        w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)1);          // ICONDIR: reserved, type=icon, count
-        w.Write((byte)0); w.Write((byte)0);                                   // 256x256 is encoded as 0x0
-        w.Write((byte)0); w.Write((byte)0);                                   // colours, reserved
-        w.Write((ushort)1); w.Write((ushort)32);                              // planes, bit count
-        w.Write((uint)bytes.Length); w.Write((uint)22);                       // size, offset
-        w.Write(bytes);
-        return path;
-    }
-
-    private static void WriteShortcut(string lnk, string iconPath)
-    {
-        var script = $"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}'); " +
-                     $"$s.TargetPath = '{Environment.GetFolderPath(Environment.SpecialFolder.Windows)}\\explorer.exe'; " +
-                     $"$s.IconLocation = '{iconPath},0'; $s.Description = 'DeskWall calibration probe'; $s.Save()";
-        var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe") { UseShellExecute = false };
-        psi.ArgumentList.Add("-NoProfile");
-        psi.ArgumentList.Add("-NonInteractive");
-        psi.ArgumentList.Add("-Command");
-        psi.ArgumentList.Add(script);
-        using var p = System.Diagnostics.Process.Start(psi)!;
-        p.WaitForExit();
     }
 
     private static string? OptValue(List<string> opts, string name)

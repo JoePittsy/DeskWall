@@ -3,6 +3,7 @@ using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
+using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Wallpaper;
 
@@ -19,7 +20,8 @@ public sealed class TickRunner(
     string? statePath = null,
     string? outPath = null,
     string? framePath = null,
-    RemoteImageCache? images = null)
+    RemoteImageCache? images = null,
+    ShortcutManager? shortcuts = null)
 {
     private readonly string _statePath = statePath ?? Paths.InRuntime("frame-state.json");
     private readonly string _outPath = outPath ?? Paths.InRuntime(layout.Encode == "png" ? "deskwall.png" : "deskwall.jpg");
@@ -27,6 +29,9 @@ public sealed class TickRunner(
 
     /// <summary>Resolved shortcuts from the last run; Phase 3's manager consumes them.</summary>
     public IReadOnlyList<ResolvedShortcut> LastShortcuts { get; private set; } = [];
+
+    /// <summary>What stage 7 did on the last run, or null when there is no manager or nothing changed.</summary>
+    public ShortcutOutcome? LastShortcutOutcome { get; private set; }
 
     public async Task<TickTimings> RunAsync(bool force, bool apply, CancellationToken ct)
     {
@@ -114,8 +119,28 @@ public sealed class TickRunner(
         if (apply) WallpaperSetter.Set(monitor.WallpaperMonitorId, _outPath);
         t.ApplyMs = sw.ElapsedMilliseconds - a0;
 
-        // 6. shortcuts: Phase 3. Timed so the table shape is final now.
+        // 6. shortcuts: make the desktop icons match. Skipped unless the fingerprint moved, because
+        // Reconcile talks to Explorer and costs far more than the rest of a tick put together.
         var s0 = sw.ElapsedMilliseconds;
+        LastShortcutOutcome = null;
+        if (shortcuts is not null)
+        {
+            var fingerprint = shortcuts.Fingerprint(LastShortcuts, monitor.Signature.ScalePercent);
+            if (force || fingerprint != state.ShortcutsFingerprint)
+            {
+                try
+                {
+                    LastShortcutOutcome = shortcuts.Reconcile(LastShortcuts, monitor.Signature.ScalePercent);
+                    state.ShortcutsFingerprint = fingerprint;
+                }
+                catch (Exception ex)
+                {
+                    // The desktop view can be gone (Explorer restarting). Record it and retry next tick.
+                    LastShortcutOutcome = new ShortcutOutcome(0, 0, 0, [$"{ex.GetType().Name}: {ex.Message}"]);
+                    state.ShortcutsFingerprint = "";
+                }
+            }
+        }
         t.ShortcutsMs = sw.ElapsedMilliseconds - s0;
 
         // 7. state

@@ -10,6 +10,9 @@ public sealed class FrameState
     /// <summary>[x, y, w, h] per component id, for repainting the base where a component vanished.</summary>
     public Dictionary<string, int[]> RectsById { get; set; } = new();
     public string SignatureKey { get; set; } = "";
+    /// <summary>What the shortcut manager last reconciled the desktop to (slots, rects, targets,
+    /// tooltips, arrow). Empty when shortcuts have never been placed, or the last attempt failed.</summary>
+    public string ShortcutsFingerprint { get; set; } = "";
     public string FramePath { get; set; } = "";
     /// <summary>BaseCache.KeyFor of the base image at the last render. Finding 12: a mismatch here
     /// means the base image was replaced in place, so the skip gate must not skip.</summary>
