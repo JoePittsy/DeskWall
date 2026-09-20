@@ -13,6 +13,15 @@ public static class LayoutResolver
     {
         var result = new List<Resolved>();
         foreach (var def in layout.Components) Emit(def, tree, def.Rect, def.Id, 0, result);
+
+        // Finding 6: a duplicate id must fail here, before any drawing or state is touched -
+        // TickRunner later builds a Dictionary<string, ...> keyed by Id and must never reach it
+        // with a duplicate (ToDictionary throws mid-tick, after the wallpaper may already be applied).
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var c in result)
+            if (!seen.Add(c.Id))
+                throw new InvalidOperationException($"duplicate component id '{c.Id}'");
+
         for (var i = 0; i < result.Count; i++) result[i] = result[i] with { ContentKey = ContentKey.Of(result[i]) };
         return result;
     }

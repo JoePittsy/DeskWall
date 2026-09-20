@@ -86,6 +86,21 @@ public class LayoutResolverTests
         Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "toomany")).Text);
         Assert.Equal("100", ((ResolvedText)r.Single(c => c.Id == "unbalanced")).Text);
     }
+
+    /// <summary>Finding 6: a duplicate id used to reach TickRunner's ToDictionary after the
+    /// wallpaper had already been applied. Resolve must reject it first.</summary>
+    [Fact]
+    public void Duplicate_Component_Ids_Throw_Before_Anything_Is_Drawn()
+    {
+        var layout = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [], "components": [
+          { "type": "text", "id": "a", "rect": [0, 0, 10, 10], "text": "x" },
+          { "type": "text", "id": "a", "rect": [20, 0, 10, 10], "text": "y" }
+        ] }
+        """);
+        var ex = Assert.Throws<InvalidOperationException>(() => LayoutResolver.Resolve(layout, ValueTree.Empty, new Rect(0, 0, 100, 100)));
+        Assert.Contains("a", ex.Message);
+    }
 }
 
 /// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was
