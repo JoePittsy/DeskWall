@@ -43,19 +43,34 @@ public class CalibratorTests
     }
 
     [Fact]
+    [Trait("Category", "Desktop")]
     public void Screenshot_Captures_Primary_Monitor_Size()
     {
+        if (!DesktopView.IsAvailable()) return;   // Session 0 or a locked workstation: skip, do not fail
         var m = DeskWall.Core.Display.Monitors.Enumerate().First(x => x.IsPrimary);
         using var s = Screenshot.Capture(m.Bounds);
         Assert.Equal((m.Bounds.W, m.Bounds.H), (s.Width, s.Height));
     }
 
+    /// <summary>The second half of the name is the half that matters: a capture on a locked session
+    /// comes back fully black and still has alpha 255, so asserting only alpha proved nothing.</summary>
     [Fact]
+    [Trait("Category", "Desktop")]
     public void Screenshot_Is_Opaque_And_Not_Uniformly_Black()
     {
+        if (!DesktopView.IsAvailable()) return;
         var m = DeskWall.Core.Display.Monitors.Enumerate().First(x => x.IsPrimary);
-        using var s = Screenshot.Capture(new Rect(m.Bounds.X, m.Bounds.Y, 64, 64));
+        // The middle of the primary monitor, not its top-left corner: a wallpaper can be black at an edge.
+        using var s = Screenshot.Capture(new Rect(m.Bounds.X + m.Bounds.W / 2 - 64, m.Bounds.Y + m.Bounds.H / 2 - 64, 128, 128));
         var (a, _, _, _) = s.GetPixel(10, 10);
         Assert.Equal(255, a);
+        var lit = false;
+        for (var y = 0; y < 128 && !lit; y += 4)
+            for (var x = 0; x < 128 && !lit; x += 4)
+            {
+                var (_, r, g, b) = s.GetPixel(x, y);
+                lit = r != 0 || g != 0 || b != 0;
+            }
+        Assert.True(lit, "the capture was uniformly black: nothing was on screen to capture");
     }
 }
