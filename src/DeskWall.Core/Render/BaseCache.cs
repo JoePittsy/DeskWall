@@ -7,11 +7,19 @@ namespace DeskWall.Core.Render;
 /// copy, not a decode. Keyed by path, mtime, size and fit.</summary>
 public static class BaseCache
 {
-    public static string Ensure(string imagePath, int w, int h, Fit fit)
+    /// <summary>The key <see cref="Ensure"/> would use, without decoding or writing anything.
+    /// Only stats the file, so the tick's skip gate can detect a replaced base image (finding 12)
+    /// before paying for a full render - the spec requires the skip gate to run before any drawing.</summary>
+    public static string KeyFor(string imagePath, int w, int h, Fit fit)
     {
         var mtime = File.GetLastWriteTimeUtc(imagePath).Ticks;
         var keySrc = $"{imagePath}|{mtime}|{w}x{h}|{fit}";
-        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keySrc)))[..16];
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keySrc)))[..16];
+    }
+
+    public static string Ensure(string imagePath, int w, int h, Fit fit)
+    {
+        var key = KeyFor(imagePath, w, h, fit);
         var dir = Paths.InRuntime("base");
         var path = Path.Combine(dir, $"{key}.raw");
         if (File.Exists(path)) return path;

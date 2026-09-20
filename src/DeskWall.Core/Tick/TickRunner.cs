@@ -53,7 +53,11 @@ public sealed class TickRunner(
         var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey).ToList();
         var liveIds = resolved.Select(c => c.Id).ToHashSet();
         var removed = state.KeysById.Keys.Any(id => !liveIds.Contains(id));
-        var sameSig = state.SignatureKey == monitor.Signature.Key && File.Exists(_framePath) && File.Exists(_outPath);
+        // Finding 12: BaseCache.KeyFor only stats the file (no decode), so this stays cheap enough
+        // to sit before the skip gate, which must run before any drawing - a replaced base image
+        // must never be treated as "same signature".
+        var baseKey = BaseCache.KeyFor(layout.BaseImage, canvas.W, canvas.H, layout.BaseFit);
+        var sameSig = state.SignatureKey == monitor.Signature.Key && state.BaseKey == baseKey && File.Exists(_framePath) && File.Exists(_outPath);
         t.ResolveMs = sw.ElapsedMilliseconds;
 
         if (!force && changed.Count == 0 && !removed && sameSig)
@@ -108,6 +112,7 @@ public sealed class TickRunner(
         state.RectsById = resolved.ToDictionary(c => c.Id, c => new[] { c.PaintBounds.X, c.PaintBounds.Y, c.PaintBounds.W, c.PaintBounds.H });
         state.SignatureKey = monitor.Signature.Key;
         state.FramePath = _framePath;
+        state.BaseKey = baseKey;
         state.Save(_statePath);
 
         t.TotalMs = sw.ElapsedMilliseconds;
