@@ -101,11 +101,15 @@ public sealed unsafe class Surface : IDisposable
         fs.ReadExactly(header);
         if (!header.AsSpan(0, 8).SequenceEqual(RawMagic)) throw new InvalidDataException($"not a DeskWall raw surface: {path}");
         var w = BitConverter.ToInt32(header, 8); var h = BitConverter.ToInt32(header, 12);
+        if (w <= 0 || h <= 0 || (long)w * h * 4 != fs.Length - 16) throw new InvalidDataException($"raw surface header does not match file length: {path}");
         var s = Create(w, h);
+        var rowBytes = w * 4;
+        var all = new byte[rowBytes * h];
+        fs.ReadExactly(all);   // one read; the file is in the page cache on every tick after the first
         s.WithLock(LockWrite, new Rect(0, 0, w, h), (ptr, stride) =>
         {
-            var row = new byte[w * 4];
-            for (var y = 0; y < h; y++) { fs.ReadExactly(row); Marshal.Copy(row, 0, (IntPtr)(ptr + y * stride), row.Length); }
+            if (stride == rowBytes) Marshal.Copy(all, 0, ptr, all.Length);
+            else for (var y = 0; y < h; y++) Marshal.Copy(all, y * rowBytes, (IntPtr)(ptr + y * stride), rowBytes);
         });
         return s;
     }
@@ -118,11 +122,14 @@ public sealed unsafe class Surface : IDisposable
         using (var fs = File.Create(tmp))
         {
             fs.Write(RawMagic); fs.Write(BitConverter.GetBytes(Width)); fs.Write(BitConverter.GetBytes(Height));
+            var rowBytes = Width * 4;
+            var all = new byte[rowBytes * Height];
             WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
             {
-                var row = new byte[Width * 4];
-                for (var y = 0; y < Height; y++) { Marshal.Copy((IntPtr)(ptr + y * stride), row, 0, row.Length); fs.Write(row); }
+                if (stride == rowBytes) Marshal.Copy(ptr, all, 0, all.Length);
+                else for (var y = 0; y < Height; y++) Marshal.Copy((IntPtr)(ptr + y * stride), all, y * rowBytes, rowBytes);
             });
+            fs.Write(all);   // one write
         }
         File.Move(tmp, path, overwrite: true);
     }

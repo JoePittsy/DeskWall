@@ -78,9 +78,8 @@ public sealed class TickRunner(
         {
             var changedIds = changed.Select(c => c.Id).ToHashSet();
             var prevRects = state.RectsById.ToDictionary(kv => kv.Key, kv => new Rect(kv.Value[0], kv.Value[1], kv.Value[2], kv.Value[3]));
-            using var previous = Surface.LoadRaw(_framePath);
-            frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects);
-            if (ReferenceEquals(frame, previous)) frame = renderer.RenderAll(baseRaw, resolved);   // nothing dirty but keys differ: be safe
+            var previous = Surface.LoadRaw(_framePath);
+            frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects);   // mutates previous in place
             t.Redrawn = changedIds.Count;
         }
         using (frame)

@@ -143,4 +143,23 @@ Findings:
 
 ## Task 11 measurements
 
-(pending)
+Same setup as Task 10 (JIT Release, fresh process per run, display at that moment: RDP session
+1920x1200, so the layout's components were off-canvas; costs are still representative).
+
+| run | resolve | draw | encode | apply | total wall | cpu | redrawn |
+|---|---|---|---|---|---|---|---|
+| force (full render) | 24 | 45 | 17 | 4 | 95 | 109 | 7 |
+| minute changed (incremental) | 24 | 54 | 18 | 5 | 106 | 94 | 3 |
+| same minute (skip) | 24 | 0 | 0 | 0 | 24 | 31 | 0 |
+
+Before optimisation the incremental path measured draw 177 ms: `LoadRaw`/`SaveRaw` did 1200
+row-sized file operations each and the incremental renderer copied the whole previous frame into
+a fresh surface. Now raw I/O is one read and one write, and `RenderIncremental` mutates the
+previous frame in place. In a cold JIT process the incremental path still pays for loading two
+raw frames (previous + base, 9 MB each at 1920x1200; 20 MB each at 3440x1440) against one for the
+full render, which is why it is not yet faster. The resident AOT daemon (Phase 2) is where the
+comparison matters: the OS page cache holds both files and no JIT is paid. Re-measure there.
+
+Design note for Phase 2: the previous frame must NOT be kept in memory in the daemon. At
+3440x1440 it is 19.8 MB, which alone breaks the 10 MB idle budget. Loading it from disk per tick
+is the design, and the single-read `LoadRaw` is what makes that cheap.

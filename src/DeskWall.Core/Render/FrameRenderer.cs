@@ -24,7 +24,8 @@ public sealed class FrameRenderer(int width, int height)
     /// Incremental render: start from the previous frame, repaint the base under every dirty rect
     /// (changed components plus components that vanished since the previous frame), then redraw in
     /// z-order every component that intersects a dirty rect. Pixels outside the dirty rects are the
-    /// previous frame's, untouched. Returns <paramref name="previous"/> itself when nothing is dirty.
+    /// previous frame's, untouched. <paramref name="previous"/> is modified in place and returned;
+    /// the caller owns it either way.
     /// </summary>
     public Surface RenderIncremental(Surface previous, string baseRawPath, IReadOnlyList<Resolved> all,
         IReadOnlySet<string> changedIds, IReadOnlyDictionary<string, Rect> previousRects)
@@ -36,8 +37,7 @@ public sealed class FrameRenderer(int width, int height)
         foreach (var (id, rect) in previousRects) if (!liveIds.Contains(id)) dirty.Add(rect);
         if (dirty.Count == 0) return previous;
 
-        var frame = Surface.Create(width, height);
-        frame.CopyRect(previous, new Rect(0, 0, width, height));
+        var frame = previous;
         using (var baseSurf = Surface.LoadRaw(baseRawPath))
             foreach (var d in dirty) frame.CopyRect(baseSurf, d);
         foreach (var c in all.OrderBy(c => c.Z))
