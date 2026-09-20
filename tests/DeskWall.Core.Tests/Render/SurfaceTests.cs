@@ -149,6 +149,38 @@ public class FrameRendererTests
     }
 
     /// <summary>
+    /// Finding 1. Text and its shadow used to paint outside the component rect while the
+    /// incremental path restored the base only inside that rect, so every tick left a little more
+    /// of the previous string on the wallpaper. Renders a wide string in a narrow rect, replaces it
+    /// with a narrow one, and requires the incremental frame to be pixel-identical to a full render
+    /// of the new state everywhere on the surface.
+    /// </summary>
+    [Fact]
+    public void RenderIncremental_Text_Leaves_No_Residue_Outside_The_Rect()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        Directory.CreateDirectory(dir);
+        var png = Path.Combine(dir, "base-textresidue.png");
+        using (var b = Surface.Create(160, 60)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(png); }
+        var raw = BaseCache.Ensure(png, 160, 60, Fit.Cover);
+
+        var style = TextStyle.Default with { Size = 32, Effect = TextEffect.Shadow, EffectRadius = 6 };
+        var rect = new Rect(10, 10, 30, 32);
+        Resolved before = new ResolvedText("t", rect, 0, "88888", style);   // far wider than its rect
+        Resolved after = new ResolvedText("t", rect, 0, "1", style);
+
+        var r = new FrameRenderer(160, 60);
+        using var incremental = r.RenderIncremental(r.RenderAll(raw, [before]), raw, [after],
+            new HashSet<string> { "t" }, new Dictionary<string, Rect> { ["t"] = before.PaintBounds });
+        using var full = r.RenderAll(raw, [after]);
+
+        for (var y = 0; y < 60; y++)
+            for (var x = 0; x < 160; x++)
+                if (incremental.GetPixel(x, y) != full.GetPixel(x, y))
+                    Assert.Fail($"incremental frame differs from a full render at ({x},{y}): {incremental.GetPixel(x, y)} vs {full.GetPixel(x, y)}");
+    }
+
+    /// <summary>
     /// Finding 2. A component that moves keeps its identity, so it is in changedIds but its old
     /// rect was never added to the dirty set: the previous pixels stayed on screen until the next
     /// forced tick.
@@ -167,5 +199,24 @@ public class FrameRendererTests
             new Dictionary<string, Rect> { ["b"] = atLeft.PaintBounds });
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), second.GetPixel(5, 10));    // old location back to the base
         Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), second.GetPixel(25, 10));   // new location painted
+    }
+}
+
+public class PaintBoundsTests
+{
+    [Fact]
+    public void PaintBounds_Is_Rect_Plus_The_Shared_Margin()
+    {
+        var rect = new Rect(3220, 40, 172, 78);
+        Resolved plain = new ResolvedBar("b", rect, 0, 0.5, Color.White, Color.White, Axis.Horizontal);
+        Assert.Equal(rect, plain.PaintBounds);
+
+        var shadow = TextStyle.Default with { Effect = TextEffect.Shadow, EffectRadius = 6 };
+        Assert.Equal(8, shadow.PaintMargin());
+        Assert.Equal(new Rect(3212, 32, 188, 94), new ResolvedText("t", rect, 0, "14:32", shadow).PaintBounds);
+
+        Assert.Equal(0, (TextStyle.Default with { Effect = TextEffect.None }).PaintMargin());
+        Assert.Equal(rect, new ResolvedText("t", rect, 0, "14:32", TextStyle.Default with { Effect = TextEffect.None }).PaintBounds);
+        Assert.Equal(14, (TextStyle.Default with { Effect = TextEffect.Plate, EffectRadius = 6 }).PaintMargin());
     }
 }

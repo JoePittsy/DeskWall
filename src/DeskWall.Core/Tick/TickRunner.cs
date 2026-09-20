@@ -104,7 +104,8 @@ public sealed class TickRunner(
 
         // 7. state
         state.KeysById = resolved.ToDictionary(c => c.Id, c => c.ContentKey);
-        state.RectsById = resolved.ToDictionary(c => c.Id, c => new[] { c.Rect.X, c.Rect.Y, c.Rect.W, c.Rect.H });
+        // PaintBounds, not Rect: the next tick restores the base over these, and text paints outside its rect.
+        state.RectsById = resolved.ToDictionary(c => c.Id, c => new[] { c.PaintBounds.X, c.PaintBounds.Y, c.PaintBounds.W, c.PaintBounds.H });
         state.SignatureKey = monitor.Signature.Key;
         state.FramePath = _framePath;
         state.Save(_statePath);

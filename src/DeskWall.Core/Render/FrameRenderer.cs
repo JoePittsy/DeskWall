@@ -21,19 +21,24 @@ public sealed class FrameRenderer(int width, int height)
     }
 
     /// <summary>
-    /// Incremental render: start from the previous frame, repaint the base under every dirty rect
-    /// (changed components, their previous rects, plus components that vanished since the previous
-    /// frame), then redraw in
-    /// z-order every component that intersects a dirty rect. Pixels outside the dirty rects are the
-    /// previous frame's, untouched. <paramref name="previous"/> is modified in place and returned;
-    /// the caller owns it either way.
+    /// Incremental render: start from the previous frame, repaint the base under every dirty rect,
+    /// then redraw in z-order every component that intersects a dirty rect. Pixels outside the
+    /// dirty rects are the previous frame's, untouched. <paramref name="previous"/> is modified in
+    /// place and returned; the caller owns it either way.
+    /// <para>
+    /// A rect is dirty when it is the new paint bounds of a changed component, the <em>previous</em>
+    /// paint bounds of a changed component (otherwise a component that moved or shrank leaves its
+    /// old pixels behind), or the paint bounds of a component that vanished since the previous
+    /// frame. Paint bounds, not rects: text paints its shadow outside its rect and the clip in
+    /// <see cref="Surface.DrawText"/> is set to exactly the same bounds.
+    /// </para>
     /// </summary>
     public Surface RenderIncremental(Surface previous, string baseRawPath, IReadOnlyList<Resolved> all,
         IReadOnlySet<string> changedIds, IReadOnlyDictionary<string, Rect> previousRects)
     {
         if (previous.Width != width || previous.Height != height) throw new InvalidOperationException("previous frame size mismatch");
         var dirty = new List<Rect>();
-        foreach (var c in all) if (changedIds.Contains(c.Id)) dirty.Add(c.Rect);
+        foreach (var c in all) if (changedIds.Contains(c.Id)) dirty.Add(c.PaintBounds);
         foreach (var id in changedIds) if (previousRects.TryGetValue(id, out var pr)) dirty.Add(pr);
         var liveIds = all.Select(c => c.Id).ToHashSet();
         foreach (var (id, rect) in previousRects) if (!liveIds.Contains(id)) dirty.Add(rect);
@@ -43,7 +48,7 @@ public sealed class FrameRenderer(int width, int height)
         using (var baseSurf = Surface.LoadRaw(baseRawPath))
             foreach (var d in dirty) frame.CopyRect(baseSurf, d);
         foreach (var c in all.OrderBy(c => c.Z))
-            if (dirty.Any(d => d.Intersects(c.Rect))) Draw(frame, c);
+            if (dirty.Any(d => d.Intersects(c.PaintBounds))) Draw(frame, c);
         return frame;
     }
 

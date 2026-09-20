@@ -8,6 +8,14 @@ public abstract record Resolved(string Id, Rect Rect, int Z)
 {
     public string ContentKey { get; init; } = "";
 
+    /// <summary>
+    /// Every pixel this component may touch. Identical to <see cref="Rect"/> for everything that
+    /// paints inside its box; text inflates it by the effect margin. The incremental renderer
+    /// restores the base over this, not over Rect, so nothing survives a redraw. The content key
+    /// deliberately stays on Rect: PaintBounds is derived from it and adds no information.
+    /// </summary>
+    public virtual Rect PaintBounds => Rect;
+
     /// <summary>The fields that define appearance, in a fixed order, for hashing.</summary>
     public abstract IEnumerable<string> KeyParts();
 }
@@ -15,6 +23,17 @@ public abstract record Resolved(string Id, Rect Rect, int Z)
 public sealed record ResolvedText(string Id, Rect Rect, int Z, string Text, TextStyle Style) : Resolved(Id, Rect, Z)
 {
     public override IEnumerable<string> KeyParts() => [Text, Style.ToString()];
+
+    /// <summary>Rect plus the margin <see cref="Surface.DrawText"/> clips to. One shared helper
+    /// (<see cref="TextStyle.PaintMargin"/>) so the clip and the dirty rect cannot drift apart.</summary>
+    public override Rect PaintBounds
+    {
+        get
+        {
+            var m = Style.PaintMargin();
+            return new Rect(Rect.X - m, Rect.Y - m, Rect.W + 2 * m, Rect.H + 2 * m);
+        }
+    }
 }
 
 public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit Fit, float Radius, float Opacity) : Resolved(Id, Rect, Z)

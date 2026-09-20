@@ -298,82 +298,97 @@ public sealed unsafe class Surface : IDisposable
         if (string.IsNullOrEmpty(text)) return;
         Draw(rt =>
         {
-            IDWriteTextFormat* fmt;
-            fixed (char* fam = style.Font) fixed (char* loc = "en-GB")
-                s_dw->CreateTextFormat(fam, null, (DWRITE_FONT_WEIGHT)Math.Clamp(style.Weight, 1, 999), DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
-                    DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL, style.Size, loc, &fmt);
+            // Glyph runs and the effect ring both paint outside the layout box, and the incremental
+            // renderer only restores the base inside PaintBounds; clip to exactly that so nothing
+            // can be painted that a later tick will not clean up. Margin is shared with
+            // ResolvedText.PaintBounds through TextStyle.PaintMargin.
+            var margin = style.PaintMargin();
+            var clip = new D2D_RECT_F
+            {
+                left = rect.X - margin, top = rect.Y - margin,
+                right = rect.Right + margin, bottom = rect.Bottom + margin,
+            };
+            rt->PushAxisAlignedClip(&clip, D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             try
             {
-                fmt->SetTextAlignment(style.Align switch
-                {
-                    Align.Right => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_TRAILING,
-                    Align.Center => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_CENTER,
-                    _ => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING,
-                });
-                fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-                fmt->SetWordWrapping(DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_NO_WRAP);
-
-                IDWriteTextLayout* layout;
-                fixed (char* p = text) s_dw->CreateTextLayout(p, (uint)text.Length, fmt, rect.W, rect.H, &layout);
+                IDWriteTextFormat* fmt;
+                fixed (char* fam = style.Font) fixed (char* loc = "en-GB")
+                    s_dw->CreateTextFormat(fam, null, (DWRITE_FONT_WEIGHT)Math.Clamp(style.Weight, 1, 999), DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
+                        DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL, style.Size, loc, &fmt);
                 try
                 {
-                    var origin = new D2D_POINT_2F { x = rect.X, y = rect.Y };
-                    var main = Brush(rt, style.Color);
+                    fmt->SetTextAlignment(style.Align switch
+                    {
+                        Align.Right => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_TRAILING,
+                        Align.Center => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_CENTER,
+                        _ => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING,
+                    });
+                    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+                    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_NO_WRAP);
+
+                    IDWriteTextLayout* layout;
+                    fixed (char* p = text) s_dw->CreateTextLayout(p, (uint)text.Length, fmt, rect.W, rect.H, &layout);
                     try
                     {
-                        if (style.Effect != TextEffect.None && style.EffectColor.A > 0)
+                        var origin = new D2D_POINT_2F { x = rect.X, y = rect.Y };
+                        var main = Brush(rt, style.Color);
+                        try
                         {
-                            var eff = Brush(rt, style.EffectColor);
-                            try
+                            if (style.Effect != TextEffect.None && style.EffectColor.A > 0)
                             {
-                                switch (style.Effect)
+                                var eff = Brush(rt, style.EffectColor);
+                                try
                                 {
-                                    case TextEffect.Plate:
-                                        DWRITE_TEXT_METRICS m; layout->GetMetrics(&m);
-                                        var plate = new D2D1_ROUNDED_RECT
-                                        {
-                                            rect = new D2D_RECT_F { left = rect.X + m.left - 8, top = rect.Y + m.top - 4, right = rect.X + m.left + m.width + 8, bottom = rect.Y + m.top + m.height + 4 },
-                                            radiusX = style.EffectRadius, radiusY = style.EffectRadius,
-                                        };
-                                        rt->FillRoundedRectangle(&plate, (ID2D1Brush*)eff);
-                                        break;
-                                    case TextEffect.Outline:
-                                        // Eight one-and-a-half-pixel offsets in the effect colour read as a stroke at text sizes.
-                                        foreach (var (dx, dy) in Ring(1.5f))
-                                        {
-                                            var o = new D2D_POINT_2F { x = origin.x + dx, y = origin.y + dy };
-                                            rt->DrawTextLayout(o, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
-                                        }
-                                        break;
-                                    default: // Shadow
-                                        // Soft shadow approximated by stacking low-alpha copies in a ring of EffectRadius/2 around
-                                        // a (1,1) offset. A true Gaussian effect needs ID2D1DeviceContext; see Phase 1 ledger ruling.
-                                        var rad = Math.Max(1f, style.EffectRadius);
-                                        var ring = Ring(rad / 2f);
-                                        var soft = Brush(rt, style.EffectColor with { A = (byte)Math.Max(8, style.EffectColor.A / 4) });
-                                        try
-                                        {
-                                            foreach (var (dx, dy) in ring)
+                                    switch (style.Effect)
+                                    {
+                                        case TextEffect.Plate:
+                                            DWRITE_TEXT_METRICS m; layout->GetMetrics(&m);
+                                            var plate = new D2D1_ROUNDED_RECT
                                             {
-                                                var o = new D2D_POINT_2F { x = origin.x + 1 + dx, y = origin.y + 1 + dy };
-                                                rt->DrawTextLayout(o, layout, (ID2D1Brush*)soft, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                                                rect = new D2D_RECT_F { left = rect.X + m.left - 8, top = rect.Y + m.top - 4, right = rect.X + m.left + m.width + 8, bottom = rect.Y + m.top + m.height + 4 },
+                                                radiusX = style.EffectRadius, radiusY = style.EffectRadius,
+                                            };
+                                            rt->FillRoundedRectangle(&plate, (ID2D1Brush*)eff);
+                                            break;
+                                        case TextEffect.Outline:
+                                            // Eight one-and-a-half-pixel offsets in the effect colour read as a stroke at text sizes.
+                                            foreach (var (dx, dy) in Ring(1.5f))
+                                            {
+                                                var o = new D2D_POINT_2F { x = origin.x + dx, y = origin.y + dy };
+                                                rt->DrawTextLayout(o, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
                                             }
-                                            var core = new D2D_POINT_2F { x = origin.x + 1, y = origin.y + 1 };
-                                            rt->DrawTextLayout(core, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
-                                        }
-                                        finally { soft->Release(); }
-                                        break;
+                                            break;
+                                        default: // Shadow
+                                            // Soft shadow approximated by stacking low-alpha copies in a ring of EffectRadius/2 around
+                                            // a (1,1) offset. A true Gaussian effect needs ID2D1DeviceContext; see Phase 1 ledger ruling.
+                                            var rad = Math.Max(1f, style.EffectRadius);
+                                            var ring = Ring(rad / 2f);
+                                            var soft = Brush(rt, style.EffectColor with { A = (byte)Math.Max(8, style.EffectColor.A / 4) });
+                                            try
+                                            {
+                                                foreach (var (dx, dy) in ring)
+                                                {
+                                                    var o = new D2D_POINT_2F { x = origin.x + 1 + dx, y = origin.y + 1 + dy };
+                                                    rt->DrawTextLayout(o, layout, (ID2D1Brush*)soft, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                                                }
+                                                var core = new D2D_POINT_2F { x = origin.x + 1, y = origin.y + 1 };
+                                                rt->DrawTextLayout(core, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                                            }
+                                            finally { soft->Release(); }
+                                            break;
+                                    }
                                 }
+                                finally { eff->Release(); }
                             }
-                            finally { eff->Release(); }
+                            rt->DrawTextLayout(origin, layout, (ID2D1Brush*)main, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
                         }
-                        rt->DrawTextLayout(origin, layout, (ID2D1Brush*)main, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                        finally { main->Release(); }
                     }
-                    finally { main->Release(); }
+                    finally { layout->Release(); }
                 }
-                finally { layout->Release(); }
+                finally { fmt->Release(); }
             }
-            finally { fmt->Release(); }
+            finally { rt->PopAxisAlignedClip(); }
         });
     }
 
