@@ -109,7 +109,10 @@ internal static class Program
             Console.WriteLine("already running");
             return 0;
         }
-        var psi = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false };
+        // UseShellExecute, deliberately: with it false the daemon inherits this process's std handles
+        // and holds them open for its whole life, so `deskwall install` from any redirected caller
+        // (a pipe, a test harness, a script capturing output) hangs on a pipe that never closes.
+        var psi = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true };
         psi.ArgumentList.Add("run");
         using var p = System.Diagnostics.Process.Start(psi);
         Console.WriteLine($"started pid {p?.Id}");
