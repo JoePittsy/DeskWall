@@ -39,17 +39,16 @@ public static unsafe class Monitors
                 PWSTR id;
                 dw->GetMonitorDevicePathAt(i, &id);
                 string idStr = id.ToString();
-                PInvoke.CoTaskMemFree(id);
-
                 RECT rc;
                 try
                 {
-                    dw->GetMonitorRECT(id, &rc);
+                    dw->GetMonitorRECT(id, &rc);   // must run before the id is freed
                 }
                 catch (COMException)
                 {
                     continue; // detached monitor
                 }
+                finally { PInvoke.CoTaskMemFree(id); }
 
                 var bounds = new Rect(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
                 var raw = raws.FirstOrDefault(r => r.Bounds == bounds);
