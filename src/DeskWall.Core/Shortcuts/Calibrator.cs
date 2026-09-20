@@ -14,6 +14,12 @@ public static class Calibrator
 {
     private const int ProbeW = 400, ProbeH = 300, ItemInset = 100;
 
+    /// <summary>Fatal, not a warning. Everything this command produces is one measurement of pixels, so
+    /// a screenshot of whatever is in front is not a degraded answer, it is a wrong one - and because
+    /// the failure was only logged, a MinimizeAll that had never worked in a compiled build went
+    /// unnoticed for a whole lane (live-pass report, defect 1 and concern 3).</summary>
+    public const string MinimizeFailed = "could not minimise windows; calibration would measure whatever is in front";
+
     /// <summary>Pure: the bounding box of pixels inside <paramref name="probe"/> that differ from the
     /// reference by more than <paramref name="threshold"/> in any of R, G, B. Null when nothing differs.</summary>
     public static Rect? DiffBounds(Surface shot, Surface reference, Rect probe, int threshold = 60)
@@ -63,45 +69,59 @@ public static class Calibrator
     /// <param name="writeProbeShortcut">Writes a .lnk at the given path whose icon is fully
     /// transparent, so the arrow overlay is the only thing the item paints. Task 6 passes
     /// ShortcutFiles/BlankIcon; this lane cannot reference them yet.</param>
+    /// <param name="minimizeAll">Exposes the desktop. Defaults to <see cref="ShellDesktop.MinimizeAll"/>;
+    /// a test injects one so the pre-flight can fail without a shell.</param>
     public static CalibrationResult Run(MonitorInfo monitor, string currentWallpaperPath,
-        Action<string> writeProbeShortcut, Action<string>? log = null)
+        Action<string> writeProbeShortcut, Action<string>? log = null, Func<bool>? minimizeAll = null)
     {
         ArgumentNullException.ThrowIfNull(monitor);
         ArgumentNullException.ThrowIfNull(writeProbeShortcut);
         var say = log ?? (_ => { });
+        var minimize = minimizeAll ?? ShellDesktop.MinimizeAll;
 
-        DesktopFlags.EnsurePlacementAllowed();
-        var iconSize = DesktopView.IconSize();
-        var scale = monitor.Signature.ScalePercent;
-        say($"display {monitor.Signature.Key}, icon size {iconSize} px, spacing {DesktopView.Spacing()}, flags {DesktopView.Flags()}");
+        // Before anything on this machine is read or written: no folder flags, no probe image, no
+        // wallpaper, no .lnk. See MinimizeFailed for why this is fatal rather than a warning; the
+        // `calibrate` command surfaces the exception, so saying so loudly costs nothing.
+        if (!TryMinimize(minimize, out var minimizeError))
+            throw new InvalidOperationException(MinimizeFailed, minimizeError);
 
-        int w = monitor.Bounds.W, h = monitor.Bounds.H;
-        var probe = new Rect(w / 2 - ProbeW / 2, h / 2 - ProbeH / 2, ProbeW, ProbeH);
-        int itemX = probe.X + ItemInset, itemY = probe.Y + ItemInset;
-
-        // The probe must land on screen where we painted it, so build the image at exactly the
-        // monitor's size: DWPOS_FILL then maps it one to one.
-        var calibrateJpg = Paths.InRuntime("calibrate.jpg");
-        using var reference = Surface.Create(w, h);
-        if (File.Exists(currentWallpaperPath))
-        {
-            using var current = Surface.Load(currentWallpaperPath);
-            reference.DrawSurface(current, new Rect(0, 0, w, h), Fit.Cover);
-        }
-        else
-        {
-            reference.Clear(new Color(255, 16, 16, 16));
-        }
-        reference.FillRect(probe, new Color(255, 128, 128, 128));
-        reference.SaveJpeg(calibrateJpg, 92);
-
+        // Nullable, and captured inside the try, so the finally puts back only what was actually
+        // changed: the pre-flight above has already minimised every window, and a throw anywhere in
+        // the prologue must still reach UndoMinimizeAll.
+        DesktopFolderFlags? flagsBefore = null;
+        string? originalWallpaper = null;
         var lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
             "DeskWallTest-calibrate.lnk");
-        var flagsBefore = DesktopView.Flags();
-        var originalWallpaper = WallpaperSetter.Get(monitor.WallpaperMonitorId);
 
         try
         {
+            DesktopFlags.EnsurePlacementAllowed();
+            var iconSize = DesktopView.IconSize();
+            var scale = monitor.Signature.ScalePercent;
+            say($"display {monitor.Signature.Key}, icon size {iconSize} px, spacing {DesktopView.Spacing()}, flags {DesktopView.Flags()}");
+
+            int w = monitor.Bounds.W, h = monitor.Bounds.H;
+            var probe = new Rect(w / 2 - ProbeW / 2, h / 2 - ProbeH / 2, ProbeW, ProbeH);
+            int itemX = probe.X + ItemInset, itemY = probe.Y + ItemInset;
+
+            // The probe must land on screen where we painted it, so build the image at exactly the
+            // monitor's size: DWPOS_FILL then maps it one to one.
+            var calibrateJpg = Paths.InRuntime("calibrate.jpg");
+            using var reference = Surface.Create(w, h);
+            if (File.Exists(currentWallpaperPath))
+            {
+                using var current = Surface.Load(currentWallpaperPath);
+                reference.DrawSurface(current, new Rect(0, 0, w, h), Fit.Cover);
+            }
+            else
+            {
+                reference.Clear(new Color(255, 16, 16, 16));
+            }
+            reference.FillRect(probe, new Color(255, 128, 128, 128));
+            reference.SaveJpeg(calibrateJpg, 92);
+
+            flagsBefore = DesktopView.Flags();
+            originalWallpaper = WallpaperSetter.Get(monitor.WallpaperMonitorId);
             WallpaperSetter.Set(monitor.WallpaperMonitorId, calibrateJpg);
             // Hide every icon's label for the measurement: a label would land in the diff box and
             // swamp the 13 px arrow. Restored in the finally below.
@@ -114,8 +134,11 @@ public static class Calibrator
             Thread.Sleep(700);
             say($"probe at ({itemX},{itemY}); placed at {DesktopView.GetPosition(lnk)}");
 
-            if (!ShellDesktop.MinimizeAll())
-                say("WARNING: MinimizeAll failed; the probe may be hidden behind a window");
+            // Minimised at the top; a couple of seconds of Explorer settling have passed since, so ask
+            // once more. Best effort this time - the pre-flight already proved the call reaches the
+            // shell, and the windows it minimised have had nothing to bring them back.
+            if (!TryMinimize(minimize, out _))
+                say("note: the second minimise attempt failed; the pre-flight one is what exposed the desktop");
             Thread.Sleep(800);
             using var shot = Screenshot.Capture(monitor.Bounds);
             shot.SavePng(Paths.InRuntime("calibrate-shot.png"));
@@ -140,10 +163,21 @@ public static class Calibrator
         }
         finally
         {
-            DesktopView.SetFlags(DesktopFolderFlags.HideFileNames, flagsBefore & DesktopFolderFlags.HideFileNames);
+            if (flagsBefore is { } before)
+                DesktopView.SetFlags(DesktopFolderFlags.HideFileNames, before & DesktopFolderFlags.HideFileNames);
             if (originalWallpaper is not null) WallpaperSetter.Set(monitor.WallpaperMonitorId, originalWallpaper);
             if (File.Exists(lnk)) File.Delete(lnk);
             ShellDesktop.UndoMinimizeAll();
         }
+    }
+
+    /// <summary>True when the shell really was asked to minimise. A delegate that throws is a failure
+    /// like any other, and the exception is handed back rather than swallowed so it can travel as the
+    /// inner exception of the one the caller raises.</summary>
+    private static bool TryMinimize(Func<bool> minimize, out Exception? error)
+    {
+        error = null;
+        try { return minimize(); }
+        catch (Exception ex) { error = ex; return false; }
     }
 }

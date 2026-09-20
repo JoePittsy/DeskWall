@@ -42,6 +42,39 @@ public class CalibratorTests
         Assert.Equal(new Rect(5, 5, 4, 4), Calibrator.DiffBounds(shot, reference, new Rect(0, 0, 100, 100)));
     }
 
+    /// <summary>Everything calibrate produces is one measurement of pixels, so a screenshot of whatever
+    /// is in front is not a degraded answer, it is a wrong one. MinimizeAll had in fact never worked in
+    /// a compiled build, and because the failure was only a warning it took a whole lane to notice.
+    /// <para>
+    /// Nothing here goes near the live desktop, which is the point of the pre-flight: Run must throw
+    /// before the folder flags are read, before the probe image is built and before it is applied.
+    /// </para></summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_Minimiser_That_Fails_Stops_Run_Before_Anything_Is_Touched(bool byThrowing)
+    {
+        var monitor = new DeskWall.Core.Display.MonitorInfo(
+            new DeskWall.Core.Display.DisplaySignature("TEST", 800, 600, 100), new Rect(0, 0, 800, 600), true, "TEST");
+        var probeJpg = Paths.InRuntime("calibrate.jpg");
+        if (File.Exists(probeJpg)) File.Delete(probeJpg);
+        var shell = new InvalidOperationException("the shell said no");
+        var minimise = byThrowing ? new Func<bool>(() => throw shell) : new Func<bool>(() => false);
+        var probesWritten = 0;
+        var linesSaid = 0;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Calibrator.Run(
+            monitor, "no-such-wallpaper.jpg", _ => probesWritten++, _ => linesSaid++, minimise));
+
+        Assert.Equal("could not minimise windows; calibration would measure whatever is in front", ex.Message);
+        if (byThrowing) Assert.Same(shell, ex.InnerException); else Assert.Null(ex.InnerException);
+        // The probe wallpaper is the first thing Run writes, and it writes it before applying it, so
+        // its absence is also proof that no wallpaper was changed.
+        Assert.False(File.Exists(probeJpg));
+        Assert.Equal(0, probesWritten);
+        Assert.Equal(0, linesSaid);   // the first `say` reports the shell's icon size: not reached
+    }
+
     [Fact]
     [Trait("Category", "Desktop")]
     public void Screenshot_Captures_Primary_Monitor_Size()
