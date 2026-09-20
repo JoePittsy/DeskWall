@@ -35,6 +35,24 @@ public class AsyncSourceTests
         Assert.Equal(1, ((NumberValue)v.Get("n")!).Number);
         Assert.Equal(1, s.Runs);
     }
+
+    /// <summary>Finding 11: Completed used to be decided in a continuation that raced with RefreshAsync
+    /// clearing _inFlight, so an ordinary on-time refresh could report itself as a late one - which the
+    /// daemon turns into a spurious extra tick.</summary>
+    [Fact]
+    public async Task An_On_Time_Refresh_Does_Not_Report_Itself_As_Late()
+    {
+        var raised = 0;
+        for (var i = 0; i < 40; i++)
+        {
+            var s = new SlowSource(TimeSpan.Zero, TimeSpan.FromSeconds(5));
+            s.Completed += _ => Interlocked.Increment(ref raised);
+            await s.RefreshAsync(default);
+            await Task.Yield();
+        }
+        await Task.Delay(50);
+        Assert.Equal(0, raised);
+    }
 }
 
 public class JsonValuesTests
@@ -75,6 +93,21 @@ public class JsonValuesTests
     {
         var v = JsonValues.Parse("""{ "rows": [ { "id": 1 }, { "name": "x" } ] }""");
         Assert.Null(((ListValue)v.Get("rows")!).KeyField);
+    }
+
+    /// <summary>Finding 14: a SteamID64 or a snowflake through GetDouble renders as 7.6561198E+16 and
+    /// can never match a [key] lookup, which compares the value's text. Anything that still round-trips
+    /// through a double stays a NumberValue so arithmetic and numeric formats are untouched.</summary>
+    [Fact]
+    public void An_Integer_Past_2_Pow_53_Stays_Whole()
+    {
+        var v = JsonValues.Parse("""{ "rows": [ { "id": 76561198012345678, "n": 9007199254740993, "small": 620, "f": 1.5 } ] }""");
+        var row = ((ListValue)v.Get("rows")!).Items[0];
+        Assert.Equal("76561198012345678", ((TextValue)row.Get("id")!).Text);
+        Assert.Equal("9007199254740993", ((TextValue)row.Get("n")!).Text);
+        Assert.Equal(620, ((NumberValue)row.Get("small")!).Number);
+        Assert.Equal(1.5, ((NumberValue)row.Get("f")!).Number);
+        Assert.NotNull(((ListValue)v.Get("rows")!).ByKey("76561198012345678"));
     }
 }
 

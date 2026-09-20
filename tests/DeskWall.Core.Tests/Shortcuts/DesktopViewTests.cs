@@ -38,9 +38,10 @@ public class DesktopViewTests
     }
 
     [Fact]
+    [Trait("Category", "Desktop")]
     public void View_Is_Available_And_Reports_Spacing_And_IconSize()
     {
-        Assert.True(DesktopView.IsAvailable());
+        if (!DesktopView.IsAvailable()) return;   // Session 0 or a locked workstation: skip, do not fail
         var (sx, sy) = DesktopView.Spacing();
         Assert.InRange(sx, 40, 400);
         Assert.InRange(sy, 40, 400);
@@ -48,8 +49,10 @@ public class DesktopViewTests
     }
 
     [Fact]
+    [Trait("Category", "Desktop")]
     public void Position_Then_GetPosition_RoundTrips_For_A_Test_Shortcut()
     {
+        if (!DesktopView.IsAvailable()) return;
         var lnk = TestLnk();
         try
         {
@@ -63,20 +66,31 @@ public class DesktopViewTests
             Assert.InRange(got!.Value.X, 690, 710);
             Assert.InRange(got.Value.Y, 290, 310);
         }
-        finally { if (File.Exists(lnk)) File.Delete(lnk); }
+        finally
+        {
+            if (File.Exists(lnk)) File.Delete(lnk);
+            // EnsurePlacementAllowed turned auto-arrange and snap-to-grid off and saved the originals
+            // into the test DESKWALL_HOME, which is discarded: without this the user's desktop keeps
+            // the change with no record anywhere to put it back.
+            DesktopFlags.Restore();
+        }
     }
 
     [Fact]
+    [Trait("Category", "Desktop")]
     public void GetPosition_Of_A_Missing_Item_Is_Null_And_Position_Throws()
     {
+        if (!DesktopView.IsAvailable()) return;
         var lnk = Path.Combine(DesktopDir(), "DeskWallTest-missing.lnk");
         Assert.Null(DesktopView.GetPosition(lnk));
         Assert.Throws<FileNotFoundException>(() => DesktopView.Position([(lnk, 0, 0)]));
     }
 
     [Fact]
+    [Trait("Category", "Desktop")]
     public void Flags_Round_Trip_And_Restore()
     {
+        if (!DesktopView.IsAvailable()) return;
         var before = DesktopView.Flags();
         var file = Paths.InRuntime("desktop-flags.json");
         if (File.Exists(file)) File.Delete(file);
@@ -100,8 +114,10 @@ public class DesktopViewTests
     /// <summary>Exercises the read-and-delete half of Restore without ever switching a flag ON: turning
     /// snap-to-grid or auto-arrange on would make Explorer move every real icon on the desktop.</summary>
     [Fact]
+    [Trait("Category", "Desktop")]
     public void Restore_Consumes_A_Saved_File_And_Is_A_NoOp_Without_One()
     {
+        if (!DesktopView.IsAvailable()) return;
         var file = Paths.InRuntime("desktop-flags.json");
         var before = DesktopView.Flags() & PlacementMask;
         try

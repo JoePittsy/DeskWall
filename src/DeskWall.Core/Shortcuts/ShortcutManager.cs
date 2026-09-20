@@ -9,7 +9,14 @@ namespace DeskWall.Core.Shortcuts;
 
 /// <summary>What one <see cref="ShortcutManager.Reconcile"/> did. Warnings are non-fatal: a single bad
 /// slot never stops the others.</summary>
-public sealed record ShortcutOutcome(int Written, int Positioned, int Removed, IReadOnlyList<string> Warnings);
+public sealed record ShortcutOutcome(int Written, int Positioned, int Removed, IReadOnlyList<string> Warnings)
+{
+    /// <summary>True when at least one wanted slot could not be written or could not be positioned.
+    /// The tick leaves its fingerprint unstored in that case so the next tick retries. A warning that
+    /// is not about a slot - a missing calibration, say - does not set it: retrying would not fix it
+    /// and the icons are placed, just with the fallback arrow.</summary>
+    public bool SlotFailed { get; init; }
+}
 
 /// <summary>Makes the desktop match the rendered layout: one transparent .lnk per shortcut slot, placed
 /// so the shell's arrow overlay sits <c>pad</c> px from the cover's bottom-left corner.
@@ -65,25 +72,34 @@ public sealed class ShortcutManager(Calibration calibration, int pad = ShortcutP
         var owned = LoadOwned();
         var nowOwned = new Dictionary<string, string>();
         var written = 0;
+        var slotFailed = false;
         var wanted = new List<(string Path, int X, int Y)>();
         foreach (var s in ordered)
         {
+            // Claim the slot BEFORE anything that can throw. A slot missing from nowOwned is a slot
+            // RemoveStale deletes, so recording ownership only after a successful Write meant one
+            // failed write (Explorer restarting, a redirected desktop refusing the create) deleted
+            // the good .lnk that was already there. The claimed-but-unwritten value is "", which no
+            // SpecKey can equal, so Matches says no and the next reconcile retries the write.
+            var slotKey = SlotKey(s.Slot);
+            nowOwned[slotKey] = "";
             try
             {
                 var path = Path.Combine(desktop, ShortcutPlan.SlotFileName(s.Slot));
                 var spec = ShortcutFiles.SpecFor(s, ico);
                 var key = SpecKey(spec);
-                if (!Matches(path, SlotKey(s.Slot), key, spec, owned))
+                if (!Matches(path, slotKey, key, spec, owned))
                 {
                     ShortcutFiles.Write(path, spec);
                     written++;
                 }
-                nowOwned[SlotKey(s.Slot)] = key;
+                nowOwned[slotKey] = key;
                 var (x, y) = ShortcutPlan.IconPosition(s.Rect, arrow, pad);
                 wanted.Add((path, x, y));
             }
             catch (Exception ex)
             {
+                slotFailed = true;
                 warnings.Add($"slot {s.Slot} ({s.Id}): {ex.GetType().Name}: {ex.Message}");
             }
         }
@@ -91,24 +107,33 @@ public sealed class ShortcutManager(Calibration calibration, int pad = ShortcutP
         var removed = RemoveStale(desktop, owned.Keys, nowOwned, warnings);
         SaveOwned(nowOwned);
         var positioned = PlaceAndVerify(wanted, settle: written > 0, warnings);
-        return new ShortcutOutcome(written, positioned, removed, warnings);
+        return new ShortcutOutcome(written, positioned, removed, warnings)
+        {
+            SlotFailed = slotFailed || positioned != wanted.Count,
+        };
     }
 
-    /// <summary>Delete every slot file on the desktop (uninstall). Unlike Reconcile this is not scoped to
-    /// the slots we own: uninstall means the desktop goes back to having no slot files at all.</summary>
-    public int RemoveAll()
+    /// <summary>Delete the slot files this manager owns (uninstall) and forget the ownership file.
+    /// <para>
+    /// Scoped to <c>shortcuts-owned.json</c> on purpose, and NOT a blanket sweep of every
+    /// non-breaking-space .lnk on the desktop: the v0 PowerShell proof of concept owns slots 0..3
+    /// with byte-for-byte the same file names, and `deskwall uninstall` must not take a still-working
+    /// tool's icons away with it. A blanket sweep can come back as an explicit opt-in after the POC
+    /// is retired at the parity gate.
+    /// </para></summary>
+    public int RemoveOwned()
     {
         var desktop = _desktopDir();
         var removed = 0;
-        if (Directory.Exists(desktop))
+        foreach (var slotKey in LoadOwned().Keys)
         {
-            foreach (var file in Directory.EnumerateFiles(desktop, "*.lnk"))
-            {
-                if (ShortcutPlan.SlotFromFileName(Path.GetFileName(file)) is null) continue;
-                try { ShortcutFiles.Delete(file); removed++; }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            }
+            if (!int.TryParse(slotKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot)
+                || slot is < 0 or > MaxSlot) continue;
+            var file = Path.Combine(desktop, ShortcutPlan.SlotFileName(slot));
+            if (!File.Exists(file)) continue;
+            try { ShortcutFiles.Delete(file); removed++; }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
         if (File.Exists(OwnedFile)) File.Delete(OwnedFile);
         return removed;
@@ -186,10 +211,22 @@ public sealed class ShortcutManager(Calibration calibration, int pad = ShortcutP
     private int PlaceAndVerify(List<(string Path, int X, int Y)> wanted, bool settle, List<string> warnings)
     {
         if (wanted.Count == 0) return 0;
+
+        // Read first, move only what is wrong. Every Position call rebuilds the whole out-of-process
+        // shell chain and a rewrite makes Explorer re-enumerate the desktop, so a reconcile that
+        // changed nothing - the common --force and display-change case - now costs N reads and no
+        // writes instead of N reads plus N moves plus the settle.
+        var placed = 0;
+        var pending = new List<(string Path, int X, int Y)>();
+        foreach (var it in wanted)
+        {
+            var at = DesktopView.GetPosition(it.Path);
+            if (at is not null && at.Value.X == it.X && at.Value.Y == it.Y) placed++;
+            else pending.Add(it);
+        }
+        if (pending.Count == 0) return placed;
         if (settle) Thread.Sleep(SettleMs);
 
-        var pending = wanted;
-        var placed = 0;
         for (var round = 0; round < PositionRounds && pending.Count > 0; round++)
         {
             if (round > 0) Thread.Sleep(RetryDelayMs);

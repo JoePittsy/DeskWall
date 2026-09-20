@@ -14,8 +14,15 @@ namespace DeskWall.Core.Sources;
 public sealed partial class RssSource(string name, TimeSpan every, TimeSpan timeout, string urlTemplate, int max, Secrets secrets, HttpMessageHandler? handler = null)
     : AsyncSource(name, every, timeout)
 {
+    /// <summary>A feed is text; 4 MB is a very large one. BoundedHttp says why a body needs a cap.</summary>
+    private const long MaxBody = 4 * 1024 * 1024;
     private static readonly HttpClient s_shared = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(10) }) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     private readonly HttpClient _client = handler is null ? s_shared : new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+
+    /// <summary>The hard ceiling on one fetch, as a multiple of the source's own timeout: the token
+    /// AsyncSource hands FetchAsync is never cancelled, so without this a stalled body keeps the
+    /// source in flight - and so failing every tick - for the life of the daemon.</summary>
+    private TimeSpan HardCeiling => Timeout * 6;
 
     public static RssSource FromDef(SourceDef def, Secrets secrets, HttpMessageHandler? handler = null)
     {
@@ -30,9 +37,12 @@ public sealed partial class RssSource(string name, TimeSpan every, TimeSpan time
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, secrets.Substitute(urlTemplate));
         req.Headers.UserAgent.ParseAdd("DeskWall/1.0");
-        using var res = await _client.SendAsync(req, ct);
+        using var hard = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        hard.CancelAfter(HardCeiling);
+        ct = hard.Token;
+        using var res = await _client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!res.IsSuccessStatusCode) throw new HttpRequestException($"{(int)res.StatusCode} from {urlTemplate}");
-        return ParseFeed(await res.Content.ReadAsStringAsync(ct), max);
+        return ParseFeed(await BoundedHttp.ReadStringAsync(res.Content, MaxBody, urlTemplate, ct), max);
     }
 
     /// <summary>Pure parser, exposed for tests and for FileSource users who point it at a saved feed.</summary>

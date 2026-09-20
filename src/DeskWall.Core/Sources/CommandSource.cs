@@ -9,7 +9,10 @@ namespace DeskWall.Core.Sources;
 /// <summary>Settings: command (required: program), args (optional, may contain {secret:x}), workingDir, every (default 600), timeout (default 10),
 /// parse = json | text (default: json if stdout starts with { or [, else text), unixTimeFields.
 /// Runs hidden (no window), captures stdout (UTF-8) and stderr. Publishes: text | json, exitCode (NumberValue), ranAt (TimeValue), stderr (TextValue when non-empty).
-/// Non-zero exit does not throw (users may script that); a timeout kills the process tree and throws.</summary>
+/// Non-zero exit does not throw while stdout has something in it (users script that); a non-zero exit with
+/// empty stdout throws, so the last good values stay published; a timeout kills the process tree and throws.
+/// Caveat, documented in layouts/README.md: stderr is published verbatim, so a command that fails and echoes
+/// its own argument list can put a substituted {secret:} into a value a component could draw.</summary>
 public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout, string command, string? args, string? workingDir, string? parse,
     IReadOnlySet<string> unixTimeFields, Secrets secrets, IClock clock) : AsyncSource(name, every, timeout)
 {
@@ -47,6 +50,12 @@ public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout,
             throw new TimeoutException($"command '{command}' exceeded {Timeout.TotalSeconds:0} s and was killed");
         }
         var outText = await stdout; var errText = await stderr;
+        // Spec 3.2 again: a non-zero exit that printed nothing has no values to publish, and
+        // publishing text = "" over the last good text is the same partial-record-over-last-good the
+        // spec decides against. A non-zero exit that DID print is still a success: scripts use the
+        // exit code as a flag. The message carries the command, never the substituted args.
+        if (p.ExitCode != 0 && string.IsNullOrWhiteSpace(outText))
+            throw new InvalidOperationException($"command '{command}' exited {p.ExitCode} with no output");
         var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase)
         {
             ["exitCode"] = new NumberValue(p.ExitCode),

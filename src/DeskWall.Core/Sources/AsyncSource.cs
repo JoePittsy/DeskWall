@@ -10,6 +10,7 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
 {
     private readonly object _lock = new();
     private Task<RecordValue>? _inFlight;
+    private Task<RecordValue>? _notified;   // the overrunning task a Completed notification is already attached to
 
     public TimeSpan Timeout => timeout;
 
@@ -28,26 +29,37 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
             work = done ?? (_inFlight ??= Start());
         }
         if (done is not null) return await done.ConfigureAwait(false);
-        // Cancel the loser: an abandoned Task.Delay keeps an armed timer for the whole timeout, one
-        // per async source per tick, and the daemon passes a token that can never cancel it (finding 6).
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var finished = await Task.WhenAny(work, Task.Delay(timeout, cts.Token)).ConfigureAwait(false);
-        cts.Cancel();
-        if (finished != work) throw new TimeoutException($"source '{Name}' exceeded {timeout.TotalSeconds:0} s; still running");
+        // The loser of the race is cancelled rather than left running: an uncancelled Task.Delay keeps
+        // a timer alive for the full timeout after every successful refresh.
+        using var race = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var finished = await Task.WhenAny(work, Task.Delay(timeout, race.Token)).ConfigureAwait(false);
+        await race.CancelAsync().ConfigureAwait(false);
+        if (finished != work)
+        {
+            // This refresh, and only this one, decided the work overran. Deciding it in Start's
+            // continuation instead raced with the line below and reported an ordinary on-time refresh
+            // as a late one, which the daemon turned into a spurious extra tick.
+            NotifyWhenItLands(work);
+            throw new TimeoutException($"source '{Name}' exceeded {timeout.TotalSeconds:0} s; still running");
+        }
         lock (_lock) _inFlight = null;
         return await work.ConfigureAwait(false);
     }
 
-    private Task<RecordValue> Start()
+    /// <summary>Raise Completed once when a fetch the tick has already given up on finishes - at once
+    /// if it has already finished. Attached at most once per task, so a fetch that overruns several
+    /// ticks still produces a single wake.</summary>
+    private void NotifyWhenItLands(Task<RecordValue> work)
     {
-        // Never cancelled by the tick's token: the work must finish and report so the next tick can use it.
-        var t = Task.Run(() => FetchAsync(CancellationToken.None));
-        t.ContinueWith(_ =>
+        lock (_lock)
         {
-            bool overran;
-            lock (_lock) overran = ReferenceEquals(_inFlight, t);
-            if (overran) Completed?.Invoke(this);
-        }, TaskScheduler.Default);
-        return t;
+            if (ReferenceEquals(_notified, work)) return;
+            _notified = work;
+        }
+        work.ContinueWith(_ => Completed?.Invoke(this), TaskScheduler.Default);
     }
+
+    // Never cancelled by the tick's token: the work must finish and report so the next tick can use it.
+    // Each source bounds its own fetch from inside FetchAsync.
+    private Task<RecordValue> Start() => Task.Run(() => FetchAsync(CancellationToken.None));
 }
