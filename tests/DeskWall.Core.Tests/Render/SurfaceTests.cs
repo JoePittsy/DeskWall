@@ -41,6 +41,36 @@ public class SurfaceTests
         Assert.Equal(s.GetPixel(3, 3), raw2.GetPixel(3, 3));
     }
 
+    /// <summary>Finding 10: a failing SaveRaw used to leave &lt;path&gt;.tmp behind forever.</summary>
+    [Fact]
+    public void SaveRaw_Failure_Leaves_No_Tmp_File()
+    {
+        var dir = Path.Combine(TempDir(), "saveraw-fail-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "frame.raw");
+        Directory.CreateDirectory(path);   // destination is a directory: File.Move fails after the tmp write
+
+        using var s = Surface.Create(4, 4);
+        s.Clear(new Color(255, 1, 2, 3));
+        Assert.ThrowsAny<Exception>(() => s.SaveRaw(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    /// <summary>Same failure shape through Encode (SaveJpeg/SavePng share it).</summary>
+    [Fact]
+    public void SaveJpeg_Failure_Leaves_No_Tmp_File()
+    {
+        var dir = Path.Combine(TempDir(), "savejpeg-fail-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "out.jpg");
+        Directory.CreateDirectory(path);   // destination is a directory: File.Move fails after the tmp write
+
+        using var s = Surface.Create(4, 4);
+        s.Clear(new Color(255, 1, 2, 3));
+        Assert.ThrowsAny<Exception>(() => s.SaveJpeg(path, 92));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
     [Fact]
     public void DrawText_Marks_Pixels()
     {

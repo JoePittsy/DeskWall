@@ -25,8 +25,17 @@ public sealed class FrameState
     public void Save(string path)
     {
         var tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(this, FrameStateJsonContext.Default.FrameState));
-        File.Move(tmp, path, overwrite: true);
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, FrameStateJsonContext.Default.FrameState));
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing save.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 }
 

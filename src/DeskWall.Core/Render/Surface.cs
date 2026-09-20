@@ -125,19 +125,29 @@ public sealed unsafe class Surface : IDisposable
     public void SaveRaw(string path)
     {
         var tmp = path + ".tmp";
-        using (var fs = File.Create(tmp))
+        try
         {
-            fs.Write(RawMagic); fs.Write(BitConverter.GetBytes(Width)); fs.Write(BitConverter.GetBytes(Height));
-            var rowBytes = Width * 4;
-            var all = new byte[rowBytes * Height];
-            WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
+            using (var fs = File.Create(tmp))
             {
-                if (stride == rowBytes) Marshal.Copy(ptr, all, 0, all.Length);
-                else for (var y = 0; y < Height; y++) Marshal.Copy((IntPtr)(ptr + y * stride), all, y * rowBytes, rowBytes);
-            });
-            fs.Write(all);   // one write
+                fs.Write(RawMagic); fs.Write(BitConverter.GetBytes(Width)); fs.Write(BitConverter.GetBytes(Height));
+                var rowBytes = Width * 4;
+                var all = new byte[rowBytes * Height];
+                WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
+                {
+                    if (stride == rowBytes) Marshal.Copy(ptr, all, 0, all.Length);
+                    else for (var y = 0; y < Height; y++) Marshal.Copy((IntPtr)(ptr + y * stride), all, y * rowBytes, rowBytes);
+                });
+                fs.Write(all);   // one write
+            }
+            File.Move(tmp, path, overwrite: true);
         }
-        File.Move(tmp, path, overwrite: true);
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing tick; this directory is
+            // supposed to stay tidy across a daemon that ticks every minute for weeks.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 
     public void SaveJpeg(string path, int quality) => Encode(path, PInvoke.GUID_ContainerFormatJpeg, Math.Clamp(quality, 1, 100) / 100f);
@@ -148,39 +158,48 @@ public sealed unsafe class Surface : IDisposable
     {
         ReleaseRenderTarget();
         var tmp = path + ".tmp";
-        IWICStream* stream; s_wic->CreateStream(&stream);
         try
         {
-            fixed (char* p = tmp) stream->InitializeFromFilename(p, (uint)GENERIC_ACCESS_RIGHTS.GENERIC_WRITE);
-            IWICBitmapEncoder* enc = s_wic->CreateEncoder(&container, null);
+            IWICStream* stream; s_wic->CreateStream(&stream);
             try
             {
-                enc->Initialize((IStream*)stream, WICBitmapEncoderCacheOption.WICBitmapEncoderNoCache);
-                IWICBitmapFrameEncode* frame; IPropertyBag2* bag; enc->CreateNewFrame(&frame, &bag);
+                fixed (char* p = tmp) stream->InitializeFromFilename(p, (uint)GENERIC_ACCESS_RIGHTS.GENERIC_WRITE);
+                IWICBitmapEncoder* enc = s_wic->CreateEncoder(&container, null);
                 try
                 {
-                    if (jpegQuality is { } q)
+                    enc->Initialize((IStream*)stream, WICBitmapEncoderCacheOption.WICBitmapEncoderNoCache);
+                    IWICBitmapFrameEncode* frame; IPropertyBag2* bag; enc->CreateNewFrame(&frame, &bag);
+                    try
                     {
-                        fixed (char* pn = "ImageQuality")
+                        if (jpegQuality is { } q)
                         {
-                            var pb = new PROPBAG2 { pstrName = pn };
-                            var v = new VARIANT();
-                            v.Anonymous.Anonymous.vt = VARENUM.VT_R4;
-                            v.Anonymous.Anonymous.Anonymous.fltVal = q;
-                            bag->Write(1, &pb, &v);
+                            fixed (char* pn = "ImageQuality")
+                            {
+                                var pb = new PROPBAG2 { pstrName = pn };
+                                var v = new VARIANT();
+                                v.Anonymous.Anonymous.vt = VARENUM.VT_R4;
+                                v.Anonymous.Anonymous.Anonymous.fltVal = q;
+                                bag->Write(1, &pb, &v);
+                            }
                         }
+                        frame->Initialize(bag);
+                        frame->WriteSource((IWICBitmapSource*)_bmp, null);
+                        frame->Commit();
+                        enc->Commit();
                     }
-                    frame->Initialize(bag);
-                    frame->WriteSource((IWICBitmapSource*)_bmp, null);
-                    frame->Commit();
-                    enc->Commit();
+                    finally { frame->Release(); bag->Release(); }
                 }
-                finally { frame->Release(); bag->Release(); }
+                finally { enc->Release(); }
             }
-            finally { enc->Release(); }
+            finally { stream->Release(); }
+            File.Move(tmp, path, overwrite: true);
         }
-        finally { stream->Release(); }
-        File.Move(tmp, path, overwrite: true);
+        catch
+        {
+            // Finding 10: leave no <path>.tmp behind on a failing tick.
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 
     // ---- pixels --------------------------------------------------------------------------
