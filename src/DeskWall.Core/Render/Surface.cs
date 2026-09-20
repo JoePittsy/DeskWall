@@ -251,8 +251,27 @@ public sealed unsafe class Surface : IDisposable
     {
         var rt = Rt();
         rt->BeginDraw();
-        try { body(rt); }
-        finally { rt->EndDraw(null, null).ThrowOnFailure(); }
+        try
+        {
+            body(rt);
+        }
+        catch
+        {
+            // Finding 19: a half-pushed layer or clip left by the body must not poison the cached
+            // target for every later Draw on this Surface, so drop it entirely rather than try to
+            // rebalance it. EndDraw's own result is irrelevant here - call it (D2D expects a
+            // matching EndDraw for every BeginDraw) but never let its failure mask the body's real
+            // exception with a different one.
+            rt->EndDraw(null, null);
+            ReleaseRenderTarget();
+            throw;
+        }
+        var hr = rt->EndDraw(null, null);
+        if (hr.Failed)
+        {
+            ReleaseRenderTarget();   // do not leave a target that just failed EndDraw cached for reuse
+            hr.ThrowOnFailure();
+        }
     }
 
     public void Clear(Color c) => Draw(rt => { var cc = ToD2D(c); rt->Clear(&cc); });
