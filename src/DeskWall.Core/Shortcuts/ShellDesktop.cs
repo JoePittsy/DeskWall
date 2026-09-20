@@ -11,23 +11,30 @@ namespace DeskWall.Core.Shortcuts;
 /// one copy. Best effort throughout: failing to minimise is not worth losing the run that wanted it.</summary>
 public static unsafe class ShellDesktop
 {
-    public static void MinimizeAll() => Dispatch(minimize: true);
+    /// <summary>True when the shell really was asked to minimise. False means the caller is about to
+    /// screenshot whatever is covering the desktop, which is worth saying out loud.</summary>
+    public static bool MinimizeAll() => Dispatch(minimize: true);
 
-    public static void UndoMinimizeAll() => Dispatch(minimize: false);
+    public static bool UndoMinimizeAll() => Dispatch(minimize: false);
 
-    private static void Dispatch(bool minimize)
+    private static bool Dispatch(bool minimize)
     {
         Com.EnsureInitialized();
         IShellDispatch* shell;
         var clsid = typeof(ShellCoClass).GUID;
         var iid = typeof(IShellDispatch).GUID;
-        if (PInvoke.CoCreateInstance(&clsid, null, CLSCTX.CLSCTX_LOCAL_SERVER, &iid, (void**)&shell).Failed) return;
+        // Shell Automation Service is registered under InprocServer32 only - there is no
+        // LocalServer32 key - so CLSCTX_LOCAL_SERVER on its own returns REGDB_E_CLASSNOTREG and this
+        // method quietly did nothing, leaving every screenshot to capture the foreground window.
+        const CLSCTX Context = CLSCTX.CLSCTX_INPROC_SERVER | CLSCTX.CLSCTX_LOCAL_SERVER;
+        if (PInvoke.CoCreateInstance(&clsid, null, Context, &iid, (void**)&shell).Failed) return false;
         try
         {
             if (minimize) shell->MinimizeAll();
             else shell->UndoMinimizeALL();
+            return true;
         }
-        catch (COMException) { }
+        catch (COMException) { return false; }
         finally { shell->Release(); }
     }
 }

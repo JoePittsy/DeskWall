@@ -105,7 +105,8 @@ public static class Verifier
                 $"{monitor.Bounds.W}x{monitor.Bounds.H}: run a tick at this resolution first");
 
         Surface shot;
-        ShellDesktop.MinimizeAll();
+        if (!ShellDesktop.MinimizeAll())
+            say("WARNING: MinimizeAll failed; the covers may be hidden behind a window");
         try
         {
             Thread.Sleep(SettleMs);

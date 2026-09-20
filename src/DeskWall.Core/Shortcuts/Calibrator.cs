@@ -114,7 +114,8 @@ public static class Calibrator
             Thread.Sleep(700);
             say($"probe at ({itemX},{itemY}); placed at {DesktopView.GetPosition(lnk)}");
 
-            ShellDesktop.MinimizeAll();
+            if (!ShellDesktop.MinimizeAll())
+                say("WARNING: MinimizeAll failed; the probe may be hidden behind a window");
             Thread.Sleep(800);
             using var shot = Screenshot.Capture(monitor.Bounds);
             shot.SavePng(Paths.InRuntime("calibrate-shot.png"));
