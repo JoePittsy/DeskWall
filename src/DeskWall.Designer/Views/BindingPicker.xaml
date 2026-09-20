@@ -1,0 +1,46 @@
+<Window x:Class="DeskWall.Designer.Views.BindingPicker"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bind"
+        Width="480" Height="520"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TreeView x:Name="TreeHost" Grid.Row="0" Margin="0,0,0,8"/>
+
+        <Grid Grid.Row="1" Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Path" VerticalAlignment="Center"/>
+            <TextBox x:Name="PathBox" Grid.Column="1" TextChanged="PathOrFormat_TextChanged"/>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Format" VerticalAlignment="Center"/>
+            <TextBox x:Name="FormatBox" Grid.Column="1" TextChanged="PathOrFormat_TextChanged"/>
+        </Grid>
+
+        <TextBlock Grid.Row="3" x:Name="PreviewText" Margin="0,0,0,12"
+                   Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                   TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="OkButton" Content="OK" Width="72" Margin="0,0,8,0" IsDefault="True" Click="OkButton_Click"/>
+            <Button x:Name="CancelButton" Content="Cancel" Width="72" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
