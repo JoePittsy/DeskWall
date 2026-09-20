@@ -36,7 +36,7 @@ that turns Win32 messages into `WakeReason`s), a `TrayIcon`, and `DaemonLoop` th
 - ASCII-only sources. Tests run under `DESKWALL_HOME` (set by the test assembly initializer);
   a test that writes to the real runtime dir is a defect.
 - Lane assignment (agent cap stated in the ledger before dispatch): `lane/p2-plumbing`
-  (Sonnet: Tasks 2, 3, 4, 5), `lane/p2-host` (Opus: Tasks 6, 7). Task 1 (seam) and Tasks 8, 9
+  (Sonnet: Tasks 0, 2, 3, 4, 5), `lane/p2-host` (Opus: Tasks 6, 7). Task 1 (seam) and Tasks 8, 9
   (integration, measurement) by the controller. Reviews by the controller.
 
 ## Interfaces shipped by Phase 1 that this phase consumes
@@ -86,6 +86,49 @@ tests/DeskWall.Core.Tests/Layout/LayoutScalerTests.cs
 tests/DeskWall.Core.Tests/Diagnostics/RollingLogTests.cs
 tests/DeskWall.Core.Tests/StartupTests.cs
 ```
+
+---
+
+### Task 0: Phase 1 review carry-over, batch 2 (lane `lane/p2-plumbing`, Sonnet; runs FIRST in that lane)
+
+Eleven Minor findings from the Phase 1 final review
+(`.superpowers/sdd/2026-09-20-deskwall-v1-phase1-core/final-review-report.md`, section 2; the
+fix-wave report in the same folder shows how batch 1 was done). Same rules as every task: ASCII,
+zero warnings, tests under `DESKWALL_HOME`, one regression test per behavioural fix, trailers on
+commits. Fix, by report id:
+
+- **6** validate duplicate component ids at resolve time: `LayoutResolver` throws
+  `InvalidOperationException` naming the id BEFORE anything is drawn or applied; `TickRunner` must
+  never reach `ToDictionary` with duplicates. Test: two components with id `a` -> throws, message contains `a`.
+- **7** the two exception paths that leak a full-frame `Surface` (report names them in `TickRunner`
+  and `RenderIncremental`): dispose the frame on any failure after creation.
+- **8** `Surface` factory init: replace the double-checked pointer test with a `static volatile bool s_ready`
+  checked before and after the lock; pointers stay non-volatile, the flag orders them.
+- **10** every `<path>.tmp` writer (`Surface.Encode`, `SaveRaw`, `FrameState.Save`, `LayoutFile.Save`)
+  deletes its tmp file on failure (try/catch, delete, rethrow). Test: `SaveRaw` to a path whose
+  directory is read-only or missing leaves no `.tmp` behind.
+- **11** `Monitors` callback: check the `BOOL` from `GetMonitorInfo` and the `HRESULT` from
+  `GetDpiForMonitor`; on `GetMonitorInfo` failure skip that monitor (never add a zeroed `Raw`); on
+  DPI failure fall back to 96.
+- **12** the skip gate ignores a replaced base image: persist the base cache key (the raw file name
+  `BaseCache.Ensure` returns) in `FrameState` and treat a different key as "not same signature" (full
+  render). Test: replace the base PNG contents between two ticks with no other change; the second
+  tick is not skipped.
+- **14** `ResolvedImage` content key includes the file's last-write ticks when the path exists
+  (`File.GetLastWriteTimeUtc`), so an image replaced in place redraws. Test: same path, touched file,
+  different key.
+- **17** `WallpaperSetterTests.RecordRestorePoint_WritesOnce`: under `DESKWALL_HOME`, delete
+  `restore.json` first, call twice with a modified file in between, assert the second call did not overwrite.
+- **19** `Surface.Draw`: if the body throws, release the render target (a half-pushed layer or clip
+  must not poison the cached target) and let the original exception propagate; call `EndDraw` only
+  when the body succeeded; if `EndDraw` fails after a body exception, do not mask the body's exception.
+- **20** `BaseCache` tidy-up loop: wrap in `try/catch (IOException or UnauthorizedAccessException)`
+  so it can never fail a tick that already produced the cache file.
+- **22** remove the `~Surface` finalizer (COM release on the finalizer thread is wrong); keep `Dispose`;
+  in `DEBUG` builds only, a finalizer may `Debug.Fail("Surface leaked")` without touching COM.
+
+- [ ] `dotnet build` 0 warnings; `dotnet test` twice with identical totals (57 + new tests).
+- [ ] Commit per finding or grouped sensibly: `git commit -m "Phase 1 carry-over: <ids>"`.
 
 ---
 
