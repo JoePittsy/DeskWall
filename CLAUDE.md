@@ -42,6 +42,39 @@ U3425WE, Windows 11, i7-6700K). Branch `poc`; no `main` yet.
 | `tick.vbs`, `install-task.ps1` | Scheduled task plumbing. Task name `DeskWall Tick`. |
 | `%LOCALAPPDATA%\DeskWall\` | Runtime: `state.json`, `base.png/.key`, `tiles\*.png/.key`, `deskwall.jpg`, `blank.ico`, `restore.txt` (pre-DeskWall wallpaper), `playnite-config.backup.json`, verify screenshots. Gitignored. |
 
+## v1 (C#) gotchas, learned 2026-09-20
+
+- **Branches:** `v1` is the integration branch; lanes are `lane/<name>` (git forbids `v1/x` while
+  `v1` exists). Phase plans and the SDD ledger live in `docs/superpowers/plans/` and
+  `.superpowers/sdd/` (ignored). Read the ledger before resuming a phase.
+- **CsWin32 (`allowMarshaling: false`):** COM interface methods return `void` and throw
+  `COMException`; static entry points return `HRESULT` and take `.ThrowOnFailure()`.
+  `CoInitializeEx` returns `RPC_E_CHANGED_MODE` on .NET's MTA main thread: treat as success
+  (`Com.EnsureInitialized`). Callbacks need `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]`.
+  Target `net10.0-windows10.0.19041.0` or CA1416 errors on Windows 8+ APIs. The full verified shape
+  list is `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`.
+- **Native AOT publish needs the MSVC linker** (VS "Desktop development with C++"). Until it is
+  installed, all footprint numbers are JIT and only indicative. `dotnet build` still runs the AOT
+  analyzers (`IsAotCompatible`), so zero warnings there is meaningful.
+- **Direct2D software rendering is WARP**: `d3d11.dll`/`D3D10Warp.dll` load, no vendor driver does.
+  "GPU not used" means no hardware device. The D2D factory must be `MULTI_THREADED` or xUnit's
+  parallel classes silently drop tests; the test assembly also disables parallelisation.
+- **Tests run under `DESKWALL_HOME`** (set by `tests/.../AssemblyInfo.cs`) so they never write into
+  the real `%LOCALAPPDATA%\DeskWall`. A test that does is a defect.
+- **Display signature changes under RDP.** JOES-PC over Remote Desktop reports one primary monitor
+  at 1920x1200, not 3440x1440; a layout authored for the ultrawide renders off-canvas until Phase 2's
+  layout store scales it. Screenshots of the console desktop are impossible from that session.
+- **Content keys must quantise noisy values.** Disk free space wobbles below a pixel between reads;
+  `ResolvedBar` keys the fraction at 0.1 percent or the skip path never fires.
+- **Text paints outside its rect** (shadow ring, descenders). Incremental redraw uses
+  `Resolved.PaintBounds`, not `Rect`, and `Surface.DrawText` clips to the same margin
+  (`TextStyle.PaintMargin`). Keep those two in step.
+- **The previous frame is never held in memory** by the daemon: it is 20 MB at 3440x1440 against a
+  10 MB budget. `frame.raw` is one read per tick.
+- **POC and v1 both name desktop slots with non-breaking spaces.** They must not both own the
+  desktop; the POC scheduled task `DeskWall Tick` stays enabled until the Phase 6 parity gate and is
+  disabled (`Disable-ScheduledTask`) only for the duration of a live v1 check, then re-enabled.
+
 ## Gotchas that cost time on 2026-09-20
 
 **PowerShell 5.1**
