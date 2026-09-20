@@ -3,6 +3,7 @@ using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Views;
 using Xunit;
 
 public class DesignerModelTests
@@ -92,6 +93,54 @@ public class DesignerModelTests
         Assert.Null(m.Find("bar-2"));
     }
 
+    private static DesignerModel RepeaterModel() => new(LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [
+            { "type": "repeater", "id": "drives", "rect": [0, 0, 400, 300], "z": 1,
+              "items": { "bind": "disks.drives" },
+              "template": [
+                { "type": "text", "id": "letter", "rect": [0, 0, 40, 20], "text": "original" } ] } ] }
+        """), new DisplaySignature("T", 1000, 800, 100), null);
+
+    [Fact]
+    public void Duplicating_A_Repeater_Renames_Its_Template_Children_So_An_Edit_Misses_The_Original()
+    {
+        var m = RepeaterModel();
+        var copyId = Assert.Single(m.Duplicate(["drives"], 16, 16));
+        var copy = Assert.IsType<RepeaterDef>(m.Find(copyId));
+        var childId = copy.Template[0].Id;
+        Assert.NotEqual("letter", childId);
+
+        // Exactly what PropertiesPanel.EditCurrent does: resolve by (parent id, child id) and mutate.
+        m.Edit("Set Text", l =>
+            ((TextDef)ComponentLookup.Find(l, copyId, childId)!.Value.Def).Text = PropertyValue.Literal("copy"));
+
+        Assert.Equal("copy", ChildText(m, copyId, childId));
+        Assert.Equal("original", ChildText(m, "drives", "letter"));
+    }
+
+    [Fact]
+    public void Find_Resolves_A_Template_Child_Under_The_Named_Parent_Not_The_First_Match()
+    {
+        // The collision Duplicate used to make, and that a hand-written layout can still make.
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [
+                { "type": "repeater", "id": "a", "rect": [0, 0, 100, 100], "items": { "bind": "d.x" },
+                  "template": [ { "type": "text", "id": "letter", "rect": [0, 0, 10, 10], "text": "a" } ] },
+                { "type": "repeater", "id": "b", "rect": [0, 0, 100, 100], "items": { "bind": "d.x" },
+                  "template": [ { "type": "text", "id": "letter", "rect": [0, 0, 10, 10], "text": "b" } ] } ] }
+            """);
+
+        var found = ComponentLookup.Find(layout, "b", "letter");
+        Assert.NotNull(found);
+        Assert.Equal("b", found!.Value.Parent!.Id);
+        Assert.Equal("b", ((TextDef)found.Value.Def).Text.LiteralText);
+        Assert.Null(ComponentLookup.Find(layout, "a", "nope"));
+    }
+
+    private static string? ChildText(DesignerModel m, string parentId, string childId)
+        => ((TextDef)ComponentLookup.Find(m.Layout, parentId, childId)!.Value.Def).Text.LiteralText;
 }
 
 public class SnapTests

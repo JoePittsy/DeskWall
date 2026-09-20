@@ -1,4 +1,7 @@
+using System.Runtime.CompilerServices;
 using DeskWall.Core.Layout;
+
+[assembly: InternalsVisibleTo("DeskWall.Designer.Tests")]
 
 namespace DeskWall.Designer.Views;
 
@@ -20,6 +23,23 @@ internal static class ComponentLookup
         }
         return null;
     }
+
+    /// <summary>A template child's id is only unique inside its own repeater: two repeaters can each
+    /// own a "letter", and Find(layout, id) would hand both of them the first one. Every caller that
+    /// knows which repeater it is editing resolves through this overload instead. A null parentId
+    /// means "not a template child", and falls through to the whole-layout search.</summary>
+    public static Found? Find(LayoutFile layout, string? parentId, string childId)
+    {
+        if (parentId is null) return Find(layout, childId);
+        if (FindRepeater(layout, parentId) is not { } r) return null;
+        foreach (var t in r.Template)
+            if (t.Id == childId) return new Found(t, r);
+        return null;
+    }
+
+    /// <summary>The top-level repeater with this id. Top-level ids are unique, so no parent needed.</summary>
+    public static RepeaterDef? FindRepeater(LayoutFile layout, string id)
+        => layout.Components.OfType<RepeaterDef>().FirstOrDefault(r => r.Id == id);
 
     /// <summary>Top level first, each repeater immediately followed by its own template children.</summary>
     public static IEnumerable<Found> AllIncludingTemplates(LayoutFile layout)

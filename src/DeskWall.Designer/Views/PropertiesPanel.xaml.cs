@@ -73,12 +73,15 @@ public partial class PropertiesPanel : UserControl
     private string? CurrentId() => _templateChildId ?? (_model is { Selection.Count: 1 } ? _model.Selection[0] : null);
 
     private ComponentLookup.Found? CurrentFound()
-        => _model is not null && CurrentId() is { } id ? ComponentLookup.Find(_model.Layout, id) : null;
+        => _model is not null && CurrentId() is { } id ? ComponentLookup.Find(_model.Layout, _templateParentId, id) : null;
 
     private void EditCurrent(string label, Action<ComponentDef> mutate)
     {
         if (_model is null || CurrentId() is not { } id) return;
-        _model.Edit(label, l => { if (ComponentLookup.Find(l, id) is { } f) mutate(f.Def); });
+        // Captured, not read inside the callback: the pair (parent, child) is what identifies a
+        // template child; the child id alone matches the first one in any repeater.
+        var parentId = _templateParentId;
+        _model.Edit(label, l => { if (ComponentLookup.Find(l, parentId, id) is { } f) mutate(f.Def); });
     }
 
     /// <summary>The tree a binding picker for the current selection should show. Inside a repeater
@@ -87,9 +90,9 @@ public partial class PropertiesPanel : UserControl
     {
         var full = _live?.Tree() ?? ValueTree.Empty;
         if (_templateParentId is null || _model is null) return full;
-        if (ComponentLookup.Find(_model.Layout, _templateParentId) is { Def: RepeaterDef r } && r.Items.IsBound)
+        if (ComponentLookup.FindRepeater(_model.Layout, _templateParentId) is { Items.Binding: { } items })
         {
-            var resolved = BindingResolver.Resolve(r.Items.Binding!, full);
+            var resolved = BindingResolver.Resolve(items, full);
             if (resolved is ListValue { Items.Count: > 0 } list) return list.Items[0];
         }
         return full;

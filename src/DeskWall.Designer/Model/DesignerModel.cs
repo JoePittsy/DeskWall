@@ -132,17 +132,42 @@ public sealed class DesignerModel
         var made = new List<string>(clones.Count);
         Edit("Duplicate", l =>
         {
+            var taken = AllIds(l).ToHashSet(StringComparer.Ordinal);
             foreach (var c in clones)
             {
-                var baseId = c.Id; var id = baseId; var n = 2;
-                while (l.Components.Any(o => o.Id == id)) id = $"{baseId}-{n++}";
+                var id = Uniquify(taken, c.Id);
                 c.Id = id;
+                // A repeater's template children carry their own ids through the clone, and a copy
+                // whose children still answer to "letter" makes the copy's template unreachable: the
+                // panels address a child as (repeater id, child id) and the layers tree shows both.
+                if (c is RepeaterDef r)
+                    foreach (var t in r.Template) t.Id = Uniquify(taken, t.Id);
                 c.Rect = c.Rect.Offset(dx, dy);
                 l.Components.Add(c);
                 made.Add(id);
             }
         });
         return made;
+    }
+
+    /// <summary>Every id in the layout, template children included.</summary>
+    private static IEnumerable<string> AllIds(LayoutFile l)
+    {
+        foreach (var c in l.Components)
+        {
+            yield return c.Id;
+            if (c is RepeaterDef r)
+                foreach (var t in r.Template) yield return t.Id;
+        }
+    }
+
+    /// <summary>baseId, or baseId-2, -3, ... until it is not in <paramref name="taken"/>. The answer
+    /// joins the set, so a run of clones cannot collide with each other either.</summary>
+    private static string Uniquify(HashSet<string> taken, string baseId)
+    {
+        var id = baseId; var n = 2;
+        while (!taken.Add(id)) id = $"{baseId}-{n++}";
+        return id;
     }
 
     private static List<ComponentDef> Clone(List<ComponentDef> defs)
