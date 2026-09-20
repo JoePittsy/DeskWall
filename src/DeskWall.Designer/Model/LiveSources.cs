@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 
@@ -13,6 +13,9 @@ public sealed class LiveSources : IDisposable
     {
         public required SourceDef Def;
         public ISource? Source;
+        /// <summary>Kept so Dispose can unsubscribe: an in-flight HTTP fetch otherwise holds this
+        /// instance, and through Updated the panel's whole visual tree, until it times out.</summary>
+        public Action<ISource>? OnCompleted;
     }
 
     private readonly IClock _clock;
@@ -33,7 +36,11 @@ public sealed class LiveSources : IDisposable
             try
             {
                 entry.Source = SourceFactory.Create(def, clock, secrets);
-                if (entry.Source is AsyncSource async) async.Completed += _ => OnAsyncCompleted(entry);
+                if (entry.Source is AsyncSource async)
+                {
+                    entry.OnCompleted = _ => OnAsyncCompleted(entry);
+                    async.Completed += entry.OnCompleted;
+                }
             }
             catch (Exception ex)
             {
@@ -83,6 +90,7 @@ public sealed class LiveSources : IDisposable
 
     private void OnAsyncCompleted(Entry entry)
     {
+        if (_disposed) return;
         // An overrun refresh finished late; harvest it now (AsyncSource.RefreshAsync returns the
         // finished result immediately once Completed has fired) rather than waiting for the next tick.
         _ = RefreshEntryAsync(entry);
@@ -90,10 +98,14 @@ public sealed class LiveSources : IDisposable
 
     private async Task RefreshEntryAsync(Entry entry)
     {
+        // Checked here and again before Updated: a fetch that lands after Dispose would otherwise
+        // call Dispatcher.Invoke on a window that has closed, or repaint a panel that has already
+        // replaced this instance.
+        if (_disposed) return;
         if (entry.Source is null)
         {
             lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name));
-            Updated?.Invoke();
+            if (!_disposed) Updated?.Invoke();
             return;
         }
         try
@@ -105,7 +117,7 @@ public sealed class LiveSources : IDisposable
         {
             lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name).Failed(ex.Message, _clock.Now));
         }
-        Updated?.Invoke();
+        if (!_disposed) Updated?.Invoke();
     }
 
     public void Dispose()
@@ -113,5 +125,7 @@ public sealed class LiveSources : IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Dispose();
+        foreach (var e in _entries)
+            if (e.Source is AsyncSource a && e.OnCompleted is { } handler) a.Completed -= handler;
     }
 }

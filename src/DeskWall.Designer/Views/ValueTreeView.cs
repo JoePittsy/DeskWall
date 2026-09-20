@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -12,14 +12,19 @@ namespace DeskWall.Designer.Views;
 /// clicked path round-trips through Binding.Parse.</summary>
 internal static class ValueTreeView
 {
-    public static void Populate(ItemsControl root, RecordValue tree, Action<string>? onPathClicked)
+    /// <param name="expanded">Paths (this tree's own path syntax) to open. A rebuilt tree that
+    /// forgets which nodes were open cannot be browsed at all: the owner expands a record and the
+    /// next refresh closes it again.</param>
+    public static void Populate(ItemsControl root, RecordValue tree, Action<string>? onPathClicked,
+        IReadOnlySet<string>? expanded = null)
     {
         root.Items.Clear();
         foreach (var kv in tree.Fields.OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase))
-            root.Items.Add(BuildNode(kv.Key, kv.Key, kv.Value, onPathClicked));
+            root.Items.Add(BuildNode(kv.Key, kv.Key, kv.Value, onPathClicked, expanded));
     }
 
-    private static TreeViewItem BuildNode(string label, string path, Value value, Action<string>? onPathClicked)
+    private static TreeViewItem BuildNode(string label, string path, Value value, Action<string>? onPathClicked,
+        IReadOnlySet<string>? expanded)
     {
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -49,7 +54,7 @@ internal static class ValueTreeView
             header.Children.Add(valueText);
         }
 
-        var item = new TreeViewItem { Header = header, Tag = path, IsExpanded = false };
+        var item = new TreeViewItem { Header = header, Tag = path, IsExpanded = expanded?.Contains(path) == true };
 
         if (onPathClicked is not null && !isContainer)
         {
@@ -62,13 +67,13 @@ internal static class ValueTreeView
         {
             case RecordValue r:
                 foreach (var kv in r.Fields.OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase))
-                    item.Items.Add(BuildNode(kv.Key, AppendName(path, kv.Key), kv.Value, onPathClicked));
+                    item.Items.Add(BuildNode(kv.Key, AppendName(path, kv.Key), kv.Value, onPathClicked, expanded));
                 break;
             case ListValue l:
                 for (var i = 0; i < l.Items.Count; i++)
                 {
                     var key = l.KeyField is not null && l.Items[i].Get(l.KeyField) is { } kv2 ? kv2.ToText(null) : i.ToString();
-                    item.Items.Add(BuildNode($"[{key}]", AppendIndex(path, key), l.Items[i], onPathClicked));
+                    item.Items.Add(BuildNode($"[{key}]", AppendIndex(path, key), l.Items[i], onPathClicked, expanded));
                 }
                 break;
         }
