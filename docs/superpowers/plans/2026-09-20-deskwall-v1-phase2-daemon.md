@@ -1582,6 +1582,19 @@ AOT; note it, do not "fix" it blind.
 - [ ] Budget table filled; AOT column filled if the linker is available.
 - [ ] POC task re-enabled (it still owns the covers and shortcuts until Phase 3).
 
+## Carried-over minors from the Phase 1 final review
+
+Owned by this phase; each lands in the task named. Report ids refer to
+`.superpowers/sdd/2026-09-20-deskwall-v1-phase1-core/final-review-report.md`.
+
+| Id | Finding | Lands in |
+|---|---|---|
+| 9 | `LoadRaw`/`SaveRaw` allocate a whole-frame `byte[]` on the LOH per tick (two on the incremental path) | Task 9 measures under the daemon; if idle private bytes exceed budget after trim, switch both to `ArrayPool<byte>.Shared` chunked copies (row blocks of 1 MB) in a follow-up task |
+| 13 | `TickTimings.Redrawn` counts changed ids on the incremental path, not components actually redrawn | Task 8: `RenderIncremental` returns the count it drew; `TickRunner` reports that |
+| 15 | Spec 3.2 staleness: `ConsecutiveFailures` is never read; failed sources keep stale values forever | Task 8: `DaemonLoop` passes a `staleAfter` (default 3 missed schedules) into resolution: `SourceRegistry.Tree()` gains an overload that omits a source whose `LastRefresh + staleAfter * every < now`, so bound components fall back. `RollingLog.Warn` once per transition |
+| 16 | `LayoutFile.Version` parsed but never checked; `LayoutResolver.Resolve`'s `canvas` unused | Task 3: `LayoutStore.Resolve` rejects `Version > 1` with a logged error (spec 5 migrations chain starts here); Task 8 removes the dead parameter or uses it to clip |
+| 21 | Daemon csproj `UseSystemResourceKeys=true` + `StackTraceSupport=false` make AOT exception text unusable in the log | Task 6 (host lane): set `UseSystemResourceKeys=false`, `StackTraceSupport=true`; record the exe size delta in Task 9 |
+
 ## Self-review notes
 
 - Spec 3.1 lifecycle steps 1 to 5: Tasks 6, 8 (window, first tick, wait, wake kinds, trim).
