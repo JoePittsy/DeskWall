@@ -258,10 +258,24 @@ public sealed unsafe class Surface : IDisposable
         });
     }
 
-    /// <summary>Copy the whole surface out as tightly packed, premultiplied BGRA rows (top-down),
-    /// the same layout <see cref="System.Windows.Media.PixelFormats.Pbgra32"/> expects. Public so a
-    /// WPF host (the Designer's preview) can build a WriteableBitmap without reaching into internals.</summary>
-    public void CopyTo(byte[] bgra) => ReadRegion(new Rect(0, 0, Width, Height), bgra);
+    /// <summary>Copy the whole frame out as tightly packed premultiplied BGRA rows, top-down. One
+    /// lock, one copy per row. The designer's preview hands the result straight to a WPF
+    /// WriteableBitmap in Pbgra32, which is the same layout, so nothing un-premultiplies.</summary>
+    public void CopyTo(Span<byte> bgra)
+    {
+        var rowBytes = Width * 4;
+        if (bgra.Length < (long)rowBytes * Height)
+            throw new ArgumentException("bgra is shorter than width*height*4", nameof(bgra));
+        fixed (byte* dst = bgra)
+        {
+            var to = (IntPtr)dst;
+            WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
+            {
+                for (var y = 0; y < Height; y++)
+                    Buffer.MemoryCopy((byte*)ptr + (long)y * stride, (byte*)to + (long)y * rowBytes, rowBytes, rowBytes);
+            });
+        }
+    }
 
     /// <summary>Replace the pixels of <paramref name="r"/> with the same rect from <paramref name="src"/>. Same-size surfaces.</summary>
     public void CopyRect(Surface src, Rect r)
