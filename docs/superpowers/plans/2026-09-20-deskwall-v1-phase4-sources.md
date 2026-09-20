@@ -104,7 +104,7 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
 public static class JsonValues
 {
     /// <summary>Whole document to a RecordValue. A top-level array becomes { "items": [...] }.
-    /// Objects -> RecordValue; arrays of objects -> ListValue with KeyField = first of ("id","name","key","letter","appid") present in every item, else null;
+    /// Objects -> RecordValue; arrays of objects -> ListValue with KeyField = first of ("id","appid","key","letter","name") present in every item, else null;
     /// arrays of scalars -> ListValue of records { "value": scalar }; numbers -> NumberValue; strings -> TextValue; bool -> BoolValue; null -> omitted.
     /// unixTimeFields: field names whose numbers are Unix seconds and become TimeValue (local).</summary>
     public static RecordValue From(JsonElement root, IReadOnlySet<string>? unixTimeFields = null);

@@ -67,8 +67,9 @@ public sealed record ListValue(IReadOnlyList<RecordValue> Items, string? KeyFiel
     public RecordValue? ByKey(string key)
     {
         if (KeyField is null) return null;
+        // Compare by the value's text so numeric keys (Steam appids) match [620] lookups too.
         foreach (var r in Items)
-            if (r.Get(KeyField) is TextValue t && string.Equals(t.Text, key, StringComparison.OrdinalIgnoreCase)) return r;
+            if (r.Get(KeyField) is { } kv && string.Equals(kv.ToText(null), key, StringComparison.OrdinalIgnoreCase)) return r;
         return null;
     }
 }

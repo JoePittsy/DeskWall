@@ -74,3 +74,8 @@ GetMonitorInfo
 MONITORINFOEXW
 GetDpiForMonitor
 MONITOR_DPI_TYPE
+GetCurrentProcess
+GetProcessMemoryInfo
+PROCESS_MEMORY_COUNTERS_EX
+GetProcessHandleCount
+SetProcessWorkingSetSize
