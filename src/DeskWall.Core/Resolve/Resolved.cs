@@ -24,7 +24,8 @@ public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit
 
 public sealed record ResolvedBar(string Id, Rect Rect, int Z, double Fraction, Color Track, Color Fill, Axis Direction) : Resolved(Id, Rect, Z)
 {
-    public override IEnumerable<string> KeyParts() => [Fraction.ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString()];
+    // Fraction is keyed at 0.1 percent: a 172 px bar cannot show finer, and disk free space wobbles below that between reads.
+    public override IEnumerable<string> KeyParts() => [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString()];
 }
 
 /// <summary>Draws nothing. The shortcut manager (Phase 3) owns a desktop icon over Rect.</summary>

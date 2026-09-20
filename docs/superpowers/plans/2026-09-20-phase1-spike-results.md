@@ -122,7 +122,24 @@ monitor id; wrap in try/catch `COMException` and skip.
 
 ## Task 10 measurements
 
-(pending)
+JIT Release `deskwall.exe tick --measure`, layout `layouts/clock-disks.json` (clock + 3 drive rows = 7
+components), photo base, each run a fresh process (so every run pays JIT warm-up of the render path).
+
+| run | resolve | draw | encode | apply | total wall | cpu |
+|---|---|---|---|---|---|---|
+| first ever (builds base cache from the 4K Spotlight JPEG) | 19 | 152 | 18 | 7 | 206 | 203 |
+| force, base cached | 30 | 60 | 19 | 5 | 119 | 109 |
+| same minute, nothing changed | 26 | 0 | 0 | 0 | 26 SKIPPED | 31 |
+| same minute again | 27 | 0 | 0 | 0 | 27 SKIPPED | 31 |
+
+Findings:
+- The skip path works only after quantising `ResolvedBar`'s fraction to 0.1 percent in its content
+  key; raw free-space wobble between reads changed the key every tick (fixed in Resolve/Resolved.cs).
+- `resolve` at ~26 ms is almost entirely JIT compilation plus `Monitors.Enumerate` + drive enumeration
+  in a cold process; under a resident AOT daemon this is expected to be low single-digit ms. The
+  60 ms/40 ms budget cannot be judged until AOT publish works (MSVC linker missing).
+- `apply` varies 5 to 71 ms: that is Explorer's side of `IDesktopWallpaper::SetWallpaper`, not ours.
+- Output JPEG q92 with the photo base is ~1.9 MB, in line with the POC.
 
 ## Task 11 measurements
 
