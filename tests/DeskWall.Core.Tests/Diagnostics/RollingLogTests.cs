@@ -20,6 +20,34 @@ public class RollingLogTests
         Assert.Equal("boom: InvalidOperationException: why", log.LastError);
     }
 
+    /// <summary>Finding 2: Write caught only IOException, so a read-only or ACL-denied runtime dir threw
+    /// UnauthorizedAccessException out of the tick's own catch handler and took the daemon with it.
+    /// Nothing on RollingLog may throw, whatever path it was given or exception it is handed.</summary>
+    [Fact]
+    public void Logging_Never_Throws()
+    {
+        // A path whose parent is a file, not a directory: CreateDirectory throws IOException.
+        var file = Temp("x.log");
+        File.WriteAllText(file, "not a directory");
+        var log = new RollingLog(Path.Combine(file, "t.log"));
+        log.Info("hello");
+        log.Warn("careful");
+        log.Error("boom", new HostileException());
+        Assert.Equal("boom", log.LastError);   // the exception's own Message threw; the bare message stands
+
+        // An invalid path is a different failure again (ArgumentException, not IOException).
+        var bad = new RollingLog("\0:" + Path.DirectorySeparatorChar + "nope" + Path.DirectorySeparatorChar + "t.log");
+        bad.Info("hello");
+        bad.Error("boom", new InvalidOperationException("why"));
+        Assert.Equal("boom: InvalidOperationException: why", bad.LastError);
+    }
+
+    /// <summary>An exception whose Message cannot be read. Contrived, but Error must survive it.</summary>
+    private sealed class HostileException : Exception
+    {
+        public override string Message => throw new NotSupportedException("no message for you");
+    }
+
     [Fact]
     public void Rolls_When_Over_MaxBytes()
     {

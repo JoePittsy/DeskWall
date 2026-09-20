@@ -65,6 +65,8 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            // A Run-key-launched daemon has no console to print to; the log is the only witness.
+            RollingLog.Default().Error($"deskwall {cmd} failed", ex);
             Console.Error.WriteLine($"deskwall {cmd}: {ex.GetType().Name}: {ex.Message}");
             return 1;
         }

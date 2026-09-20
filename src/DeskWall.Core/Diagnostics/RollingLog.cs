@@ -15,27 +15,39 @@ public sealed class RollingLog(string path, long maxBytes = 1_000_000)
     public void Info(string message) => Write("INFO", message);
     public void Warn(string message) => Write("WARN", message);
 
+    /// <summary>Never throws: this is called from inside the tick's own catch handler, so an exception
+    /// raised here would replace the one being handled and take the daemon down (finding 2).</summary>
     public void Error(string message, Exception? ex = null)
     {
-        var text = ex is null ? message : $"{message}: {ex.GetType().Name}: {ex.Message}";
-        LastError = text;
-        var first = ex?.StackTrace?.Split('\n').FirstOrDefault()?.Trim();
-        Write("ERROR", first is null ? text : $"{text} | {first}");
+        string text = message, detail = message;
+        try
+        {
+            text = ex is null ? message : $"{message}: {ex.GetType().Name}: {ex.Message}";
+            var first = ex?.StackTrace?.Split('\n').FirstOrDefault()?.Trim();
+            detail = first is null ? text : $"{text} | {first}";
+        }
+        catch (Exception) { /* a hostile Message or StackTrace is still not worth a dead daemon */ }
+        Write("ERROR", detail, remember: text);
     }
 
-    private void Write(string level, string message)
+    /// <param name="remember">What to publish as LastError (the tray tooltip reads it), set under the
+    /// same lock as the write instead of beside it.</param>
+    private void Write(string level, string message, string? remember = null)
     {
-        var line = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)} [{level}] {message}{Environment.NewLine}";
         lock (_lock)
         {
+            if (remember is not null) LastError = remember;
             try
             {
+                var line = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)} [{level}] {message}{Environment.NewLine}";
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 if (File.Exists(path) && new FileInfo(path).Length + line.Length > maxBytes)
                     File.Move(path, Path.ChangeExtension(path, ".1.log"), overwrite: true);
                 File.AppendAllText(path, line, Encoding.UTF8);
             }
-            catch (IOException) { /* logging must never take the daemon down */ }
+            // Every exception, not only IOException: a read-only or ACL-denied runtime dir raises
+            // UnauthorizedAccessException, and an invalid path raises ArgumentException.
+            catch (Exception) { /* logging must never take the daemon down */ }
         }
     }
 }
