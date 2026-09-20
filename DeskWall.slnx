@@ -2,8 +2,10 @@
   <Folder Name="/src/">
     <Project Path="src/DeskWall.Core/DeskWall.Core.csproj" />
     <Project Path="src/DeskWall.Daemon/DeskWall.Daemon.csproj" />
+    <Project Path="src/DeskWall.Designer/DeskWall.Designer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DeskWall.Core.Tests/DeskWall.Core.Tests.csproj" />
+    <Project Path="tests/DeskWall.Designer.Tests/DeskWall.Designer.Tests.csproj" />
   </Folder>
 </Solution>
