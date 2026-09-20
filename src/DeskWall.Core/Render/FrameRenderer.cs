@@ -43,9 +43,13 @@ public sealed class FrameRenderer(int width, int height)
     /// <see cref="Surface.DrawText"/> is set to exactly the same bounds.
     /// </para>
     /// </summary>
+    /// <param name="drawn">Finding 13: how many components were actually painted, which is not the
+    /// number of changed ids - a dirty rect drags every component that overlaps it back onto the
+    /// frame, and a shortcut paints nothing at all. This is the number the tick log reports.</param>
     public Surface RenderIncremental(Surface previous, string baseRawPath, IReadOnlyList<Resolved> all,
-        IReadOnlySet<string> changedIds, IReadOnlyDictionary<string, Rect> previousRects)
+        IReadOnlySet<string> changedIds, IReadOnlyDictionary<string, Rect> previousRects, out int drawn)
     {
+        drawn = 0;
         if (previous.Width != width || previous.Height != height) throw new InvalidOperationException("previous frame size mismatch");
         var dirty = new List<Rect>();
         foreach (var c in all) if (changedIds.Contains(c.Id)) dirty.Add(c.PaintBounds);
@@ -58,7 +62,7 @@ public sealed class FrameRenderer(int width, int height)
         using (var baseSurf = Surface.LoadRaw(baseRawPath))
             foreach (var d in dirty) frame.CopyRect(baseSurf, d);
         foreach (var c in all.OrderBy(c => c.Z))
-            if (dirty.Any(d => d.Intersects(c.PaintBounds))) Draw(frame, c);
+            if (c is not ResolvedShortcut && dirty.Any(d => d.Intersects(c.PaintBounds))) { Draw(frame, c); drawn++; }
         return frame;
     }
 

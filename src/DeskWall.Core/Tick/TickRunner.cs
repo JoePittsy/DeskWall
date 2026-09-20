@@ -48,7 +48,9 @@ public sealed class TickRunner(
 
         // 2. resolve + diff
         var canvas = new Rect(0, 0, monitor.Bounds.W, monitor.Bounds.H);
-        var resolved = MapRemoteImages(LayoutResolver.Resolve(layout, registry.Tree(), canvas, images is null ? null : images.Lookup));
+        // Tree(sources, now) drops a source that has missed registry.StaleAfter of its own schedules
+        // (finding 15); with StaleAfter left at its default 0 it is exactly the old Tree().
+        var resolved = MapRemoteImages(LayoutResolver.Resolve(layout, registry.Tree(sources, now), images is null ? null : images.Lookup));
         LastShortcuts = resolved.OfType<ResolvedShortcut>().ToList();
         var state = FrameState.Load(_statePath);
         var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey).ToList();
@@ -84,9 +86,10 @@ public sealed class TickRunner(
             var changedIds = changed.Select(c => c.Id).ToHashSet();
             var prevRects = state.RectsById.ToDictionary(kv => kv.Key, kv => new Rect(kv.Value[0], kv.Value[1], kv.Value[2], kv.Value[3]));
             var previous = Surface.LoadRaw(_framePath);
+            int drawn;
             try
             {
-                frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects);   // mutates previous in place
+                frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects, out drawn);   // mutates previous in place
             }
             catch
             {
@@ -96,7 +99,7 @@ public sealed class TickRunner(
                 previous.Dispose();
                 throw;
             }
-            t.Redrawn = changedIds.Count;
+            t.Redrawn = drawn;   // finding 13: what was painted, not what changed
         }
         using (frame)
         {

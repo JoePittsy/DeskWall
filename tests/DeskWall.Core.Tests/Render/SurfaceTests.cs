@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
 using Xunit;
@@ -176,9 +176,27 @@ public class FrameRendererTests
         Resolved right = new ResolvedBar("r", new Rect(20, 0, 20, 20), 1, 1, Color.White, new Color(255, 0, 255, 0), Axis.Horizontal);
         using var first = r.RenderAll(raw, [left, right]);
         Resolved right2 = new ResolvedBar("r", new Rect(20, 0, 20, 20), 1, 1, Color.White, new Color(255, 0, 0, 200), Axis.Horizontal);
-        using var second = r.RenderIncremental(first, raw, [left, right2], new HashSet<string> { "r" }, new Dictionary<string, Rect>());
+        using var second = r.RenderIncremental(first, raw, [left, right2], new HashSet<string> { "r" }, new Dictionary<string, Rect>(), out _);
         Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), second.GetPixel(5, 5));    // left untouched
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)200), second.GetPixel(30, 5));   // right repainted
+    }
+
+    /// <summary>Finding 13: the old TickRunner reported changedIds.Count as "redrawn". One changed
+    /// component whose dirty rect overlaps a second component drags that second one back onto the
+    /// frame, so the honest count is 2, not 1.</summary>
+    [Fact]
+    public void RenderIncremental_Counts_What_It_Painted_Not_What_Changed()
+    {
+        var raw = BlueBase("base-drawn.png");
+        var r = new FrameRenderer(40, 20);
+        Resolved under = new ResolvedBar("u", new Rect(0, 0, 40, 20), 0, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
+        Resolved over = new ResolvedBar("o", new Rect(10, 0, 10, 20), 1, 1, Color.White, new Color(255, 0, 255, 0), Axis.Horizontal);
+        using var first = r.RenderAll(raw, [under, over]);
+        Resolved over2 = new ResolvedBar("o", new Rect(10, 0, 10, 20), 1, 1, Color.White, new Color(255, 0, 0, 200), Axis.Horizontal);
+        var changed = new HashSet<string> { "o" };
+        using var second = r.RenderIncremental(first, raw, [under, over2], changed, new Dictionary<string, Rect>(), out var drawn);
+        Assert.Single(changed);
+        Assert.Equal(2, drawn);
     }
 
     [Fact]
@@ -188,8 +206,9 @@ public class FrameRendererTests
         var r = new FrameRenderer(40, 20);
         Resolved gone = new ResolvedBar("g", new Rect(0, 0, 40, 20), 1, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
         using var first = r.RenderAll(raw, [gone]);
-        using var second = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect> { ["g"] = gone.Rect });
+        using var second = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect> { ["g"] = gone.Rect }, out var drawn);
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), second.GetPixel(5, 5));
+        Assert.Equal(0, drawn);   // finding 13: the base was restored, but no component was painted
     }
 
     [Fact]
@@ -198,7 +217,7 @@ public class FrameRendererTests
         var raw = BlueBase("base4.png");
         var r = new FrameRenderer(40, 20);
         using var first = r.RenderAll(raw, []);
-        var same = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect>());
+        var same = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect>(), out _);
         Assert.Same(first, same);
     }
 
@@ -225,7 +244,7 @@ public class FrameRendererTests
 
         var r = new FrameRenderer(160, 60);
         using var incremental = r.RenderIncremental(r.RenderAll(raw, [before]), raw, [after],
-            new HashSet<string> { "t" }, new Dictionary<string, Rect> { ["t"] = before.PaintBounds });
+            new HashSet<string> { "t" }, new Dictionary<string, Rect> { ["t"] = before.PaintBounds }, out _);
         using var full = r.RenderAll(raw, [after]);
 
         for (var y = 0; y < 60; y++)
@@ -250,7 +269,7 @@ public class FrameRendererTests
 
         Resolved moved = new ResolvedBar("b", new Rect(20, 0, 10, 20), 1, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
         using var second = r.RenderIncremental(first, raw, [moved], new HashSet<string> { "b" },
-            new Dictionary<string, Rect> { ["b"] = atLeft.PaintBounds });
+            new Dictionary<string, Rect> { ["b"] = atLeft.PaintBounds }, out _);
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), second.GetPixel(5, 10));    // old location back to the base
         Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), second.GetPixel(25, 10));   // new location painted
     }
