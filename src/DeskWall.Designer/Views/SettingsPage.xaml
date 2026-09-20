@@ -1,0 +1,134 @@
+<Window x:Class="DeskWall.Designer.Views.SettingsPage"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DeskWall Settings"
+        Width="720" Height="820"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+        FontFamily="{x:Static SystemFonts.MessageFontFamily}">
+    <Window.Resources>
+        <Style TargetType="TextBlock" x:Key="SectionHeader">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style TargetType="Border" x:Key="Section">
+            <Setter Property="Margin" Value="0,0,0,16" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}" />
+        </Style>
+    </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20">
+
+            <!-- 1. Daemon -->
+            <Border Style="{StaticResource Section}">
+                <StackPanel>
+                    <TextBlock Text="Daemon" Style="{StaticResource SectionHeader}" />
+                    <TextBlock x:Name="DaemonStatusText" Margin="0,0,0,4" />
+                    <TextBlock x:Name="DaemonFootprintText" Margin="0,0,0,8" />
+                    <TextBlock Text="Last 5 log lines:" Margin="0,0,0,2" />
+                    <TextBox x:Name="DaemonLogText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
+                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Height="90" Margin="0,0,0,8" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="StartButton" Content="Start" Click="Start_Click" Padding="10,4" Margin="0,0,8,0" />
+                        <Button x:Name="StopButton" Content="Stop" Click="Stop_Click" Padding="10,4" Margin="0,0,8,0" />
+                        <Button x:Name="RefreshNowButton" Content="Refresh now" Click="RefreshNow_Click" Padding="10,4" />
+                    </StackPanel>
+                    <TextBox x:Name="ActionOutputText" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas"
+                             VerticalScrollBarVisibility="Auto" Height="50" Margin="0,0,0,8" />
+                    <CheckBox x:Name="StartAtLogonCheck" Content="Start at logon" Margin="0,0,0,4"
+                              Checked="StartAtLogon_Checked" Unchecked="StartAtLogon_Unchecked" />
+                    <CheckBox x:Name="TrayIconCheck" Content="Tray icon (takes effect at next daemon start)"
+                              Checked="TrayIcon_Changed" Unchecked="TrayIcon_Changed" />
+                </StackPanel>
+            </Border>
+
+            <!-- 2. Wallpaper -->
+            <Border Style="{StaticResource Section}">
+                <StackPanel>
+                    <TextBlock Text="Wallpaper" Style="{StaticResource SectionHeader}" />
+                    <TextBlock x:Name="WallpaperNoModelText" Text="No layout is open." Margin="0,0,0,8" />
+                    <StackPanel x:Name="WallpaperPanel">
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="BaseImagePathText" Grid.Column="0" IsReadOnly="True" Margin="0,0,8,0" />
+                            <Button x:Name="BrowseBaseImageButton" Grid.Column="1" Content="Browse..." Click="BrowseBaseImage_Click" Padding="10,4" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Fit:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="FitCombo" Width="110" SelectionChanged="FitCombo_SelectionChanged" Margin="0,0,16,0">
+                                <ComboBoxItem Content="Cover" />
+                                <ComboBoxItem Content="Contain" />
+                                <ComboBoxItem Content="Stretch" />
+                            </ComboBox>
+                            <TextBlock Text="Encode:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="EncodeCombo" Width="90" SelectionChanged="EncodeCombo_SelectionChanged">
+                                <ComboBoxItem Content="jpeg" />
+                                <ComboBoxItem Content="png" />
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="JPEG quality:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <Slider x:Name="QualitySlider" Width="220" Minimum="60" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    ValueChanged="QualitySlider_ValueChanged" PreviewMouseUp="QualitySlider_Committed" LostKeyboardFocus="QualitySlider_LostFocus" />
+                            <TextBlock x:Name="QualityValueText" VerticalAlignment="Center" Margin="8,0,0,0" Width="24" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 3. Desktop icons -->
+            <Border Style="{StaticResource Section}">
+                <StackPanel>
+                    <TextBlock Text="Desktop icons" Style="{StaticResource SectionHeader}" />
+                    <TextBlock x:Name="DesktopAvailableText" Margin="0,0,0,4" />
+                    <TextBlock x:Name="CalibrationText" Margin="0,0,0,8" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="CalibrateButton" Content="Calibrate now" Click="CalibrateNow_Click" Padding="10,4" Margin="0,0,8,0" />
+                        <Button x:Name="VerifyButton" Content="Verify placement" Click="VerifyPlacement_Click" Padding="10,4" />
+                    </StackPanel>
+                    <TextBlock x:Name="CalibrateStatusText" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- 4. Secrets -->
+            <Border Style="{StaticResource Section}">
+                <StackPanel>
+                    <TextBlock Text="Secrets" Style="{StaticResource SectionHeader}" />
+                    <Button x:Name="EditSecretsButton" Content="Edit secrets..." Click="EditSecrets_Click"
+                            Padding="10,4" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
+            <!-- 5. Layouts -->
+            <Border Style="{StaticResource Section}" BorderThickness="0">
+                <StackPanel>
+                    <TextBlock Text="Layouts" Style="{StaticResource SectionHeader}" />
+                    <DataGrid x:Name="LayoutsGrid" AutoGenerateColumns="False" IsReadOnly="True" Height="140"
+                              HorizontalScrollBarVisibility="Auto"
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column" CanUserAddRows="False" Margin="0,0,0,8">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Display" Binding="{Binding SignatureKey}" Width="210" />
+                            <DataGridTextColumn Header="Layout file" Binding="{Binding Path}" Width="330" />
+                            <DataGridTemplateColumn Header="" Width="Auto">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Remove" Click="RemoveLayout_Click" Tag="{Binding}" Padding="6,2" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Button x:Name="UseForCurrentButton" Content="Use this layout for the current display"
+                            Click="UseForCurrent_Click" Padding="10,4" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Window>
