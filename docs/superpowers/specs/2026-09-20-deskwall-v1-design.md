@@ -23,8 +23,10 @@ Deferred to a later version: installer, auto-update, public plugin API, scriptin
 - **Tiny.** If a user notices the daemon in Task Manager, we have failed. Budgets in 1.2.
 - **Measured, not eyeballed.** Placement, padding and cost are verified by pixel diff and by
   printed timings. `deskwall verify` and `deskwall tick --measure` are first-class commands.
-- **No GPU.** Rendering is software Direct2D onto a WIC bitmap. No D3D device is ever created,
-  so no GPU driver DLL is loaded into the process.
+- **No GPU.** Rendering is software Direct2D onto a WIC bitmap. No hardware D3D device is ever
+  created, so no vendor GPU driver DLL is loaded into the process. (Direct2D's software path
+  runs on WARP, Microsoft's in-process software rasteriser; that is the only D3D present.
+  Measured 2026-09-20: see plans/2026-09-20-phase1-spike-results.md.)
 - **Nothing runs unless it has to.** The designer is a separate process that exists only while
   open. Network fetches and command sources run on their own schedules with timeouts.
 

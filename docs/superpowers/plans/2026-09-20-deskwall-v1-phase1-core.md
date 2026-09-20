@@ -20,7 +20,8 @@ System.Text.Json source generation, xUnit.
 ## Global Constraints
 
 - .NET 10 LTS. `PublishAot=true` on Core and Daemon; IL2xxx/IL3xxx warnings are errors.
-- No GPU. `D2D1_RENDER_TARGET_TYPE_SOFTWARE` only. No D3D11 anywhere in the solution.
+- No GPU. `D2D1_RENDER_TARGET_TYPE_SOFTWARE` only (runs on WARP). No hardware D3D11 device
+  anywhere in the solution; no vendor driver DLL loaded.
 - NuGet allowed: `Microsoft.Windows.CsWin32` (PrivateAssets all), `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`.
 - Budget for the clock-only tick after Task 10: 60 ms wall, 40 ms CPU on JOES-PC.
 - Sources ASCII only. Runtime dir is `%LOCALAPPDATA%\DeskWall`.

@@ -23,7 +23,8 @@ Copied from the spec. Every task in every phase plan inherits these.
 
 - .NET 10 LTS. `DeskWall.Core` and `DeskWall.Daemon` must publish with `PublishAot=true`
   and zero AOT or trim warnings (`TreatWarningsAsErrors` for IL2xxx/IL3xxx).
-- No GPU: no D3D device is ever created. Direct2D renders to a WIC bitmap in software.
+- No GPU: no hardware D3D device is ever created; no vendor driver DLL in the process. Direct2D
+  renders to a WIC bitmap in software (WARP).
 - No third-party native dependencies. NuGet allowed: `Microsoft.Windows.CsWin32` (build
   only), xUnit and its runners. Anything else needs a line in this file first.
 - Budget (spec 1.2): idle private working set 10 MB after trim; idle CPU 0; clock-only tick
