@@ -20,6 +20,31 @@ public sealed class FrameRenderer(int width, int height)
         return frame;
     }
 
+    /// <summary>
+    /// Incremental render: start from the previous frame, repaint the base under every dirty rect
+    /// (changed components plus components that vanished since the previous frame), then redraw in
+    /// z-order every component that intersects a dirty rect. Pixels outside the dirty rects are the
+    /// previous frame's, untouched. Returns <paramref name="previous"/> itself when nothing is dirty.
+    /// </summary>
+    public Surface RenderIncremental(Surface previous, string baseRawPath, IReadOnlyList<Resolved> all,
+        IReadOnlySet<string> changedIds, IReadOnlyDictionary<string, Rect> previousRects)
+    {
+        if (previous.Width != width || previous.Height != height) throw new InvalidOperationException("previous frame size mismatch");
+        var dirty = new List<Rect>();
+        foreach (var c in all) if (changedIds.Contains(c.Id)) dirty.Add(c.Rect);
+        var liveIds = all.Select(c => c.Id).ToHashSet();
+        foreach (var (id, rect) in previousRects) if (!liveIds.Contains(id)) dirty.Add(rect);
+        if (dirty.Count == 0) return previous;
+
+        var frame = Surface.Create(width, height);
+        frame.CopyRect(previous, new Rect(0, 0, width, height));
+        using (var baseSurf = Surface.LoadRaw(baseRawPath))
+            foreach (var d in dirty) frame.CopyRect(baseSurf, d);
+        foreach (var c in all.OrderBy(c => c.Z))
+            if (dirty.Any(d => d.Intersects(c.Rect))) Draw(frame, c);
+        return frame;
+    }
+
     /// <summary>Draw one component into an existing frame.</summary>
     public static void Draw(Surface frame, Resolved c)
     {

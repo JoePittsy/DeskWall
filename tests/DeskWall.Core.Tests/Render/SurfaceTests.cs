@@ -103,4 +103,48 @@ public class FrameRendererTests
         Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), frame.GetPixel(5, 10));   // fill half of top bar
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)0), frame.GetPixel(35, 10));    // track of top bar covers the green one
     }
+
+    private static string BlueBase(string name)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        Directory.CreateDirectory(dir);
+        var png = Path.Combine(dir, name);
+        using (var b = Surface.Create(40, 20)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(png); }
+        return BaseCache.Ensure(png, 40, 20, Fit.Cover);
+    }
+
+    [Fact]
+    public void RenderIncremental_Only_Touches_Dirty_Rects()
+    {
+        var raw = BlueBase("base2.png");
+        var r = new FrameRenderer(40, 20);
+        Resolved left = new ResolvedBar("l", new Rect(0, 0, 20, 20), 1, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
+        Resolved right = new ResolvedBar("r", new Rect(20, 0, 20, 20), 1, 1, Color.White, new Color(255, 0, 255, 0), Axis.Horizontal);
+        using var first = r.RenderAll(raw, [left, right]);
+        Resolved right2 = new ResolvedBar("r", new Rect(20, 0, 20, 20), 1, 1, Color.White, new Color(255, 0, 0, 200), Axis.Horizontal);
+        using var second = r.RenderIncremental(first, raw, [left, right2], new HashSet<string> { "r" }, new Dictionary<string, Rect>());
+        Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), second.GetPixel(5, 5));    // left untouched
+        Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)200), second.GetPixel(30, 5));   // right repainted
+    }
+
+    [Fact]
+    public void RenderIncremental_Restores_Base_Where_A_Component_Vanished()
+    {
+        var raw = BlueBase("base3.png");
+        var r = new FrameRenderer(40, 20);
+        Resolved gone = new ResolvedBar("g", new Rect(0, 0, 40, 20), 1, 1, Color.White, new Color(255, 255, 0, 0), Axis.Horizontal);
+        using var first = r.RenderAll(raw, [gone]);
+        using var second = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect> { ["g"] = gone.Rect });
+        Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), second.GetPixel(5, 5));
+    }
+
+    [Fact]
+    public void RenderIncremental_Nothing_Dirty_Returns_Previous()
+    {
+        var raw = BlueBase("base4.png");
+        var r = new FrameRenderer(40, 20);
+        using var first = r.RenderAll(raw, []);
+        var same = r.RenderIncremental(first, raw, [], new HashSet<string>(), new Dictionary<string, Rect>());
+        Assert.Same(first, same);
+    }
 }

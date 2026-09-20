@@ -64,12 +64,27 @@ public sealed class TickRunner(
             return t;
         }
 
-        // 3. draw (full render; Task 11 makes this incremental)
+        // 3. draw: full render when forced or the display changed, otherwise only the dirty rects
         var d0 = sw.ElapsedMilliseconds;
         var baseRaw = BaseCache.Ensure(layout.BaseImage, canvas.W, canvas.H, layout.BaseFit);
-        using (var frame = new FrameRenderer(canvas.W, canvas.H).RenderAll(baseRaw, resolved))
+        var renderer = new FrameRenderer(canvas.W, canvas.H);
+        Surface frame;
+        if (force || !sameSig)
         {
+            frame = renderer.RenderAll(baseRaw, resolved);
             t.Redrawn = resolved.Count(c => c is not ResolvedShortcut);
+        }
+        else
+        {
+            var changedIds = changed.Select(c => c.Id).ToHashSet();
+            var prevRects = state.RectsById.ToDictionary(kv => kv.Key, kv => new Rect(kv.Value[0], kv.Value[1], kv.Value[2], kv.Value[3]));
+            using var previous = Surface.LoadRaw(_framePath);
+            frame = renderer.RenderIncremental(previous, baseRaw, resolved, changedIds, prevRects);
+            if (ReferenceEquals(frame, previous)) frame = renderer.RenderAll(baseRaw, resolved);   // nothing dirty but keys differ: be safe
+            t.Redrawn = changedIds.Count;
+        }
+        using (frame)
+        {
             frame.SaveRaw(_framePath);
             t.DrawMs = sw.ElapsedMilliseconds - d0;
 

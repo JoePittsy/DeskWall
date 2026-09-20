@@ -42,7 +42,11 @@ public class TickRunnerTests
         clock.Now = clock.Now.AddMinutes(1);              // next minute: due, key changes
         var t3 = await runner.RunAsync(force: false, apply: false, default);
         Assert.False(t3.Skipped);
-        Assert.Equal(1, t3.Redrawn);
+        Assert.Equal(1, t3.Redrawn);   // incremental path: only the clock was redrawn
         Assert.Contains("resolve", t3.ToTable());
+        using (var frame = Surface.LoadRaw(Path.Combine(dir, "frame.raw")))
+        {
+            Assert.Equal(((byte)255, (byte)30, (byte)30, (byte)30), frame.GetPixel(300, 170));   // base untouched away from the clock
+        }
     }
 }
