@@ -1183,7 +1183,7 @@ Expected: 12 passing.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/DeskWall.Core/Binding tests/DeskWall.Core.Tests/Binding
+git add src/DeskWall.Core/Bindings tests/DeskWall.Core.Tests/Bindings
 git commit -m "Binding: path+format parser and resolver over the value tree"
 ```
 
@@ -3301,4 +3301,4 @@ Phase 1 exit criteria, all ticked before Phase 2 through 4 plans are written:
 - Spec 6 pipeline: steps 1 to 6 and 8 across Tasks 8 to 11; step 7 is Phase 3.
 - Type names: `Rect`, `Fit`, `Axis`, `Align` in `DeskWall.Core`; `Color`, `TextStyle`,
   `TextEffect` in `DeskWall.Core.Render`; `Binding` type sits in namespace
-  `DeskWall.Core.Binding`, which is why `PropertyValue` writes `Binding`.
+  `DeskWall.Core.Bindings` (plural, so the type name never clashes with its namespace).
