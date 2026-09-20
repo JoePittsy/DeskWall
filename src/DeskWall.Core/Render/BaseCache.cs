@@ -29,9 +29,16 @@ public static class BaseCache
         dst.Clear(new Color(255, 0, 0, 0));
         dst.DrawSurface(src, new Rect(0, 0, w, h), fit);
         dst.SaveRaw(path);
-        // keep the cache dir tidy: drop other .raw files older than a day
+        // Keep the cache dir tidy: drop other .raw files older than a day. Best-effort - a file
+        // locked by a concurrent tick or the Phase 5 designer must not fail a tick that has
+        // already produced the cache entry it needed (finding 20).
         foreach (var f in Directory.EnumerateFiles(dir, "*.raw"))
-            if (f != path && File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-1)) File.Delete(f);
+        {
+            if (f == path || File.GetLastWriteTimeUtc(f) >= DateTime.UtcNow.AddDays(-1)) continue;
+            try { File.Delete(f); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
         return path;
     }
 }
