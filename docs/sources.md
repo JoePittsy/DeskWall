@@ -268,3 +268,134 @@ values, or a `command` source's `args`. Substitution happens at request time
 template (`.../{secret:steamKey}/...`), not the key. An unknown secret name throws
 `KeyNotFoundException` naming the secret, never a value. The daemon and `deskwall tick` never
 write this file; the owner (or the designer's secrets editor) does.
+
+## Pushed values: events
+
+A source is *pulled*: the layout tells the daemon what to go and do, and the scheduler decides
+when. An **event** is the other direction. Any program running as you writes one JSON line to
+`\\.\pipe\DeskWall.Events` and the values in it appear in the value tree at once, under a name
+nothing had to declare.
+
+```json
+{"source":"build","data":{"status":"green","failures":0}}
+```
+
+A layout binds `build.data.status` and it resolves. There is **no event source type** and nothing
+goes in the `sources` array: a source declaration exists to say what to go and do, and a pushed
+provider needs none of that. A binding to a provider that has never sent anything falls back like
+any other unresolvable binding.
+
+### The envelope
+
+CloudEvents attribute names, without the conformance. Unknown attributes (`specversion`,
+`datacontenttype`, anything else) are ignored, never a reason to reject.
+
+| Attribute | Required | Use |
+|---|---|---|
+| `source` | yes | Which provider this patches. Must be a binding name: a letter or `_`, then letters, digits, `_` or `-`. |
+| `data` | yes | An object. Merged into that provider's `data` record. |
+| `type` | no | What happened. Recorded and bindable. Does not route. |
+| `subject` | no | Recorded and bindable. Does not route. |
+| `id` | no | Recorded. An event repeating the previous `id` is dropped, so a heartbeat costs no repaint. |
+| `time` | no | The producer's timestamp, published as `sentAt`. Unparseable means absent, not rejected. |
+| `replace` | no | `true` replaces the `data` record instead of merging into it. |
+| `wake` | no | `false` updates the value without waking the daemon; it appears at the next ordinary tick. |
+
+**Events patch, scheduled refreshes replace.** Sending `{"level":0.2}` after
+`{"level":0.4,"device":"Speakers"}` leaves `device` alone: a producer sends what changed and must
+not blank what it does not know. The merge is top level only, so `{"a":{"y":2}}` after
+`{"a":{"x":1}}` leaves `a` as `{"y":2}`. `replace: true` asks for the whole record to be swapped.
+
+### What a provider publishes
+
+| Field | Type | Notes |
+|---|---|---|
+| `data` | record | The merged payload. Bindings read `build.data.status`. |
+| `type`, `subject`, `id` | text | From the last event; the key is absent when the attribute was. |
+| `sentAt` | time | The producer's `time`, absent when it sent none. |
+| `receivedAt` | time | When the bus accepted it. |
+| `ageSeconds` | number | Whole seconds since `receivedAt`, recomputed at every refresh. |
+
+A component bound to `ageSeconds` therefore redraws every minute by design, which is what lets a
+layout grey out or hide a value whose producer has gone quiet. Nothing else in the record changes
+unless an event arrives.
+
+### Sending one
+
+PowerShell, connect-write-disconnect:
+
+```powershell
+$p = New-Object IO.Pipes.NamedPipeClientStream '.', 'DeskWall.Events', 'Out'
+$p.Connect(2000); $w = New-Object IO.StreamWriter $p; $w.AutoFlush = $true
+$w.WriteLine('{"source":"build","data":{"status":"green"}}')
+$p.Dispose()
+```
+
+A shell, for one line and nothing more (`cmd`, and so any `.bat`):
+
+```bat
+echo {"source":"build","data":{"status":"green"}} > \\.\pipe\DeskWall.Events
+```
+
+A producer may also hold the connection open and write a line whenever something changes; up to
+four producers can be connected at once. Blank lines are ignored, so a trailing newline is free.
+
+Repaints are coalesced: the bus wakes the daemon at most every 400 ms, with a trailing wake so the
+final state always lands. Fifty events sent in a burst cost one repaint, and fifty spread over a
+two-second slider drag cost about six.
+
+### Remembering, and forgetting
+
+Every provider's last record is written to `%LOCALAPPDATA%\DeskWall\events.json`, at most every
+few seconds and once on shutdown, and restored at start. That is what makes a pushed widget
+survive a sign-in, and it is also what the designer reads: its providers panel watches that file,
+so a producer started while the designer is open appears without a restart, with every field it
+has ever sent offered to the binding picker.
+
+Because events merge, the remembered record accumulates every field a producer has ever sent, not
+only the ones in its latest event. Nothing expires on its own; the designer's **Forget** drops a
+record. (A running daemon holds its own copy and writes the file back on its next save, so a
+Forget while the daemon is up is not durable yet.)
+
+### Describing a provider
+
+`providers/<name>.json`, loaded from the directory beside `deskwall.exe` and then from
+`%LOCALAPPDATA%\DeskWall\providers`, the later winning on the same name. A manifest is only for
+what observation cannot supply: a provider that has never run here, per-field descriptions and
+examples so the binding picker reads as prose, and `expectEverySeconds` (carried and shown;
+enforcing staleness from it is phase 2). The designer's **Describe** writes one seeded from the
+observed fields.
+
+```json
+{
+  "version": 1,
+  "name": "build",
+  "description": "The CI light for whatever is checked out.",
+  "expectEverySeconds": 900,
+  "fields": [
+    { "path": "data.status", "type": "text", "example": "green", "description": "green, amber or red" }
+  ]
+}
+```
+
+Where a manifest and an observed record disagree about a field, the observed value wins for
+rendering and the manifest wins for describing.
+
+### Collisions and diagnostics
+
+A layout source and a pushed provider with the same name are **not** merged: the layout source
+wins the name outright, from its first tick, and the daemon logs one WARN naming the clash.
+
+Every line the pipe offers is logged. A rejected line is one INFO with the reason the parser gave
+it (`missing "source"`, `invalid json: ...`, `"source" "my build" is not a valid binding name`,
+`duplicate id "7"`), and the first event from a provider logs `events: provider 'x' seen`.
+Between those lines and the tick line that follows, "my script sends events and nothing happens"
+can be told apart from "the daemon is not running" and from "nothing is bound to that value".
+
+### Trust
+
+The pipe's ACL grants exactly one account: the user the daemon runs as. Nothing else, not SYSTEM
+and not an administrator, is granted access by omission. The threat left is a process already
+running as you, and event values are used exactly like any other source value -- which means a
+layout that binds a `shortcut` target to one will launch whatever it says. That is the same trust
+an `http` source already has, and it is the layout author's choice, but make it deliberately.
