@@ -20,4 +20,13 @@ public class SourceFactoryTests
         Assert.IsType<CommandSource>(SourceFactory.Create(new() { Name = "c", Type = "command", Settings = new() { ["command"] = "cmd.exe" } }, clock));
         Assert.Throws<NotSupportedException>(() => SourceFactory.Create(new() { Name = "x", Type = "gauge" }, clock));
     }
+
+    [Fact]
+    public void Hardware_Type_Creates_HardwareSource_With_Defaults()
+    {
+        var def = new SourceDef { Name = "hw", Type = "hardware" };
+        var s = SourceFactory.Create(def, new FakeClock(DateTimeOffset.UnixEpoch));
+        var hw = Assert.IsType<DeskWall.Core.Sources.Hardware.HardwareSource>(s);
+        Assert.Equal(TimeSpan.FromSeconds(60), hw.Every);
+    }
 }

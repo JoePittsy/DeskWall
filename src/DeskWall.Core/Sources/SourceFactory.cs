@@ -18,6 +18,7 @@ public static class SourceFactory
             "http" => HttpSource.FromDef(def, clock, secrets),
             "rss" => RssSource.FromDef(def, secrets),
             "command" => CommandSource.FromDef(def, clock, secrets),
+            "hardware" => Hardware.HardwareSource.FromDef(def),
             _ => throw new NotSupportedException($"source type '{def.Type}' (source '{def.Name}')"),
         };
     }
@@ -26,6 +27,7 @@ public static class SourceFactory
     {
         "disks" => 300,
         "system" => 900,
+        "hardware" => 60,
         _ => 600,
     };
 }
