@@ -213,6 +213,28 @@ public class WidgetInstanceTests
         Assert.Equal("Leeds||53.8008||-1.5491", layout.Widgets![id].Knobs["town"]);
     }
 
+    /// <summary>Re-editing a knob whose sets already replaced the template's placeholders once
+    /// must still work: the instance's current URL no longer contains "{lat}"/"{lon}" after the
+    /// Add-time default is applied, so a second SetKnob has to substitute from the template's
+    /// own value again, not from what is currently sitting on the instance.</summary>
+    [Fact]
+    public void SetKnob_Re_Edited_Town_Replaces_The_Previous_Coordinates_Not_Just_The_First_Ones()
+    {
+        var layout = NewLayout();
+        var template = WeatherTemplate();
+        var id = WidgetInstance.Add(layout, template, new Rect(0, 0, 0, 0));   // default: Leeds
+
+        WidgetInstance.SetKnob(layout, template, id, "town", "Leeds||53.8008||-1.5491");
+        WidgetInstance.SetKnob(layout, template, id, "town", "Bristol||51.4545||-2.5879");
+
+        var url = layout.Sources.Single(s => s.Name == "weather").Settings["url"];
+        Assert.Equal("https://api.open-meteo.com/v1/forecast?latitude=51.4545&longitude=-2.5879", url);
+        Assert.DoesNotContain("{lat}", url);
+        Assert.DoesNotContain("{lon}", url);
+        Assert.DoesNotContain("53.8008", url);
+        Assert.Equal("Bristol||51.4545||-2.5879", layout.Widgets![id].Knobs["town"]);
+    }
+
     [Fact]
     public void SetKnob_Writes_A_Setting_Plain_Overwrite_When_There_Is_No_Token()
     {

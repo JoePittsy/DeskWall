@@ -75,18 +75,36 @@ public static class WidgetInstance
 
     /// <summary>Applies a knob's <c>sets</c> paths for <paramref name="value"/> (see "Widgets" for
     /// the plain-vs-composite value convention) and records the raw value on the instance's
-    /// WidgetRecord so it can be shown back and re-applied later.</summary>
+    /// WidgetRecord so it can be shown back and re-applied later.
+    /// <para>A <c>:{token}</c> entry substitutes from the <em>template's own, still-placeholder-
+    /// bearing</em> value, not the instance's current one: once a first edit has replaced
+    /// "{lat}" with a number, there is no placeholder left in the instance for a second edit to
+    /// find, so re-editing a knob like Town would silently do nothing. Every token entry that
+    /// targets the same property/setting is applied together in one pass over the template's
+    /// original text, so "{lat}" and "{lon}" both land correctly however many times the knob has
+    /// already been set.</para></summary>
     public static void SetKnob(LayoutFile layout, WidgetTemplate t, string instanceId, string knobId, string value)
     {
         var knob = t.Knobs.FirstOrDefault(k => k.Id == knobId)
             ?? throw new ArgumentException($"widget \"{t.Key}\" has no knob \"{knobId}\"", nameof(knobId));
 
         var parts = value.Split(PartSeparator);
+        var tokenGroups = new Dictionary<string, List<(string Token, string Part)>>(StringComparer.Ordinal);
         for (var i = 0; i < knob.Sets.Count; i++)
         {
             var part = parts.Length > i + 1 ? parts[i + 1] : parts[0];
-            ApplySet(layout, instanceId, knob.Sets[i], part);
+            var setPath = knob.Sets[i];
+            var tokenMatch = TokenSuffix.Match(setPath);
+            if (!tokenMatch.Success)
+            {
+                ApplySet(layout, instanceId, setPath, part);
+                continue;
+            }
+            var targetPath = setPath[..tokenMatch.Index];
+            if (!tokenGroups.TryGetValue(targetPath, out var list)) tokenGroups[targetPath] = list = [];
+            list.Add((tokenMatch.Groups[1].Value, part));
         }
+        foreach (var (targetPath, tokens) in tokenGroups) ApplyTokenGroup(layout, t, instanceId, targetPath, tokens);
 
         layout.Widgets ??= new();
         if (!layout.Widgets.TryGetValue(instanceId, out var record))
@@ -182,21 +200,12 @@ public static class WidgetInstance
         }
     }
 
-    /// <summary>Applies one <c>sets</c> entry. See "Widgets" for the grammar: an optional trailing
-    /// ":{token}" substitutes into the target's current string; otherwise "=bind:" writes a
-    /// binding parsed from <paramref name="part"/> (never from the sets path's own text, which
-    /// only documents the default choice's shape) and anything else writes a literal.</summary>
+    /// <summary>Applies one non-token <c>sets</c> entry: "=bind:" writes a binding parsed from
+    /// <paramref name="part"/> (never from the sets path's own text, which only documents the
+    /// default choice's shape) and anything else writes a literal.</summary>
     private static void ApplySet(LayoutFile layout, string instanceId, string setPath, string part)
     {
         var s = setPath;
-        string? token = null;
-        var tokenMatch = TokenSuffix.Match(s);
-        if (tokenMatch.Success)
-        {
-            token = tokenMatch.Groups[1].Value;
-            s = s[..tokenMatch.Index];
-        }
-
         var isBind = false;
         var bindIndex = s.IndexOf("=bind:", StringComparison.Ordinal);
         if (bindIndex >= 0)
@@ -208,46 +217,76 @@ public static class WidgetInstance
         var segments = s.Split('.');
         if (segments.Length >= 3 && segments[0] == "components")
         {
-            var id = $"{instanceId}.{segments[1]}";
-            var propertyName = segments[2];
-            var component = layout.Components.FirstOrDefault(c => c.Id == id)
-                ?? throw new InvalidOperationException($"sets path \"{setPath}\": no component \"{id}\"");
-            var prop = PropertySchema.For(component).FirstOrDefault(p => string.Equals(p.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException($"sets path \"{setPath}\": \"{id}\" has no property \"{propertyName}\"");
-
-            if (token is not null)
-            {
-                var current = prop.Get(component)?.LiteralText ?? "";
-                prop.Set(component, PropertyValue.Literal(current.Replace("{" + token + "}", part)));
-            }
-            else if (isBind)
-            {
-                prop.Set(component, PropertyValue.Bound(Binding.Parse(part)));
-            }
-            else
-            {
-                prop.Set(component, PropertyValue.Literal(part));
-            }
+            var component = FindComponent(layout, instanceId, segments[1], setPath);
+            var prop = FindProperty(component, segments[2], setPath);
+            prop.Set(component, isBind ? PropertyValue.Bound(Binding.Parse(part)) : PropertyValue.Literal(part));
         }
         else if (segments.Length >= 4 && segments[0] == "sources" && segments[2] == "settings")
         {
-            var name = segments[1];
-            var key = segments[3];
-            var source = layout.Sources.FirstOrDefault(x => x.Name == name)
-                ?? throw new InvalidOperationException($"sets path \"{setPath}\": no source \"{name}\"");
-            if (token is not null)
-            {
-                var current = source.Settings.TryGetValue(key, out var v) ? v : "";
-                source.Settings[key] = current.Replace("{" + token + "}", part);
-            }
-            else
-            {
-                source.Settings[key] = part;
-            }
+            FindSource(layout, segments[1], setPath).Settings[segments[3]] = part;
         }
         else
         {
             throw new InvalidOperationException($"bad sets path \"{setPath}\"");
         }
     }
+
+    /// <summary>Applies every <c>:{token}</c> entry that targets the same property/setting
+    /// together, substituting each token into the <em>template's own</em> current value (which
+    /// still holds every placeholder the template was authored with) rather than the instance's,
+    /// then writes the result once. See <see cref="SetKnob"/>'s remarks for why: the instance's
+    /// own current value has already had an earlier edit's placeholder replaced, so it has
+    /// nothing left for a later edit -- possibly targeting a different token in the very same
+    /// string, like weather's "{lat}" and "{lon}" -- to find.</summary>
+    private static void ApplyTokenGroup(LayoutFile layout, WidgetTemplate t, string instanceId, string targetPath, List<(string Token, string Part)> tokens)
+    {
+        var segments = targetPath.Split('.');
+        if (segments.Length >= 3 && segments[0] == "components")
+        {
+            var templateId = segments[1];
+            var templateComponent = t.Components.FirstOrDefault(c => c.Id == templateId)
+                ?? throw new InvalidOperationException($"sets path \"{targetPath}\": widget \"{t.Key}\" has no component \"{templateId}\"");
+            var templateProp = FindProperty(templateComponent, segments[2], targetPath);
+            var original = templateProp.Get(templateComponent)?.LiteralText ?? "";
+
+            var instanceComponent = FindComponent(layout, instanceId, templateId, targetPath);
+            var instanceProp = FindProperty(instanceComponent, segments[2], targetPath);
+            instanceProp.Set(instanceComponent, PropertyValue.Literal(Substitute(original, tokens)));
+        }
+        else if (segments.Length >= 4 && segments[0] == "sources" && segments[2] == "settings")
+        {
+            var name = segments[1];
+            var key = segments[3];
+            var templateSource = t.Sources.FirstOrDefault(s => s.Name == name)
+                ?? throw new InvalidOperationException($"sets path \"{targetPath}\": widget \"{t.Key}\" has no source \"{name}\"");
+            var original = templateSource.Settings.TryGetValue(key, out var v) ? v : "";
+
+            FindSource(layout, name, targetPath).Settings[key] = Substitute(original, tokens);
+        }
+        else
+        {
+            throw new InvalidOperationException($"bad sets path \"{targetPath}\"");
+        }
+    }
+
+    private static string Substitute(string text, List<(string Token, string Part)> tokens)
+    {
+        foreach (var (token, part) in tokens) text = text.Replace("{" + token + "}", part);
+        return text;
+    }
+
+    private static ComponentDef FindComponent(LayoutFile layout, string instanceId, string templateLocalId, string setPath)
+    {
+        var id = $"{instanceId}.{templateLocalId}";
+        return layout.Components.FirstOrDefault(c => c.Id == id)
+            ?? throw new InvalidOperationException($"sets path \"{setPath}\": no component \"{id}\"");
+    }
+
+    private static PropertySchema.Prop FindProperty(ComponentDef component, string propertyName, string setPath)
+        => PropertySchema.For(component).FirstOrDefault(p => string.Equals(p.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"sets path \"{setPath}\": \"{component.Id}\" has no property \"{propertyName}\"");
+
+    private static SourceDef FindSource(LayoutFile layout, string name, string setPath)
+        => layout.Sources.FirstOrDefault(x => x.Name == name)
+            ?? throw new InvalidOperationException($"sets path \"{setPath}\": no source \"{name}\"");
 }
