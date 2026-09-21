@@ -141,7 +141,7 @@ public class EventEnvelopeTests
     [InlineData("build.sub")]
     public void A_Source_Name_That_Is_Not_A_Binding_Name_Is_Rejected(string name)
     {
-        var (e, why) = P($$"""{"source":"{{name}}","data":{}}""");
+        var (e, why) = P($$$"""{"source":"{{{name}}}","data":{}}""");
         Assert.Null(e);
         Assert.Contains("name", why!, StringComparison.OrdinalIgnoreCase);
     }
@@ -490,6 +490,14 @@ $p.Dispose()
 - [ ] **Step 5: Commit** `git commit -m "Events: docs, an example a user can paste, and the numbers"`
 
 ---
+
+## Correction, after the fact
+
+The interpolated raw string in Task 1 as first written (`$$"""..."""` around a payload containing
+`}}`) does not compile: the payload's own braces are read as one escaped brace and the envelope
+loses its closing brace (CS9007). Use three dollars and three braces, as above. The same trap is
+in Task 3's burst tests; a small `Numbered(int)` helper doing a `Replace` reads better there than
+six consecutive braces.
 
 ## Self-review against the spec
 
