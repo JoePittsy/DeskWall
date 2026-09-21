@@ -41,6 +41,39 @@ public class SourceFormsTests
             Assert.Equal(type, SourceForms.For(type).Single(f => f.Key == SourceForms.NameKey).Default);
     }
 
+    /// <summary>A command widget that works on this machine has to work on another one, and two
+    /// dogfood widgets shipped with "C:\Users\&lt;name&gt;\AppData\Local\DeskWall\scripts" typed into
+    /// them because the form offered nothing better. The default is now the folder itself.</summary>
+    [Fact]
+    public void The_Working_Folder_Defaults_To_The_DeskWall_Scripts_Folder()
+    {
+        var field = SourceForms.For("command").Single(f => f.Key == "workingDir");
+        Assert.Equal("runtime:scripts", field.Default);
+        Assert.Contains("runtime:", field.Hint!, StringComparison.Ordinal);
+        Assert.Contains("%USERPROFILE%", field.Hint!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_File_Path_Suggests_The_DeskWall_Folder_Too()
+    {
+        var field = SourceForms.For("file").Single(f => f.Key == "path");
+        Assert.StartsWith("runtime:", field.Default, StringComparison.Ordinal);
+        Assert.Contains("runtime:", field.Hint!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("http")]
+    [InlineData("command")]
+    [InlineData("file")]
+    public void No_Default_Names_A_Folder_Only_This_Machine_Has(string type)
+    {
+        foreach (var field in SourceForms.For(type))
+        {
+            Assert.DoesNotContain(":\\", field.Default, StringComparison.Ordinal);
+            Assert.DoesNotContain("Users", field.Default, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void Auto_Means_The_Key_Is_Not_Written_At_All()
     {
