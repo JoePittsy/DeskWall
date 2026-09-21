@@ -232,6 +232,10 @@ internal static class Designer
     {
         var exe = Find();
         if (exe is null) { log.Warn("designer not installed"); return; }
+        // One line per launch, so "it opened twice" is answerable from the log: two lines a few
+        // milliseconds apart means the shell reported one click as two events, one line means it
+        // did not and the second window came from somewhere else.
+        log.Info("designer requested");
         // UseShellExecute false, and no redirection: the designer outlives this daemon happily and
         // inherits nothing it could block on.
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false }); }
