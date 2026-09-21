@@ -143,6 +143,10 @@ Settings: `command` (required), `args` (optional, may contain `{secret:name}`), 
 `"text"`; default: `json` if stdout starts with `{` or `[`, else `text`), `unixTimeFields`
 (comma-separated field names to reinterpret as Unix timestamps when parsing JSON).
 
+`command` and `workingDir` are expanded once, when the layout is loaded: `%ENV%` variables and
+then the `runtime:` prefix (below). `args` is not a path and is not expanded; its `{secret:}`
+substitution happens per request instead.
+
 Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` or `json`
 (whichever `parse` picked), `exitCode` (`NumberValue`), `ranAt` (`TimeValue`), and `stderr`
 (`TextValue`) only when stderr is non-empty.
@@ -190,9 +194,27 @@ whitespace, truncated to 500 characters), `author` (omitted if absent).
 
 Same body cap (4 MB) and hard ceiling (`timeout * 6`) as `http`, for the same reason.
 
+## Paths in a source: `%ENV%` and `runtime:`
+
+A `command` source's `command` and `workingDir` and a `file` source's `path` take the same two
+expansions an image's `source` takes (`Paths.ExpandPath`, one implementation so the four cannot
+drift apart):
+
+| Written | Becomes |
+|---|---|
+| `%LOCALAPPDATA%\Foo\x.ps1` | the environment variable, as `ExpandEnvironmentVariables` does it |
+| `runtime:scripts\progress.ps1` | `<runtime dir>\scripts\progress.ps1`, honouring `DESKWALL_HOME` |
+| `runtime:` | the runtime dir itself |
+| anything else | itself, untouched |
+
+`runtime:` is case-insensitive and accepts forward slashes. It exists so a committed layout or a
+shared widget never carries one machine's `C:\Users\<name>\AppData\Local\DeskWall\...` inside
+it. Expansion happens at construction, so a variable changed after the daemon started is not
+picked up until the layout is reloaded.
+
 ## `file`
 
-Settings: `path` (required; `%ENV%` variables expanded), `parse` (`"json"`, `"text"` or `"rss"`;
+Settings: `path` (required; `%ENV%` variables and `runtime:` expanded, see above), `parse` (`"json"`, `"text"` or `"rss"`;
 default by extension: `.json` -> json, `.xml`/`.rss`/`.atom` -> rss, else text), `every` (default
 30 s -- a cheap mtime re-check; the running daemon also wakes on a file-system watcher),
 `unixTimeFields` (as `http`).

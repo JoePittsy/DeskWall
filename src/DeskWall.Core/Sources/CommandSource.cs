@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using DeskWall.Core.Layout;
@@ -16,6 +16,15 @@ namespace DeskWall.Core.Sources;
 public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout, string command, string? args, string? workingDir, string? parse,
     IReadOnlySet<string> unixTimeFields, Secrets secrets, IClock clock) : AsyncSource(name, every, timeout)
 {
+    /// <summary>The program to run, expanded once at construction as FileSource's Path is:
+    /// %ENV% variables and the runtime: prefix, so a shared widget can say
+    /// runtime:scripts\progress.ps1 instead of baking one machine's AppData path into the
+    /// template.</summary>
+    public string Command { get; } = Paths.ExpandPath(command);
+
+    /// <summary>The folder to run it in, expanded likewise; "" means the daemon's own.</summary>
+    public string WorkingDir { get; } = workingDir is null ? "" : Paths.ExpandPath(workingDir);
+
     public static CommandSource FromDef(SourceDef def, IClock clock, Secrets secrets)
     {
         var s = def.Settings;
@@ -29,9 +38,9 @@ public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout,
     {
         var psi = new ProcessStartInfo
         {
-            FileName = Environment.ExpandEnvironmentVariables(command),
+            FileName = Command,
             Arguments = args is null ? "" : secrets.Substitute(args),
-            WorkingDirectory = workingDir is null ? "" : Environment.ExpandEnvironmentVariables(workingDir),
+            WorkingDirectory = WorkingDir,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

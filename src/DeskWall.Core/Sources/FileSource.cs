@@ -1,9 +1,9 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
-/// <summary>Settings: path (required; %ENV% expanded); parse = json | text | rss (default by extension: .json,
+/// <summary>Settings: path (required; %ENV% variables and the runtime: prefix expanded); parse = json | text | rss (default by extension: .json,
 /// .xml/.rss/.atom => rss, else text); every (default 30 s: the cheap re-check of mtime; the daemon also
 /// wakes on the file watcher in Phase 2 style, Task 8); unixTimeFields as for http. Publishes: json | text |
 /// (for rss) title/link/items, plus modifiedAt (TimeValue), size (NumberValue), exists (BoolValue, always true).
@@ -16,7 +16,7 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
     private DateTime _seenMtime;
 
     public string Name => name;
-    public string Path { get; } = Environment.ExpandEnvironmentVariables(path);
+    public string Path { get; } = Paths.ExpandPath(path);
 
     public static FileSource FromDef(SourceDef def, IClock clock)
     {

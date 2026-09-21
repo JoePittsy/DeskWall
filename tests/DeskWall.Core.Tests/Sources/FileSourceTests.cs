@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using Xunit;
@@ -74,5 +74,19 @@ public class FileSourceTests
         var p = Temp("bad.json");
         File.WriteAllText(p, "{ not json");
         await Assert.ThrowsAnyAsync<Exception>(async () => await FileSource.FromDef(Def(p), new FixedClock(DateTimeOffset.UnixEpoch)).RefreshAsync(default));
+    }
+
+    /// <summary>A widget that names C:\Users\<me>\AppData\Local\DeskWall\... is not portable.
+    /// `path` understands the same `runtime:` prefix an image's `source` does, on top of the %ENV%
+    /// expansion it already had.</summary>
+    [Fact]
+    public void Path_Understands_The_Runtime_Prefix_And_Still_Expands_Env()
+    {
+        var clock = new FixedClock(DateTimeOffset.UnixEpoch);
+        Assert.Equal(DeskWall.Core.Paths.InRuntime("scripts", "downloads.json"),
+            FileSource.FromDef(Def(@"runtime:scripts\downloads.json"), clock).Path);
+        Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "win.ini"),
+            FileSource.FromDef(Def(@"%SystemRoot%\win.ini"), clock).Path);
+        Assert.Equal(@"C:\data\x.json", FileSource.FromDef(Def(@"C:\data\x.json"), clock).Path);
     }
 }
