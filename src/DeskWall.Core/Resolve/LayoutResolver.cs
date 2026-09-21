@@ -77,7 +77,7 @@ public static class LayoutResolver
                 result.Add(new ResolvedDial(id, rect, def.Z, dfrac,
                     PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF"), dfill,
                     (float)(PropertyReader.Number(dl.Thickness, scope) ?? 6),
-                    (float)(PropertyReader.Number(dl.StartAngle, scope) ?? 135),
+                    (float)(PropertyReader.Number(dl.StartAngle, scope) ?? 225),
                     (float)(PropertyReader.Number(dl.Sweep, scope) ?? 270)));
                 break;
 

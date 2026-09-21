@@ -10,7 +10,7 @@ public class Win32HardwareReaderTests(ITestOutputHelper output)
     [Fact]
     public void Cpu_Times_Are_Readable_And_Monotonic()
     {
-        var r = new Win32HardwareReader();
+        using var r = new Win32HardwareReader();
         var a = r.ReadCpu();
         Assert.NotNull(a);
         // GetSystemTimes moves on the 15.6 ms scheduler quantum, so spin long enough to cross a few.
@@ -25,7 +25,8 @@ public class Win32HardwareReaderTests(ITestOutputHelper output)
     [Fact]
     public void Memory_Is_Readable_And_Plausible()
     {
-        var m = new Win32HardwareReader().ReadMemory();
+        using var reader = new Win32HardwareReader();
+        var m = reader.ReadMemory();
         Assert.NotNull(m);
         output.WriteLine($"memory used={m!.Value.UsedBytes} total={m.Value.TotalBytes}");
         Assert.True(m!.Value.UsedBytes > 0);
@@ -35,7 +36,7 @@ public class Win32HardwareReaderTests(ITestOutputHelper output)
     [Fact]
     public void Gpu_Is_Absent_Or_In_Range()
     {
-        var r = new Win32HardwareReader();
+        using var r = new Win32HardwareReader();
         var g = r.ReadGpu();
         output.WriteLine($"HasGpu={r.HasGpu} ReadGpu={(g is null ? "null" : g.ToString())}");
         if (g is null) return;
