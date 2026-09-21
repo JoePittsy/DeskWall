@@ -64,7 +64,10 @@ public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout,
         var trimmed = outText.TrimStart();
         var mode = parse ?? (trimmed.StartsWith('{') || trimmed.StartsWith('[') ? "json" : "text");
         if (mode == "json") d["json"] = JsonValues.Parse(outText, unixTimeFields);
-        else d["text"] = new TextValue(outText);
+        // A console program ends its output with a line break; that break is not part of the value.
+        // Left in, `cmd.text | "{0} in Downloads"` wraps onto two lines. Only the trailing break goes:
+        // interior lines are the program's own and a component may want them.
+        else d["text"] = new TextValue(outText.TrimEnd('\r', '\n'));
         if (!string.IsNullOrWhiteSpace(errText)) d["stderr"] = new TextValue(errText);
         return new RecordValue(d);
     }

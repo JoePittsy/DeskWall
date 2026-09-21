@@ -28,6 +28,20 @@ public class CommandSourceTests
         Assert.Null(v.Get("stderr"));
     }
 
+    /// <summary>Found building a "3 in Downloads" widget: cmd's `find /c` prints "3\r\n", and a text
+    /// component bound to `cmd.text | "{0} in Downloads"` wrapped onto two lines because the newline
+    /// was inside the value. A console program's trailing line break is how it ends its output, not
+    /// part of the value; anything else (interior lines, leading spaces) is kept as printed.</summary>
+    [Fact]
+    public async Task Text_Drops_The_Trailing_Line_Break_Only()
+    {
+        var v = await CommandSource.FromDef(Def("cmd.exe", "/c echo  two words"), new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets()).RefreshAsync(default);
+        Assert.Equal(" two words", ((TextValue)v.Get("text")!).Text);
+
+        var multi = await CommandSource.FromDef(Def("cmd.exe", "/c (echo one & echo two)"), new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets()).RefreshAsync(default);
+        Assert.Equal("one \r\ntwo", ((TextValue)multi.Get("text")!).Text);
+    }
+
     /// <summary>Finding 15: a non-zero exit with nothing on stdout has no values to publish, and
     /// text = "" over the last good text is the partial-record-over-last-good spec 3.2 decides against.
     /// A non-zero exit that did print is still a success - scripts use the code as a flag, which the
