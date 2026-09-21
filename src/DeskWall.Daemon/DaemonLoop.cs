@@ -165,7 +165,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         }
         finally
         {
-            Footprint.Trim();
+            Footprint.Release();   // collect, decommit, trim: the idle footprint is what the process costs between wakes
         }
     }
 

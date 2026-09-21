@@ -140,36 +140,36 @@ Spec 1.2's table (reproduced from `docs/superpowers/specs/2026-09-20-deskwall-v1
 `dotnet test --filter Category=Budget` against a published `deskwall.exe`) driving `deskwall tick
 --measure` and `Footprint.Current()` on the reference machine (JOES-PC, i7-6700K, 3440x1440).
 
-**First native AOT run, 2026-09-21** (`deskwall.exe` 6.54 MB, MSVC 14.51, SDK 10.0.26100; the
-full rows and their caveats are in `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`
-under "Phase 6 budget results"). Two of the five budgets are met, three are not:
+**Native AOT runs, 2026-09-21** (`deskwall.exe` 6.54 MB, MSVC 14.51, SDK 10.0.26100; the full
+rows and their caveats are in `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` under
+"Phase 6 budget results"). Three of the five budgets are met, two are not:
 
-| Budget row | Measured (AOT) | Verdict |
-|---|---|---|
-| Cold start to first wallpaper | 110 ms | OK |
-| Idle CPU between wakes, 4 min | 0 ms outside ticks | OK |
-| Idle private bytes after trim | 48.4 MB (working set 1.6 MB) | OVER |
-| Idle handles / threads | 279 / 9 | OVER |
-| Clock-only tick | 146 ms wall / 78 ms CPU | OVER |
+| Budget row | First run | After the memory fix wave | Verdict |
+|---|---|---|---|
+| Cold start to first wallpaper | 110 ms | 99 ms | OK |
+| Idle CPU between wakes, 4 min | 0 ms outside ticks | 0 ms | OK |
+| Idle private bytes after trim | 48.4 MB (working set 1.6 MB) | 8.2 MB (working set 0.6 MB) | OK |
+| Idle handles / threads | 279 / 9 | 279 / 9 | OVER |
+| Clock-only tick | 146 ms wall / 78 ms CPU | 92 ms wall / 62 ms CPU | OVER |
 
-What the three findings are, as far as one session could tell:
+What the first run found, and what the fix wave did about it:
 
-- **Private bytes is commit, not resident memory.** After `Footprint.Trim()` the working set is
-  1.6 MB; the 48 MB is GC heap left committed after a tick's two 19.8 MB frame buffers (the
-  `frame.raw` read and the composed frame). Sampled from outside on a resident daemon it swings
-  48-79 MB tick to tick. Whether the spec's "private working set" row means commit is a question
-  for the spec; either way the heap is not being decommitted between wakes.
+- **Private bytes was commit the GC never gave back.** After `Footprint.Trim()` the working set
+  was 1.6 MB, but `LoadRaw` and `SaveRaw` each staged the whole 19.8 MB frame in a managed byte
+  array, which lands on the large object heap and waits for a gen2 collection the idle daemon
+  rarely ran; sampled from outside it swung 48-79 MB tick to tick. Now the frame streams straight
+  between the file and the locked WIC bitmap, and after every tick `Footprint.Release()` runs an
+  aggressive compacting gen2 collection before the trim. Idle commit went to 8.2 MB.
+- **The clock-only tick was not cheaper than a full redraw.** In a one-shot process, forced full
+  redraws (7 components) measured draw 88-109 ms and clock-only incremental ticks (1 component)
+  105-117 ms; the two 19.8 MB managed copies were most of the difference. Removing them took the
+  clock-only draw stage from 118 to 65 ms. What is left: 65 ms of draw for one component, which
+  is still the `frame.raw` read and write plus factory and render-target setup in a fresh process,
+  and a steady 24 ms of JPEG encode. The CPU figure moves in 15.6 ms quanta (62 is 4 quanta).
 - **Handles and threads are the runtime plus the cached factories, not per-tick growth.** 257
-  handles / 17 threads two seconds after start, before any tick; 261 / 13 after several ticks.
-  The Direct2D, DirectWrite and WIC factories are process-lifetime singletons (`Surface`), and the
-  render target is per frame.
-- **The clock-only tick is not cheaper than a full redraw.** In a one-shot process, three forced
-  full redraws (7 components) measured draw 88-109 ms and three clock-only incremental ticks
-  (1 component) measured draw 105-117 ms; JPEG encode is a steady 25 ms in both. Reading and
-  writing the 18.9 MB `frame.raw` costs about what redrawing the other six components saves. The
-  resident daemon's own log for four warm clock-only ticks (wallpaper applied) read 165/94,
-  130/62, 170/109 and 76/47 ms wall/CPU, so the warm process helps but is still over 60/40. The
-  CPU figure itself moves in 15.6 ms quanta (every one-shot tick read exactly 78 ms).
+  handles / 17 threads two seconds after start, before any tick; 261 / 10 after several ticks.
+  The Direct2D, DirectWrite and WIC factories are process-lifetime singletons (`Surface`) and the
+  render target is per frame. Nothing in the fix wave touched this and the numbers did not move.
 
 The JIT numbers this section used to carry (15.5 MB working set, 69.8 MB private bytes, 368
 handles, 15 threads resident; 67-90 ms clock-only tick) are in

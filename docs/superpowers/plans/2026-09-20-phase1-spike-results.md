@@ -189,7 +189,23 @@ RDP session at the console's native resolution:
 | `Idle_Handles_And_Threads` | 279 h / 9 t | < 100 h / < 5 t | OVER |
 | `ClockOnly_Tick_Wall_And_Cpu` | 146 ms wall / 78 ms cpu (resolve 1, draw 118, encode 25) | < 60 ms wall / < 40 ms cpu | OVER |
 
-Notes on the three findings, from the same session:
+Second run, same day, after the memory fix wave (raw frame streamed straight between file and
+locked bitmap with no managed staging array; `Footprint.Release()` after every tick, an
+aggressive compacting gen2 collection before the working-set trim):
+
+| Test | Measured | Budget | Verdict |
+|---|---|---|---|
+| `ColdStart_To_First_Wallpaper` | 99 ms | < 500 ms | OK |
+| `Idle_PrivateBytes_After_Trim` | 8.22 MB (working set 0.64 MB) | < 10 MB | OK |
+| `Idle_Cpu_Between_Wakes` | 0 ms (172 ms total over 240 s, all of it inside ticks) | < 50 ms | OK |
+| `Idle_Handles_And_Threads` | 279 h / 9 t | < 100 h / < 5 t | OVER |
+| `ClockOnly_Tick_Wall_And_Cpu` | 92 ms wall / 62 ms cpu (resolve 1, draw 65, encode 24) | < 60 ms wall / < 40 ms cpu | OVER |
+
+Removing the two 19.8 MB managed copies per tick took the clock-only draw stage from 118 to
+65 ms on its own. Handles and threads did not move, as expected: they are there before the
+first tick.
+
+Notes on the findings from the first run:
 
 - The `cpu` figure is `Environment.CpuUsage` deltas, which move in 15.6 ms scheduler quanta:
   every non-skipped one-shot tick read exactly 78 ms (5 quanta) and every skipped tick 16 ms, so

@@ -88,12 +88,14 @@ file lives is `docs/architecture.md`.
 Spec 1.2 sets a cost table (idle working set under 10 MB, a clock-only tick under 60 ms wall / 40
 ms CPU, cold start under 500 ms, under 100 handles, under 5 threads at idle) that budget tests are
 assert against a **native AOT** `deskwall.exe`. The first AOT run on the reference machine
-(JOES-PC, 2026-09-21) met two rows and missed three: cold start 110 ms and zero idle CPU are in
-budget; 48 MB committed at idle (1.6 MB working set), 279 handles / 9 threads, and a clock-only
-tick of 146 ms wall / 78 ms CPU are not. The rows, the caveats and what each finding appears to
-be are in `docs/architecture.md`'s budget section and
+(JOES-PC, 2026-09-21) met two rows and missed three; a memory fix wave the same day (no managed
+staging copies of the frame, a compacting collection after every tick) brought idle commit from
+48 MB to 8.2 MB and the clock-only tick from 146 to 92 ms. Cold start 99 ms, zero idle CPU and
+8.2 MB idle commit are in budget; 279 handles / 9 threads and a clock-only tick of 92 ms wall /
+62 ms CPU are not. The rows, the caveats and what each finding appears to be are in
+`docs/architecture.md`'s budget section and
 `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` ("Phase 6 budget results"). Nobody
-should read "meets budget" into the three open rows; they are findings, not a budget to raise.
+should read "meets budget" into the two open rows; they are findings, not a budget to raise.
 
 For comparison, the proof of concept it replaces measured about 370 ms wall / 190 ms CPU per
 tick and about 5 s cold start (spec 1.2, from the POC's own `compose.ps1` timing output).

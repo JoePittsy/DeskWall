@@ -119,12 +119,14 @@ public sealed unsafe class Surface : IDisposable
         if (w <= 0 || h <= 0 || (long)w * h * 4 != fs.Length - 16) throw new InvalidDataException($"raw surface header does not match file length: {path}");
         var s = Create(w, h);
         var rowBytes = w * 4;
-        var all = new byte[rowBytes * h];
-        fs.ReadExactly(all);   // one read; the file is in the page cache on every tick after the first
+        // Straight from the file into the locked bitmap: no managed staging array. A 19.8 MB byte[]
+        // per tick lands on the large object heap and stays committed until a gen2 collection the
+        // idle daemon rarely runs (budget finding, 2026-09-21). The file is in the page cache on
+        // every tick after the first, so this is one read either way.
         s.WithLock(LockWrite, new Rect(0, 0, w, h), (ptr, stride) =>
         {
-            if (stride == rowBytes) Marshal.Copy(all, 0, ptr, all.Length);
-            else for (var y = 0; y < h; y++) Marshal.Copy(all, y * rowBytes, (IntPtr)(ptr + y * stride), rowBytes);
+            if (stride == rowBytes) fs.ReadExactly(new Span<byte>((void*)ptr, rowBytes * h));
+            else for (var y = 0; y < h; y++) fs.ReadExactly(new Span<byte>((byte*)ptr + (long)y * stride, rowBytes));
         });
         return s;
     }
@@ -140,13 +142,12 @@ public sealed unsafe class Surface : IDisposable
             {
                 fs.Write(RawMagic); fs.Write(BitConverter.GetBytes(Width)); fs.Write(BitConverter.GetBytes(Height));
                 var rowBytes = Width * 4;
-                var all = new byte[rowBytes * Height];
+                // Straight from the locked bitmap into the file, no managed staging array (see LoadRaw).
                 WithLock(LockRead, new Rect(0, 0, Width, Height), (ptr, stride) =>
                 {
-                    if (stride == rowBytes) Marshal.Copy(ptr, all, 0, all.Length);
-                    else for (var y = 0; y < Height; y++) Marshal.Copy((IntPtr)(ptr + y * stride), all, y * rowBytes, rowBytes);
+                    if (stride == rowBytes) fs.Write(new ReadOnlySpan<byte>((void*)ptr, rowBytes * Height));
+                    else for (var y = 0; y < Height; y++) fs.Write(new ReadOnlySpan<byte>((byte*)ptr + (long)y * stride, rowBytes));
                 });
-                fs.Write(all);   // one write
             }
             File.Move(tmp, path, overwrite: true);
         }

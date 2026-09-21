@@ -1,3 +1,4 @@
+using System.Runtime;
 using Windows.Win32;
 using Windows.Win32.System.ProcessStatus;
 
@@ -20,6 +21,22 @@ public sealed unsafe record Footprint(long PrivateBytes, long WorkingSetBytes, T
 
     /// <summary>Give freed pages back so Task Manager shows the idle number, not the render peak.</summary>
     public static void Trim() => PInvoke.SetProcessWorkingSetSize(PInvoke.GetCurrentProcess(), nuint.MaxValue, nuint.MaxValue);
+
+    /// <summary>What runs after a tick: give back what the tick used, then trim.
+    /// <para>
+    /// <see cref="Trim"/> alone pages memory out but leaves it committed, which is what the first
+    /// native-AOT budget run measured (48-79 MB private bytes idle, 1.6 MB working set). An
+    /// aggressive, compacting gen2 collection is the runtime's own "this process is going idle"
+    /// gesture: it compacts the large object heap and decommits the freed regions instead of
+    /// keeping them for the next allocation. Once a minute, on a process that is otherwise asleep,
+    /// its cost is not the point; the committed footprint between wakes is.
+    /// </para></summary>
+    public static void Release()
+    {
+        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        Trim();
+    }
 
     public string Short() => $"{WorkingSetBytes / 1048576.0:0.0} MB . cpu {TotalCpu.TotalSeconds:0.0} s . {Handles} h . {Threads} t";
 

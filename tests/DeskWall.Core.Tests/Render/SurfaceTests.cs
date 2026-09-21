@@ -56,6 +56,38 @@ public class SurfaceTests
         Assert.False(File.Exists(path + ".tmp"));
     }
 
+    /// <summary>Budget finding, 2026-09-21: the raw round trip used to stage the whole frame in a
+    /// managed byte[] each way (19.8 MB at 3440x1440), which lands on the large object heap and
+    /// stays committed until a gen2 collection the idle daemon rarely runs. The frame goes
+    /// straight between the file and the locked bitmap; the managed heap sees only bookkeeping.</summary>
+    [Fact]
+    public void SaveRaw_And_LoadRaw_Do_Not_Stage_The_Frame_On_The_Managed_Heap()
+    {
+        const int w = 3440, h = 1440;
+        var dir = Path.Combine(TempDir(), "raw-alloc-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "frame.raw");
+        using var s = Surface.Create(w, h);
+        s.Clear(new Color(255, 40, 80, 120));
+        s.FillRect(new Rect(w - 10, h - 10, 5, 5), new Color(255, 1, 2, 3));
+
+        const long allowance = 512 * 1024;   // streams, closures, the Surface itself; not a frame
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        s.SaveRaw(path);
+        var saved = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(saved < allowance, $"SaveRaw allocated {saved:N0} bytes on the managed heap for a {w}x{h} frame");
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        using var back = Surface.LoadRaw(path);
+        var loaded = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(loaded < allowance, $"LoadRaw allocated {loaded:N0} bytes on the managed heap for a {w}x{h} frame");
+
+        Assert.Equal(s.GetPixel(0, 0), back.GetPixel(0, 0));
+        Assert.Equal(s.GetPixel(w - 8, h - 8), back.GetPixel(w - 8, h - 8));
+        Assert.Equal(((byte)255, (byte)1, (byte)2, (byte)3), back.GetPixel(w - 8, h - 8));
+    }
+
     /// <summary>Same failure shape through Encode (SaveJpeg/SavePng share it).</summary>
     [Fact]
     public void SaveJpeg_Failure_Leaves_No_Tmp_File()
