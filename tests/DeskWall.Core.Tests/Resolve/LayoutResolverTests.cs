@@ -166,6 +166,31 @@ public class LayoutResolverTests
         var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
         Assert.Equal(@"C:\pics\a.png", img.Path);
     }
+
+    /// <summary>Fix round 1: the repeater's "auto" cell height measures the first image child
+    /// through its own read of <c>img.Source</c>, which did not expand "runtime:". The file was
+    /// therefore never found and every runtime-dir cover fell back to the 2:3 placeholder aspect.</summary>
+    [Fact]
+    public void Auto_Cell_Height_Measures_A_Runtime_Image_Source()
+    {
+        var path = Paths.InRuntime("test-assets", "wide.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using (var s = Surface.Create(40, 10)) s.SavePng(path);   // 4:1, nothing like the 2:3 placeholder
+
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [
+                { "type": "repeater", "id": "r", "rect": [0, 0, 200, 400], "items": { "bind": "d.items" },
+                  "axis": "vertical", "cellHeight": "auto",
+                  "template": [ { "type": "image", "id": "i", "rect": [0, 0, 80, 20], "source": "runtime:test-assets/wide.png" } ] } ] }
+            """);
+        var item = new RecordValue(new Dictionary<string, Value> { ["name"] = new TextValue("a") });
+        var tree = ValueTree.Of(("d", new RecordValue(new Dictionary<string, Value> { ["items"] = new ListValue([item], "name") })));
+
+        var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, tree)));
+        Assert.Equal(path, img.Path);
+        Assert.Equal(20, img.Rect.H);   // 80 * 10 / 40; the 2:3 placeholder would have said 120
+    }
 }
 
 /// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was

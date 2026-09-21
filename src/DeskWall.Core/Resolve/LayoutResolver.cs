@@ -149,7 +149,10 @@ public static class LayoutResolver
     {
         var img = r.Template.OfType<ImageDef>().FirstOrDefault();
         if (img is null) return 0;
-        var path = PropertyReader.Text(img.Source, item);
+        // Expand before the remote check and File.Exists, exactly as the ImageDef case does: a
+        // "runtime:" source measured as written never exists, and every cover silently fell back
+        // to the 2:3 placeholder.
+        var path = PropertyReader.Text(img.Source, item) is { } src ? ExpandRuntime(src) : null;
         if (path is not null && RemoteImageCache.IsRemote(path)) path = remote?.Invoke(path);
         if (path is null || !File.Exists(path))
             return vertical ? (int)Math.Round(img.Rect.W * 1.5) : (int)Math.Round(img.Rect.H / 1.5);   // 2:3 placeholder, as the POC did
