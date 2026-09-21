@@ -344,12 +344,22 @@ differently-shaped targets:
   the widget model has no mechanism for one knob's default to depend on another's value, so a
   metric-specific default is the instantiator's job, not the template's.
 
-**Known limitation:** `sources.<name>` in a `sets` path is resolved by the template-local name
-literally, not through the rename an `Add`-time source clash would have produced for that
-instance. None of the eight shipped widgets can actually clash (each uses a name no other
-shipped widget also uses, or the same name at the same type), so this only matters if a future
-widget's source name collides with another already-placed widget's differently-typed source of
-the same name; re-editing that knob would then write to the wrong (original) source.
+**Known limitation (a renamed source):** `sources.<name>` in a `sets` path is resolved by the
+template-local name literally, not through the rename an `Add`-time source clash would have
+produced for that instance. None of the fourteen shipped widgets can actually clash (each uses a
+name no other shipped widget also uses, or the same name at the same type), so this only matters
+if a future widget's source name collides with another already-placed widget's differently-typed
+source of the same name; re-editing that knob would then write to the wrong (original) source.
+
+**Known limitation (two instances, one source):** `MergeSources` *reuses* a source of the same
+name and the same type rather than adding a second one, so two instances of the same widget share
+one source. For widgets whose sources carry no knobs (`clock`, `dial`, `drives`, `uptime`, ...)
+that is the point -- four dials want one `hardware` sampler, not four. For a widget whose knobs
+write to `sources.<name>.settings.*` -- `command` and `headline` -- it means the two instances
+fight: adding the second applies its own defaults over the first's settings, and editing either
+one's knob afterwards changes what both draw. Two different commands, or two different feeds, need
+the second instance's source renamed by hand in the layout file (and its component's binding with
+it).
 
 ### Arranger
 

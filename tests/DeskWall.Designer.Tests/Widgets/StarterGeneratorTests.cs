@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using DeskWall.Core.Layout;
 using DeskWall.Designer.Model.Widgets;
 using Xunit;
@@ -10,14 +10,9 @@ namespace DeskWall.Designer.Tests.Widgets;
 /// what StarterGenerator produces, so the two cannot drift apart silently.</summary>
 public class StarterGeneratorTests
 {
-    private static string RepoRoot()
-    {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "DeskWall.slnx"))) return d.FullName;
-        throw new InvalidOperationException("repo root not found");
-    }
+    private static string RepoRoot() => TestRepo.Root;
 
-    private static IReadOnlyList<WidgetTemplate> Catalog() => WidgetCatalog.Load(Path.Combine(RepoRoot(), "widgets"));
+    private static IReadOnlyList<WidgetTemplate> Catalog() => TestRepo.Widgets();
 
     [Theory]
     [InlineData("column-system.json")]

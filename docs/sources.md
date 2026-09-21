@@ -10,7 +10,7 @@ A source is declared in a layout file's `sources` array:
 |---|---|
 | `name` | The root field bindings use to reach this source's values (`steam.json...`). |
 | `type` | One of `time`, `disks`, `system`, `hardware`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
-| `every` | Seconds between refreshes. Optional; each type has its own default (below). Ignored by `time`, which is always due on the next whole minute. |
+| `every` | Seconds between refreshes. Optional; each type has its own default (below). Ignored by `time`, which is always due on the next whole minute. **A top-level field, not a `settings` key** -- each type's "Settings" line below names it only to give its default, and a source that finds `every` inside `settings` ignores it. |
 | `settings` | A flat string-to-string map; each source type documents its own keys below. |
 
 Source of truth for this document: `src/DeskWall.Core/Sources/*.cs` (the `FromDef` method on

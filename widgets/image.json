@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Image",
+  "description": "A picture from a file on disk; a blank plate until you point it at one.",
+  "size": [172, 116],
+  "sources": [],
+  "components": [
+    { "type": "image", "id": "picture", "rect": [0, 0, 172, 116], "z": 1,
+      "source": "", "fit": "contain" }
+  ],
+  "knobs": [
+    { "id": "path", "label": "File", "type": "text", "default": "",
+      "sets": [ "components.picture.source" ] },
+    { "id": "fit", "label": "Fit", "type": "choice", "default": "Contain",
+      "choices": [ "Cover", "Contain", "Stretch" ],
+      "sets": [ "components.picture.fit" ] }
+  ]
+}
