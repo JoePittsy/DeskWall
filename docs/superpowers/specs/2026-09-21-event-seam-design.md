@@ -25,8 +25,8 @@ writing any of our code, which is the "self serve new providers" thread from 202
 | What is the seam for | External producers first (scripts, Hearth, other apps). Built-in push sources use the same path. Existing internal wakes stay unless moving them is free. |
 | Transient display | **State only.** Nothing appears briefly and vanishes. No component lifetimes, no un-draw timers. |
 | Ingress | A **named pipe**, restricted to the current user. |
-| After a daemon restart | **Remember the last value per declared provider**, and publish an age the layout can show. No expiry timer in v1. |
-| Undeclared providers | **Accepted, not rejected** (revised 2026-09-21 after the owner pushed back). They live for the session and are not persisted; see section 3. |
+| After a daemon restart | **Remember the last record of every provider**, and publish an age the layout can show. No expiry timer in v1. |
+| Undeclared providers | **Accepted and remembered** (revised twice on 2026-09-21: first to accept them, then to persist them, because the designer is a separate process and would otherwise never see one). |
 | Sequencing | **Bus and pipe first**, with a script example to try. Volume follows as the first in-process producer. |
 
 ## 3. The model
@@ -47,21 +47,19 @@ flat map of name to values and `Tree()` simply projects it, so a pushed provider
 in that map. A layout binds `build.data.status` and it resolves if something is pushing `build`,
 and falls back if not, exactly as any unresolvable binding does today.
 
-**Declaring a provider is a reward, not a gate.** Three tiers, in rising order of commitment:
+**Every provider's last record is remembered, declared or not.** The pipe belongs to the daemon,
+and the designer is a separate process with its own registry, so a provider the designer has never
+been told about is one it can never show, offer a binding picker for, or autocomplete. The
+remembered record is what closes that gap: the daemon writes it, the designer reads and watches it.
+One mechanism, three jobs - surviving a restart, filling the binding picker, and letting a user
+see that their producer is working at all.
 
-1. **Just send.** No setup at all. The values land in the registry, appear in the designer and are
-   bindable at once. This is how a user tries something.
-2. **Write a provider manifest** (section 5). The designer can then show the provider and offer a
-   real binding picker *before any event has arrived*, a widget can be built against a producer
-   that is not running, and the last value survives a restart.
-3. **Built-in push producers** (volume, phase 2) register the same manifest shape at startup, so
-   they appear in that list identically to anything a user writes.
+Because events **merge** rather than replace, the remembered record accumulates every field a
+producer has ever sent, not just the ones in its latest event. That is what makes it a usable
+approximation of the provider's shape.
 
-The trade that makes declaring worth doing: **an undeclared provider's values are never written to
-disk**, so after sign-in its widget is blank until the producer sends again. That keeps any
-process from accumulating junk in the runtime directory forever, and it gives the designer
-something useful to offer: "remember this provider", which writes the manifest from the fields it
-has actually seen.
+A user can **forget a provider** from the designer, which is the answer to accumulation; nothing
+expires on its own.
 
 **Collision:** a layout source and a pushed provider with the same name are not merged. The layout
 source wins and the clash is reported in diagnostics.
@@ -93,11 +91,20 @@ free to gain meaning later without breaking a producer.
 A provider is a name in the registry whose values arrive from the bus rather than from a poll.
 Nothing about it is declared in a layout.
 
-A **provider manifest** is `providers/<name>.json`, loaded from the shipped directory beside the
-exe and then the runtime directory, later winning on the same key, exactly as `WidgetCatalog`
-already loads widget templates. It holds the provider's name, a description, the fields it
-publishes (path, type, example) so the designer can offer a binding picker before any event, and
-optionally `expectEvery` in seconds.
+Since every provider's record is remembered (section 3), a provider that has run once is fully
+bindable with no further ceremony. A **provider manifest** is therefore only for what observation
+cannot supply:
+
+- a provider that has **never run here**, so a widget can be built against something shipped with
+  an app the user has not started yet;
+- **descriptions and examples** per field, so the binding picker reads as prose rather than as a
+  dump of last values;
+- **`expectEvery`**, which turns staleness back on.
+
+It is `providers/<name>.json`, loaded from the shipped directory beside the exe and then the
+runtime directory, later winning on the same key, exactly as `WidgetCatalog` already loads widget
+templates. Where a manifest and an observed record disagree about a field, the observed value
+wins for rendering and the manifest wins for describing.
 
 `expectEvery` exists because staleness today is judged from a source's own schedule
 (`SourceRegistry.Tree(sources, now)` reads it back from `NextDue`) and a pushed provider has none.
@@ -149,16 +156,23 @@ processes cannot own one pipe name.
   rejected, each with a reason. "My script sends events and nothing happens" has four causes
   (wrong source name, malformed envelope, daemon not running, nothing bound to the value) and
   without this the user cannot tell them apart.
-- **Persistence**: the last record of each provider **that has a manifest** is written to
+- **Persistence**: the last record of **every** provider is written to
   `%LOCALAPPDATA%\DeskWall\events.json`, at most once every few seconds and once on shutdown, and
-  restored at start. That is what makes a widget survive sign-in; `receivedAt` is what lets it
-  admit its age. An undeclared provider is deliberately not written (section 3).
+  restored at start. That is what makes a widget survive sign-in, and what the designer reads;
+  `receivedAt` is what lets a layout admit its age.
 
 ## 8. In the designer
 
-The panel lists every provider: those with a manifest, those seen only this session, and what each
-publishes. An undeclared one carries a **Remember this provider** action that writes a manifest
-from the fields observed so far. There is also a **Send test event** button. Designing a widget against an event that has not happened yet would otherwise mean
+The panel lists every provider, from manifests and from the remembered records together, and what
+each publishes. The designer **watches `events.json`** the way `LayoutWatcher` already watches
+layout files, so a user can start their producer and see the fields appear without restarting
+anything. That is the discovery story, and it is also what makes the binding picker complete for a
+provider nobody has described.
+
+Each provider carries **Forget** (drop the remembered record) and, for one without a manifest,
+**Describe this provider**, which writes a manifest seeded from the observed fields so the author
+can add descriptions. There is also a **Send test event** button for designing against a producer
+that has never run. Designing a widget against an event that has not happened yet would otherwise mean
 binding blind, and the test path is also how a user checks their producer's shape.
 
 ## 9. Security and trust
