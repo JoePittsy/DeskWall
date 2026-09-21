@@ -177,13 +177,38 @@ dotnet test tests/DeskWall.Core.Tests --filter Category=Budget
 Each test prints its own row; paste them in below. A row over budget is a finding for the
 controller, never a reason to raise the budget.
 
+First run 2026-09-21 on JOES-PC, native AOT `deskwall.exe` 6.54 MB (ILCompiler 10.0.11, MSVC
+14.51, Windows SDK 10.0.26100), 3440x1440 primary, POC task disabled for the run, session was an
+RDP session at the console's native resolution:
+
 | Test | Measured | Budget | Verdict |
 |---|---|---|---|
-| `ColdStart_To_First_Wallpaper` | pending | < 500 ms | - |
-| `Idle_PrivateBytes_After_Trim` | pending | < 10 MB | - |
-| `Idle_Cpu_Between_Wakes` | pending | < 50 ms | - |
-| `Idle_Handles_And_Threads` | pending | < 100 h / < 5 t | - |
-| `ClockOnly_Tick_Wall_And_Cpu` | pending | < 60 ms wall / < 40 ms cpu | - |
+| `ColdStart_To_First_Wallpaper` | 110 ms | < 500 ms | OK |
+| `Idle_PrivateBytes_After_Trim` | 48.42 MB (working set 1.55 MB) | < 10 MB | OVER |
+| `Idle_Cpu_Between_Wakes` | 0 ms (344 ms total over 240 s, all of it inside ticks) | < 50 ms | OK |
+| `Idle_Handles_And_Threads` | 279 h / 9 t | < 100 h / < 5 t | OVER |
+| `ClockOnly_Tick_Wall_And_Cpu` | 146 ms wall / 78 ms cpu (resolve 1, draw 118, encode 25) | < 60 ms wall / < 40 ms cpu | OVER |
 
-Not yet run: the reference machine was busy with another lane's live GUI testing when the
-harness landed, and the budget run has to have the desktop to itself.
+Notes on the three findings, from the same session:
+
+- The `cpu` figure is `Environment.CpuUsage` deltas, which move in 15.6 ms scheduler quanta:
+  every non-skipped one-shot tick read exactly 78 ms (5 quanta) and every skipped tick 16 ms, so
+  treat it as "between 63 and 94 ms", not 78.
+- A one-shot `tick` pays factory, font and render-target setup in `draw`: three forced full
+  redraws of all 7 components measured draw 88/305/109 ms and three clock-only incremental ticks
+  (1 component, via `frame.raw`) measured draw 117/110/105 ms. Redrawing one component is not
+  cheaper than redrawing seven in a fresh process; the previous-frame read and write (18.9 MB
+  each way) roughly cancels the drawing saved.
+- Private bytes is commit, not working set: the working set after `Footprint.Trim()` was 1.55 MB.
+  The commit is the GC heap left committed after the 19.8 MB frame buffers of the last tick.
+- Handles and threads on the resident daemon, sampled from outside (`run --no-tray
+  --no-shortcuts`, scratch home, real wallpaper applied): 257 handles / 17 threads two seconds
+  after start, before any tick, so the bulk is the runtime and the factories, not per-tick
+  leakage; 261 handles after every one of four ticks, threads settling 17 -> 13 -> 10 as the
+  runtime's startup threads exit. Private bytes at the same samples: 78.7, 48.2, 66.8, 48.5,
+  66.9 MB; working set 0.6-1.6 MB throughout.
+- The resident daemon's own log for those ticks (wall includes `IDesktopWallpaper::SetWallpaper`,
+  which `--no-apply` in the suite leaves out): `start: redrawn 7 total 154 ms cpu 109 ms`, then
+  four clock-only Timer ticks at `165/94`, `130/62`, `170/109`, `76/47` ms wall/cpu. The one-shot
+  comparison above was running during the middle three; the undisturbed last one is the best
+  single number for a warm resident clock-only tick so far, and it is still over 60/40.

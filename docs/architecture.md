@@ -140,33 +140,42 @@ Spec 1.2's table (reproduced from `docs/superpowers/specs/2026-09-20-deskwall-v1
 `dotnet test --filter Category=Budget` against a published `deskwall.exe`) driving `deskwall tick
 --measure` and `Footprint.Current()` on the reference machine (JOES-PC, i7-6700K, 3440x1440).
 
-**As of this writing, native AOT has not been published on the reference machine** -- the Visual
-Studio "Desktop development with C++" workload (MSVC linker + Windows SDK) is not installed, and
-`dotnet publish` for native AOT depends on it. Every number below is therefore JIT Release, not
-AOT, and indicative only:
+**First native AOT run, 2026-09-21** (`deskwall.exe` 6.54 MB, MSVC 14.51, SDK 10.0.26100; the
+full rows and their caveats are in `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`
+under "Phase 6 budget results"). Two of the five budgets are met, three are not:
 
-- Idle, JIT, resident three minutes (`.superpowers/sdd/2026-09-20-deskwall-v1-phase2-daemon/lane-loop-report.md`):
-  15.5 MB working set, 69.8 MB private bytes, 368 handles, 15 threads. Working set was flat
-  across the three one-minute samples; private bytes swung 53-75 MB with the render peak and GC
-  between `Footprint.Trim()` calls.
-  Handle and thread counts on JIT are dominated by the .NET runtime itself (a bare window plus
-  tray icon alone measured 211-299 handles in the same lane); they cannot be judged against the
-  budget until an AOT build exists.
-- Clock-only tick (redrawn 1), JIT, same run: total wall 67-90 ms, most of it Explorer's side of
-  `IDesktopWallpaper::SetWallpaper` (5-71 ms observed separately in
-  `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`'s Task 10 table), not DeskWall's own
-  work.
-- A same-minute tick where nothing changed skips drawing and encoding entirely (measured 24-31 ms
-  total, almost all of it JIT warm-up of the render path in a fresh process; the spike results
-  note this is expected to be low single digits under a resident AOT daemon).
-- Cold start (JIT, includes building the base-image cache from a 4K Spotlight JPEG the first
-  time): 206 ms total, 203 ms CPU (spike results Task 10, first-ever run); 119 ms once the base
-  cache is warm.
+| Budget row | Measured (AOT) | Verdict |
+|---|---|---|
+| Cold start to first wallpaper | 110 ms | OK |
+| Idle CPU between wakes, 4 min | 0 ms outside ticks | OK |
+| Idle private bytes after trim | 48.4 MB (working set 1.6 MB) | OVER |
+| Idle handles / threads | 279 / 9 | OVER |
+| Clock-only tick | 146 ms wall / 78 ms CPU | OVER |
 
-Until an AOT `deskwall.exe` exists on the reference machine, "meets budget" is not a claim this
-document or the code makes for any of the six rows above -- see the POC reference in spec 1.2
-(about 370 ms wall / 190 ms CPU per tick, ~5 s cold start) as the number DeskWall replaces, not
-as a target already hit.
+What the three findings are, as far as one session could tell:
+
+- **Private bytes is commit, not resident memory.** After `Footprint.Trim()` the working set is
+  1.6 MB; the 48 MB is GC heap left committed after a tick's two 19.8 MB frame buffers (the
+  `frame.raw` read and the composed frame). Sampled from outside on a resident daemon it swings
+  48-79 MB tick to tick. Whether the spec's "private working set" row means commit is a question
+  for the spec; either way the heap is not being decommitted between wakes.
+- **Handles and threads are the runtime plus the cached factories, not per-tick growth.** 257
+  handles / 17 threads two seconds after start, before any tick; 261 / 13 after several ticks.
+  The Direct2D, DirectWrite and WIC factories are process-lifetime singletons (`Surface`), and the
+  render target is per frame.
+- **The clock-only tick is not cheaper than a full redraw.** In a one-shot process, three forced
+  full redraws (7 components) measured draw 88-109 ms and three clock-only incremental ticks
+  (1 component) measured draw 105-117 ms; JPEG encode is a steady 25 ms in both. Reading and
+  writing the 18.9 MB `frame.raw` costs about what redrawing the other six components saves. The
+  resident daemon's own log for four warm clock-only ticks (wallpaper applied) read 165/94,
+  130/62, 170/109 and 76/47 ms wall/CPU, so the warm process helps but is still over 60/40. The
+  CPU figure itself moves in 15.6 ms quanta (every one-shot tick read exactly 78 ms).
+
+The JIT numbers this section used to carry (15.5 MB working set, 69.8 MB private bytes, 368
+handles, 15 threads resident; 67-90 ms clock-only tick) are in
+`.superpowers/sdd/2026-09-20-deskwall-v1-phase2-daemon/lane-loop-report.md`. Against the POC
+reference in spec 1.2 (about 370 ms wall / 190 ms CPU per tick, ~5 s cold start) every row is
+already a large improvement; against the spec's own table, three rows are open findings.
 
 `deskwall verify` (in progress in another lane at the time of writing -- see the phase 6 plan's
 Task 1) is the pixel-diff half of "measured, not eyeballed": it minimises windows, screenshots

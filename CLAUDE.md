@@ -59,11 +59,22 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   (`Com.EnsureInitialized`). Callbacks need `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]`.
   Target `net10.0-windows10.0.19041.0` or CA1416 errors on Windows 8+ APIs. The full verified
   shape list is `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`.
-- **Native AOT publish needs the MSVC linker** (VS "Desktop development with C++"). Not installed
-  on the reference machine as of this writing, so every footprint number anywhere in this repo is
-  JIT and only indicative, not a budget result (spec 1.2, `docs/architecture.md`). `dotnet build`
-  still runs the AOT analyzers (`IsAotCompatible`), so zero warnings there is meaningful on its
-  own.
+- **Native AOT publish needs the MSVC linker** (VS "Desktop development with C++"). Installed on
+  JOES-PC on 2026-09-21 (VS Community 2026 18.9, MSVC 14.51, Windows SDK 10.0.26100), so budget
+  numbers are now real: `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` "Phase 6
+  budget results". `dotnet build` still runs the AOT analyzers (`IsAotCompatible`), so zero
+  warnings there is meaningful on its own.
+- **Publishing from the Claude harness needs the VS Installer dir on PATH.** The harness sets
+  `NoDefaultCurrentDirectoryInExePath=1`; VS 18's `VsDevCmd.bat` does `pushd` into the Installer
+  dir and calls a bare `vswhere.exe`, which then fails on stderr, and ILCompiler's
+  `findvcvarsall.bat` captures that stderr line into the linker path (`MSB3073 ... exited with
+  code 123`). Fix, before `dotnet publish src/DeskWall.Daemon -c Release -r win-x64`:
+  `$env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"`.
+  A normal terminal does not have the variable set and does not need this.
+- **`deskwall.exe` is a WinExe.** PowerShell does not wait for it and does not see its console
+  output unless you `Start-Process -Wait -NoNewWindow -RedirectStandardOutput` (what
+  `tests/.../Budget/DaemonProcess.cs` does). Two one-shot ticks launched back to back without
+  waiting run concurrently and race on the runtime dir (`restore.json` sharing violation).
 - **Direct2D software rendering is WARP**: `d3d11.dll`/`D3D10Warp.dll` load, no vendor driver
   does. "GPU not used" means no hardware device. The D2D factory must be `MULTI_THREADED` or
   xUnit's parallel classes silently drop tests; the test assembly also disables parallelisation.

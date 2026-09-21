@@ -87,14 +87,13 @@ file lives is `docs/architecture.md`.
 
 Spec 1.2 sets a cost table (idle working set under 10 MB, a clock-only tick under 60 ms wall / 40
 ms CPU, cold start under 500 ms, under 100 handles, under 5 threads at idle) that budget tests are
-meant to assert against a **native AOT** `deskwall.exe`. As of this writing, native AOT has not
-been published on the reference machine (JOES-PC): the Visual Studio "Desktop development with
-C++" workload (MSVC linker + Windows SDK) is not installed, and `dotnet publish` for native AOT
-needs it. Every number available today is JIT Release, not AOT, and is indicative only -- see
-`docs/architecture.md`'s budget section for the actual figures and their source files
-(`.superpowers/sdd/2026-09-20-deskwall-v1-phase2-daemon/lane-loop-report.md`,
-`docs/superpowers/plans/2026-09-20-phase1-spike-results.md`). Nobody should read "meets budget"
-into a JIT number.
+assert against a **native AOT** `deskwall.exe`. The first AOT run on the reference machine
+(JOES-PC, 2026-09-21) met two rows and missed three: cold start 110 ms and zero idle CPU are in
+budget; 48 MB committed at idle (1.6 MB working set), 279 handles / 9 threads, and a clock-only
+tick of 146 ms wall / 78 ms CPU are not. The rows, the caveats and what each finding appears to
+be are in `docs/architecture.md`'s budget section and
+`docs/superpowers/plans/2026-09-20-phase1-spike-results.md` ("Phase 6 budget results"). Nobody
+should read "meets budget" into the three open rows; they are findings, not a budget to raise.
 
 For comparison, the proof of concept it replaces measured about 370 ms wall / 190 ms CPU per
 tick and about 5 s cold start (spec 1.2, from the POC's own `compose.ps1` timing output).
