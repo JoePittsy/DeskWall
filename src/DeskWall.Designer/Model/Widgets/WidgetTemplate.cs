@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DeskWall.Core.Layout;
@@ -19,6 +19,10 @@ public sealed class WidgetTemplate
     public required string Name { get; init; }
     /// <summary>The file name without ".json" -- not a field in the file.</summary>
     public string Key { get; init; } = "";
+    /// <summary>The file this was loaded from -- not a field in the file either. The gallery needs
+    /// it to tell a shipped template (beside the exe, read-only) from one of the user's own in the
+    /// runtime dir, which is the only kind Edit and Delete are offered on.</summary>
+    public string? Path { get; init; }
     public required string Description { get; init; }
     public required int Width { get; init; }
     public required int Height { get; init; }
@@ -73,7 +77,8 @@ public sealed class WidgetTemplate
         return new WidgetTemplate
         {
             Name = file.Name,
-            Key = Path.GetFileNameWithoutExtension(path),
+            Key = System.IO.Path.GetFileNameWithoutExtension(path),
+            Path = path,
             Description = file.Description,
             Width = file.Size[0],
             Height = file.Size[1],
