@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "baseImage": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\DesktopSpotlight\\Assets\\Images\\image_3.jpg",
+  "baseFit": "cover",
+  "encode": "jpeg",
+  "jpegQuality": 92,
+  "sources": [
+    { "name": "time", "type": "time" },
+    { "name": "disks", "type": "disks", "every": 300 },
+    { "name": "weather", "type": "http", "every": 900, "settings": {
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=53.8008&longitude=-1.5491&current=temperature_2m,weather_code,is_day&timezone=Europe%2FLondon" } },
+    { "name": "hardware", "type": "hardware" },
+    { "name": "tailscale", "type": "command", "every": 300, "settings": {
+        "command": "C:\\Program Files\\Tailscale\\tailscale.exe", "args": "status --json", "timeout": "10" } }
+  ],
+  "components": [
+    { "type": "text", "id": "clock", "rect": [3220, 40, 172, 78], "z": 1,
+      "text": { "bind": "time.now | HH:mm" }, "font": "Segoe UI Light", "size": 64, "weight": 300, "align": "right" },
+
+    { "type": "text", "id": "temp", "rect": [3220, 128, 108, 52], "z": 1,
+      "text": { "bind": "weather.json.current.temperature_2m | \"{0:N0}°\"" }, "font": "Segoe UI Light", "size": 40, "weight": 300, "align": "right" },
+    { "type": "image", "id": "sky", "rect": [3336, 126, 56, 56], "z": 1, "fit": "contain",
+      "source": { "bind": "weather.json.current.weather_code | \"runtime:assets/weather/{0}.png\"" } },
+    { "type": "text", "id": "vpn", "rect": [3220, 190, 172, 20], "z": 1,
+      "text": { "bind": "tailscale.json.BackendState | \"VPN {0}\"" }, "size": 13, "align": "right" },
+
+    { "type": "dial", "id": "cpuDial", "rect": [3220, 1000, 80, 80], "z": 1, "fraction": { "bind": "hardware.cpu" }, "threshold": 0.9 },
+    { "type": "text", "id": "cpuPct", "rect": [3220, 1026, 80, 28], "z": 2, "text": { "bind": "hardware.cpuPct | \"{0}%\"" }, "size": 18, "align": "center", "effect": "none" },
+    { "type": "text", "id": "cpuLabel", "rect": [3220, 1062, 80, 16], "z": 2, "text": "cpu", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none" },
+
+    { "type": "dial", "id": "gpuDial", "rect": [3312, 1000, 80, 80], "z": 1, "fraction": { "bind": "hardware.gpu" }, "threshold": 0.9 },
+    { "type": "text", "id": "gpuPct", "rect": [3312, 1026, 80, 28], "z": 2, "text": { "bind": "hardware.gpuPct | \"{0}%\"" }, "size": 18, "align": "center", "effect": "none" },
+    { "type": "text", "id": "gpuLabel", "rect": [3312, 1062, 80, 16], "z": 2, "text": "gpu", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none" },
+
+    { "type": "dial", "id": "ramDial", "rect": [3220, 1096, 80, 80], "z": 1, "fraction": { "bind": "hardware.ram" }, "threshold": 0.9 },
+    { "type": "text", "id": "ramPct", "rect": [3220, 1122, 80, 28], "z": 2, "text": { "bind": "hardware.ramPct | \"{0}%\"" }, "size": 18, "align": "center", "effect": "none" },
+    { "type": "text", "id": "ramLabel", "rect": [3220, 1158, 80, 16], "z": 2, "text": "ram", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none" },
+
+    { "type": "dial", "id": "tempDial", "rect": [3312, 1096, 80, 80], "z": 1, "fraction": { "bind": "hardware.gpuTempFraction" }, "threshold": 0.83 },
+    { "type": "text", "id": "tempC", "rect": [3312, 1122, 80, 28], "z": 2, "text": { "bind": "hardware.gpuTempC | \"{0}°\"" }, "size": 18, "align": "center", "effect": "none" },
+    { "type": "text", "id": "tempLabel", "rect": [3312, 1158, 80, 16], "z": 2, "text": "gpu °C", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none" },
+
+    { "type": "repeater", "id": "drives", "rect": [3220, 1260, 172, 92], "z": 1,
+      "items": { "bind": "disks.drives" }, "axis": "vertical", "gap": 0, "cellHeight": 46,
+      "template": [
+        { "type": "text", "id": "letter", "rect": [0, 0, 60, 24], "text": { "bind": "letter | \"{0}:\"" }, "size": 15 },
+        { "type": "text", "id": "free", "rect": [60, 0, 112, 24], "text": { "bind": "freeGB | \"{0:N0} GB free\"" }, "size": 15, "align": "right" },
+        { "type": "bar", "id": "bar", "rect": [0, 26, 172, 6], "fraction": { "bind": "usedFraction" }, "threshold": 0.85, "thresholdFill": "#FFD13438" }
+      ] }
+  ]
+}
