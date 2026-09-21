@@ -216,8 +216,11 @@ public sealed class WidgetDocument
     {
         var existing = _knobs.FirstOrDefault(k => k.Target?.Targets(componentId, property) == true);
         if (existing is not null) { _knobs.Remove(existing); return false; }
-        var label = UniqueLabel(property, componentId);
-        _knobs.Add(new Slot(AdjustableTarget.ForComponent(componentId, property, label, UniqueId(Slug(label))), null));
+        if (Model.Find(componentId) is not { } def) return false;
+        var prop = PropertySchema.For(def).FirstOrDefault(p => string.Equals(p.Name, property, StringComparison.OrdinalIgnoreCase));
+        if (prop is null || !Adjustable.CanAdjust(def, prop)) return false;
+        var label = UniqueLabel(prop.Name, componentId);
+        _knobs.Add(new Slot(AdjustableTarget.ForComponent(componentId, prop.Name, label, UniqueId(Slug(label))), null));
         return true;
     }
 
@@ -273,6 +276,11 @@ public sealed class WidgetDocument
         Components = WidgetJson.CloneComponents(Model.Layout.Components),
         Knobs = _knobs.Select(k => k.PassThrough ?? Adjustable.ToKnob(this, k.Target!)).OfType<Knob>().ToList(),
     };
+
+    /// <summary>Write this widget into the user's own templates folder, refusing rather than
+    /// writing anything the gallery could not read back. Returns the file it landed in.</summary>
+    public string Save()
+        => WidgetTemplateWriter.Save(this, WidgetCatalog.Load(WidgetCatalog.ShippedDir).Select(t => t.Key).ToList(), WidgetCatalog.UserDir);
 
     /// <summary>Lower case, runs of letters and digits joined by hyphens, and never empty: what a
     /// name becomes as a file name and as a knob id.</summary>
