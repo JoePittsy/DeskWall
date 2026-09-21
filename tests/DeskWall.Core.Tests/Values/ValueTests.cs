@@ -97,4 +97,42 @@ public class ValueTests
         Assert.Equal(" down ", new TextValue("stopped").ToText("?running=up, stopped= down "));
         Assert.Equal("", new TextValue("stopped").ToText("?stopped=,*=x"));
     }
+
+    /// <summary>Coinbase returns "amount": "64394.01" as a JSON *string*, so `| "{0:N0}"` printed
+    /// 64394.01 and the wallpaper drew 64632.235. A text that parses as a number and is asked for a
+    /// number format gets one.</summary>
+    [Fact]
+    public void Text_That_Parses_As_A_Number_Honours_A_Number_Format()
+    {
+        Assert.Equal("64,394", new TextValue("64394.01").ToText("{0:N0}"));
+        Assert.Equal("64,394.0", new TextValue("64394.01").ToText("{0:N1}"));
+    }
+
+    /// <summary>Deliberately narrow: with no specifier the author did not ask for a number, so a
+    /// value like "007" or "1.10" keeps every character it arrived with.</summary>
+    [Fact]
+    public void Text_Without_A_Format_Specifier_Is_Never_Reparsed_As_A_Number()
+    {
+        Assert.Equal("64394.01", new TextValue("64394.01").ToText("{0}"));
+        Assert.Equal("007", new TextValue("007").ToText("{0}"));
+        Assert.Equal("1.10 BTC", new TextValue("1.10").ToText("{0} BTC"));
+        Assert.Equal("64394.01", new TextValue("64394.01").ToText(null));
+    }
+
+    [Fact]
+    public void Text_That_Is_Not_A_Number_Is_Left_Alone()
+    {
+        Assert.Equal("abc", new TextValue("abc").ToText("{0:N0}"));
+        Assert.Equal("", new TextValue("").ToText("{0:N0}"));
+    }
+
+    /// <summary>The parse is invariant, so a comma is a thousands separator no machine's locale
+    /// turns into a decimal point, and a real NumberValue is untouched by any of this.</summary>
+    [Fact]
+    public void A_Real_Number_Is_Unaffected_And_The_Parse_Is_Invariant()
+    {
+        Assert.Equal("64,394", new NumberValue(64394.01).ToText("{0:N0}"));
+        Assert.Equal("1,235", new TextValue("1234.6").ToText("{0:N0}"));
+        Assert.Equal("1234,6", new TextValue("1234,6").ToText("{0:N0}"));   // not invariant-parseable
+    }
 }

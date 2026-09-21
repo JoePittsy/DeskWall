@@ -179,6 +179,19 @@ Three format rules matter (`Value.ToText`, spec 4.2):
   unknown type specifier) falls back to the unformatted text rather than throwing. A layout
   authoring mistake must never abort a tick.
 
+### A number that arrived as JSON text
+
+A JSON API is free to return a number as a string (Coinbase's `"amount": "64394.01"`). When a
+composite format carries a **specifier** -- `{0:` something, as in `"{0:N0}"` -- the author has
+asked for a number, so a text value that parses as a `double` under the invariant culture is
+formatted as that number:
+
+    btc.json.data.amount | "{0:N0}"      "64394.01" -> 64,394
+
+This is deliberately narrow. A bare `{0}` with no specifier formats the original text unchanged,
+so `"007"` stays `007` and `"1.10"` stays `1.10`. A text that does not parse (`"abc"`) is left
+alone, and the parse rejects thousands separators, so `"1234,6"` is never read as `12346`.
+
 ### The map format: a value picks a string
 
 A format beginning with `?` is a comma-separated list of `key=text` pairs. The key is matched

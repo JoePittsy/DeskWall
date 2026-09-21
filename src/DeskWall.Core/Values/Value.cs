@@ -22,7 +22,7 @@ public abstract record Value
             if (format is not null && format.StartsWith('?') && format.Contains('='))
                 return MapLookup(format, ToText(null));
             if (format is not null && format.Contains("{0"))
-                return string.Format(inv, format, Raw());
+                return string.Format(inv, format, NumericIfAsked(format));
             return this switch
             {
                 TextValue t => t.Text,
@@ -63,6 +63,19 @@ public abstract record Value
         }
         return fallback ?? "";
     }
+
+    /// <summary>The argument for a composite format. A JSON API is free to return a number as a
+    /// string ("amount": "64394.01" from Coinbase), and `| "{0:N0}"` then printed the raw text and
+    /// drew 64632.235 on the wallpaper. When the author wrote a *specifier* they asked for a
+    /// number, so a text that parses as one under the invariant culture is handed over as a double.
+    /// Narrow on purpose: bare "{0}" still formats the original text, so "007" and "1.10" survive.
+    /// NumberStyles.Float excludes thousands separators, so "1234,6" is not silently read as 12346
+    /// on its way to a machine whose locale would have meant something else by the comma.</summary>
+    private object NumericIfAsked(string format)
+        => this is TextValue t && format.Contains("{0:")
+           && double.TryParse(t.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
+            ? d
+            : Raw();
 
     /// <summary>The CLR object for composite formatting.</summary>
     public object Raw() => this switch
