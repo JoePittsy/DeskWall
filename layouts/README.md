@@ -10,15 +10,16 @@ layout proportionally when the display signature has no layout of its own.
 | `steam-recent.json` | The same column with the four most recently played Steam games between them, covers from Steam's CDN, each cover a click-to-launch shortcut. Needs two secrets. |
 | `column-system.json` | Clock, Leeds weather, Tailscale state, four hardware dials (CPU/GPU/RAM load, GPU temperature) and the drives row, all in the right-hand column. No Steam covers. See "column-system.json requirements" below. |
 
-`clock-disks.json` and `column-system.json` are generated from the shipped widget templates
+All three starters are generated from the shipped widget templates
 (`widgets/*.json`, `docs/layout-format.md` "Widgets"; the designer's widget editor writes the
 owner's own into `%LOCALAPPDATA%\DeskWall\widgets\`, which the gallery reads alongside them)
 by a small test-side generator
 (`tests/DeskWall.Designer.Tests/Widgets/StarterGenerator.cs`), not hand-placed; a test
-(`StarterGeneratorTests`) asserts the two stay equal so they cannot drift apart silently. They
+(`StarterGeneratorTests`) asserts each stays equal to what the generator produces, and that no
+component in one belongs to no widget, so they cannot drift apart silently. They
 are otherwise ordinary layout files - open one directly with `deskwall tick --layout` like any
-other. `steam-recent.json` stays hand-written (it needs the two Steam secrets described below,
-which the widget picker's `steam-covers` widget also needs but does not set up on its own).
+other. `steam-recent.json` is `clock`, `steam-covers` and `drives`; it still needs the two Steam
+secrets described below, which the `steam-covers` widget needs but does not set up on its own.
 
 ## Steam secrets
 
