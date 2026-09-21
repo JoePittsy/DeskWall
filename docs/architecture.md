@@ -13,7 +13,14 @@ Three things run, never more than two at once on an idle machine:
   window), one hidden top-level window (class `DeskWallHost`) that exists solely to receive
   `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`, `WM_WTSSESSION_CHANGE` and tray messages, and one
   waitable timer. No polling loop and no background thread: between wakes the process is
-  blocked in `MsgWaitForMultipleObjects` (`HostWindow.WaitAndPump`). A second `deskwall run`
+  blocked in `MsgWaitForMultipleObjects` (`HostWindow.WaitAndPump`). One owner-approved
+  exception (2026-09-21): a layout with a `hardware` source runs a thread-pool timer every 10 s
+  that takes four native readings (`GetSystemTimes`, `GlobalMemoryStatusEx`, two NVML calls) into
+  fixed ring buffers, so the dials can show five-minute averages; the daemon's own wake schedule
+  is untouched and the wallpaper is still repainted only on the minute. Sources that hold a
+  resource like that implement `IDisposable`, and every host (`DaemonLoop` on layout change and
+  shutdown, the one-shot commands, the designer's live panel) disposes the set it replaces
+  (`SourceFactory.DisposeAll`). Its measured cost is in the budget section. A second `deskwall run`
   while one is already running does not start a second daemon; it posts that daemon a "refresh
   now" message and exits (`Program.Run`, the `Local\DeskWall.Daemon` named mutex).
 - **`DeskWall.Designer.exe`** -- WPF, normal JIT runtime, exists only while the window is open.
@@ -170,6 +177,30 @@ What the first run found, and what the fix wave did about it:
   handles / 17 threads two seconds after start, before any tick; 261 / 10 after several ticks.
   The Direct2D, DirectWrite and WIC factories are process-lifetime singletons (`Surface`) and the
   render target is per frame. Nothing in the fix wave touched this and the numbers did not move.
+
+**The `column-system.json` layout, resident on JOES-PC, 2026-09-21** (AOT, `hardware` source
+sampling every 10 s, weather and Tailscale recipes, four dials; sampled from outside every minute
+for four minutes, CPU split by the daemon's own tick log):
+
+| Measure | Build 80767b1, one tick a minute | Budget | Verdict |
+|---|---|---|---|
+| Private bytes, idle | 30.2-30.7 MB, flat | 10 MB | OVER |
+| Working set after trim | 1.8-3.3 MB | (not a row) | |
+| Handles / threads | 467 / 12 | 100 / 5 | OVER |
+| CPU outside ticks, 240 s | 0 ms (24 sampler fires) | 50 ms | OK |
+| Per-minute tick (8 components redrawn) | 89-94 ms wall / 78-94 ms CPU | 60 / 40 | OVER |
+
+What the column costs over `clock-disks.json` on the same build: about 22 MB of commit, 190
+handles and 3 threads, all of it NVML loaded in-process (the library initialises once per source
+and stays resident so the GPU dial can be read every 10 s without a process spawn). The
+sampler's own CPU is below one 15.6 ms quantum per four minutes. The per-minute tick is heavier
+than the clock-only one because the four dials and their numbers change every minute: eight
+components redrawn, not one. An earlier build of the same day (fd6a29b) scheduled the hardware
+source from its first refresh rather than the minute boundary and repainted twice a minute
+(:00 and :30); that measured 45.8 MB private bytes and 63 ms outside ticks, and was fixed the
+same morning. These are the owner's accepted costs for the widgets he asked for; they are
+recorded, not hidden, and the two OVER rows are the same two open findings as the clock-only
+layout plus NVML's footprint.
 
 The JIT numbers this section used to carry (15.5 MB working set, 69.8 MB private bytes, 368
 handles, 15 threads resident; 67-90 ms clock-only tick) are in
