@@ -121,6 +121,16 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   of an existing named pipe when the ACL allows it, so two daemons on two homes both listen on
   `DeskWall.Events` and a producer's connection lands on whichever is next. Only reachable with a
   deliberate second `--home`, but do not assume a scratch daemon is the one that got your event.
+- **A named-pipe client can beat `ConnectNamedPipe` and its data is not lost, only unreadable.**
+  An instance is connectable the moment `CreateNamedPipe` returns; a producer that connects,
+  writes and disconnects before the server asks for a connection makes the connect fail with
+  ERROR_NO_DATA ("the pipe is being closed"). Measured: one or two lines lost in every 20
+  connect-write-disconnect sends. The bytes are still in the instance's buffer, and the way to
+  reach them is to wrap the handle in a second `NamedPipeServerStream` with `isConnected: true`
+  -- which is only legal on a **non-overlapped** handle, because an asynchronous one is already
+  bound to the completion port and binding it twice throws. That is why `EventPipeServer` is
+  synchronous with its own thread. Pre-arming more instances does not fix it; Windows will hand
+  a client to a listening-but-not-yet-connected instance.
 - **Providers cross into `SourceRegistry` on the tick thread only.** The registry is not
   synchronised; `EventBus` is. `DaemonLoop.SyncProviders` is the one crossing point, called just
   before the resolve. Never call `SetProvider` from the pipe thread or a bus callback.

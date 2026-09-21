@@ -152,7 +152,10 @@ public partial class ProvidersPanel : UserControl
     private static string Literal(ProviderFieldView f)
     {
         var text = f.Value ?? f.Example ?? "";
-        return f.Type is "number" or "bool" && text.Length > 0 ? text.ToLowerInvariant() : $"\"{text}\"";
+        if (f.Type is "number" or "bool" && text.Length > 0) return text.ToLowerInvariant();
+        // A last value with a quote or a backslash in it would otherwise seed a box that cannot
+        // be sent, and the user would be debugging our string building rather than their event.
+        return "\"" + text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 
     private void Chooser_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -48,7 +48,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     private readonly HashSet<string> _seenProviders = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _clashesLogged = new(StringComparer.OrdinalIgnoreCase);
     private EventBus? _bus;
-    // Set on a pipe reader's pool thread, read and cleared on the tick thread.
+    // Set on a pipe reader thread, read and cleared on the tick thread.
     private volatile bool _eventsDirty;
     private DateTimeOffset _eventsSaved;
     private Active? _active;
@@ -143,6 +143,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         }
 
         log.Info("daemon stop");
+        // Stop listening before the last save, not after: an event accepted between the two
+        // would be in the bus and not in the file, which is the one case where a producer sent
+        // something and it was genuinely lost.
+        events.Dispose();
         SaveEvents(force: true);   // whatever arrived since the last tick, before the process goes
         SourceFactory.DisposeAll(_active?.Sources);   // stop the samplers before the process goes
         _active = null;
@@ -261,7 +265,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     }
 
     /// <summary>Hand one line to the bus and say in the log why it was turned down. Runs on a pipe
-    /// reader's pool thread: the bus and RollingLog are both thread safe, and the registry is
+    /// reader thread: the bus and RollingLog are both thread safe, and the registry is
     /// deliberately not touched from here.</summary>
     private bool Publish(EventBus bus, string line)
     {
