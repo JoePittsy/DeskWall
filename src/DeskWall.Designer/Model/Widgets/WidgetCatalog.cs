@@ -21,7 +21,8 @@ public static class WidgetCatalog
             foreach (var file in Directory.EnumerateFiles(dir, "*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 var template = WidgetTemplate.Load(file);
-                if (!byKey.ContainsKey(template.Key)) order.Add(template.Key);
+                if (byKey.ContainsKey(template.Key)) template.OverridesShipped = true;
+                else order.Add(template.Key);
                 byKey[template.Key] = template;
             }
         }

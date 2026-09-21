@@ -23,6 +23,13 @@ public sealed class WidgetTemplate
     /// it to tell a shipped template (beside the exe, read-only) from one of the user's own in the
     /// runtime dir, which is the only kind Edit and Delete are offered on.</summary>
     public string? Path { get; init; }
+    /// <summary>Whether an earlier directory in the same <see cref="WidgetCatalog.Load"/> call
+    /// also had this key -- that is, this template is an override of a shipped widget rather than
+    /// a widget of the owner's own. Not a field in the file: only the catalog knows, and it sets
+    /// this as it loads, before anything else sees the template. Together with
+    /// <see cref="WidgetCatalog.IsUserTemplate"/> it is what the gallery card needs to offer
+    /// "Reset to the out-of-the-box version" instead of "Delete".</summary>
+    public bool OverridesShipped { get; internal set; }
     public required string Description { get; init; }
     public required int Width { get; init; }
     public required int Height { get; init; }

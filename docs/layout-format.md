@@ -375,13 +375,25 @@ it).
 Templates in `%LOCALAPPDATA%\DeskWall\widgets\` are the owner's own and sit in the same gallery
 as the shipped ones, overriding a shipped template of the same key. They are written by the
 designer's **widget editor** (`WidgetEditorWindow`, `docs/superpowers/specs/2026-09-21-widget-editor-design.md`),
-reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** and
-**Delete** for the owner's own, **Duplicate to mine** for any of them. The editor is the layout
+reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** on
+any of them, **Duplicate to mine** on any of them, and **Delete** (or **Reset**, below) on the
+owner's own. The editor is the layout
 canvas over a document the size of the widget, plus a parts palette (`text`, `image`, `bar`,
 `dial` only), the source list and its live values, and a "Knob" toggle on each property and each
 source setting that exposes it as a knob. It writes only the simple knob forms; a composite, a
 `{token}` splice or a `=bind:` write in a duplicated template is shown read-only and written back
 exactly as it was read, so nothing is lost by opening one.
+
+**Editing a shipped widget is copy on write.** The shipped folder sits beside the exe and is
+replaced by every install, so nothing is ever written back into it. Editing a shipped widget opens
+it with no path and its shipped key, and saving writes `%LOCALAPPDATA%\DeskWall\widgets\<key>.json`,
+which `WidgetCatalog.Load` then prefers -- in the place the key was first seen, so the gallery's
+order does not move. Such a card is marked "edited" and its menu offers **Reset to the
+out-of-the-box version**, which deletes only that user file; the shipped template returns on the
+next catalog reload. (Renaming while editing a shipped widget saves under the new key and still
+leaves the shipped file alone.) The refusal "A shipped widget is already called '<name>'" is about
+a *new* widget silently shadowing a shipped one and still fires for that; it does not fire for a
+deliberate edit of that key.
 
 A knob the editor made has no stored default: the default written to the file is whatever the
 target holds on the canvas at the moment of saving, so changing the value after exposing it moves

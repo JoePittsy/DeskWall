@@ -66,7 +66,7 @@ public partial class MainWindow : Window
 
         Gallery.AddRequested += Add;
         Gallery.NewRequested += () => OpenWidgetEditor(WidgetDocument.New());
-        Gallery.EditRequested += t => OpenWidgetEditor(WidgetDocument.FromTemplate(t, t.Path));
+        Gallery.EditRequested += t => OpenWidgetEditor(WidgetDocument.ForEditing(t));
         Gallery.DuplicateRequested += DuplicateTemplate;
         Gallery.DeleteRequested += DeleteTemplate;
         Knobs.RemoveRequested += Remove;
@@ -298,12 +298,17 @@ public partial class MainWindow : Window
         OpenWidgetEditor(document);
     }
 
+    /// <summary>Delete one of the owner's own template files. When that file is an override of a
+    /// shipped key it is a reset, not a deletion: the widget stays in the gallery and the shipped
+    /// version comes back, so the question has to say so.</summary>
     private void DeleteTemplate(WidgetTemplate template)
     {
         if (template.Path is null) return;
-        var answer = MessageBox.Show(this,
-            $"Delete the widget '{template.Name}'? Copies already on a wallpaper stay exactly as they are.",
-            "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        var question = template.OverridesShipped
+            ? $"Put '{template.Name}' back to the out-of-the-box version? Your edits to it are deleted. "
+              + "Copies already on a wallpaper stay exactly as they are."
+            : $"Delete the widget '{template.Name}'? Copies already on a wallpaper stay exactly as they are.";
+        var answer = MessageBox.Show(this, question, "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes) return;
         try { File.Delete(template.Path); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

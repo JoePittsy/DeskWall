@@ -110,6 +110,22 @@ public sealed class WidgetDocument
         return doc;
     }
 
+    /// <summary>Open a template for editing, wherever it came from.
+    /// <para>One of the owner's own files is edited in place. A shipped one is <b>copy on
+    /// write</b>: <see cref="Path"/> stays null, so nothing can ever be written back beside the
+    /// exe (a publish would wipe it anyway, and a rename would otherwise delete it as "the
+    /// previous file"), while <see cref="EditingKey"/> is the shipped key, so Save lands on
+    /// <c>&lt;userDir&gt;\&lt;key&gt;.json</c> and the catalog's override rule puts it in the
+    /// shipped widget's place in the gallery.</para></summary>
+    public static WidgetDocument ForEditing(WidgetTemplate template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        var mine = WidgetCatalog.IsUserTemplate(template);
+        var doc = FromTemplate(template, mine ? template.Path : null);
+        if (!mine) doc.EditingKey = template.Key;
+        return doc;
+    }
+
     private static DisplaySignature Signature(int w, int h) => new("widget", w, h, 100);
 
     // ---- size ------------------------------------------------------------------------------
