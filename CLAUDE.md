@@ -87,9 +87,25 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   console desktop are impossible from that session.
 - **Content keys must quantise noisy values.** Disk free space wobbles below a pixel between
   reads; `ResolvedBar` keys the fraction at 0.1 percent or the skip path never fires.
-- **Text paints outside its rect** (shadow ring, descenders). Incremental redraw uses
-  `Resolved.PaintBounds`, not `Rect`, and `Surface.DrawText` clips to the same margin
-  (`TextStyle.PaintMargin`). Keep those two in step.
+- **Text paints outside its rect** (shadow ring, descenders, a trailing-aligned run wider than its
+  box). Both the clip `Surface.DrawText` pushes and `ResolvedText.PaintBounds` are the *same call*
+  into `Render/TextMeasure.cs` -- measured glyph ink inflated by `TextStyle.PaintMargin` (the effect
+  ring only) -- so they cannot drift apart. Do not reintroduce a second derivation of either. The
+  measurement is cached on (text, font, size, weight, align, box), deliberately not on colour.
+- **`PaintBounds` is content-dependent and shrinks.** `"100%"` -> `"9%"` makes it smaller, so a
+  changed component's dirty area is the union of its previous and current bounds --
+  `FrameRenderer.RenderIncremental` adds `previousRects` for exactly this reason, and that line is
+  load-bearing, not defensive. `TickRunner` also redraws a component whose measured bounds moved
+  even when its content key did not, which is what catches a font being installed or updated.
+- **`effectRadius` defaults to `"auto"`** = `max(1, round(size * 0.10))`. A fixed radius is wrong at
+  both ends: 6 px is a drop shadow on a 64 px clock and a dark crust that closes the counters on a
+  13 px label. An explicit number still wins, and `"auto"` must never be scaled by `LayoutScaler`
+  or the factor lands twice -- once on the radius, once on the `size` it derives from.
+- **Downscaled bitmaps need `HIGH_QUALITY_CUBIC`, not `CUBIC`.** Measured against a bicubic
+  reference on a 96->56 icon, mean error per channel: bilinear 0.71, plain `CUBIC` **1.06** (its 4x4
+  kernel rings at this ratio), `HIGH_QUALITY_CUBIC` 0.20. `BaseCache` is the deliberate exception
+  and passes `Resample.Fast`: the base photo is only a ~1.12x downscale, and the good filter costs
+  +163 ms of cold start (draw 236 -> 399 ms) against a 500 ms budget.
 - **The previous frame is never held in memory** by the daemon: it is 20 MB at 3440x1440 against
   a 10 MB budget. `frame.raw` is one read per tick.
 - **POC and v1 both name desktop slots with non-breaking spaces.** They must not both own the
@@ -215,8 +231,10 @@ Enable-ScheduledTask -TaskName "DeskWall Tick"
 - Playnite last-played not importing from Steam (see above). Check Add-ons > Steam for an
   authentication prompt. Moot for v1's Steam-`http`-source path; still relevant if/when a
   Playnite-backed `file` source recipe is built (see "Widget ideas" below).
-- Text over the photo has only a 1 px shadow; legibility on bright areas is marginal. (v1's
-  default text style is the same 6 px shadow blur; not yet reassessed.)
+- Text over the photo has only a 1 px shadow; legibility on bright areas is marginal. (Reassessed
+  for v1 on 2026-09-21 and fixed there: the cause was a *fixed* 6 px blur applied at every font
+  size, which on a 13 px label is a crust rather than a shadow. v1's radius is now proportional --
+  see "v1 gotchas". The POC keeps its 1 px shadow.)
 - Steam VDF is regex-parsed; a nested block before `LastPlayed` would break it.
 - The 37 pre-existing desktop icons (game .url files, tool shortcuts) were catalogued but
   **not** deleted; owner was going to. Public-desktop ones need admin.
