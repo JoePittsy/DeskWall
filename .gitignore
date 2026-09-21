@@ -14,3 +14,5 @@ restore.txt
 poc/*.png
 poc/*.ico
 .superpowers/
+.scratch/
+.claude/

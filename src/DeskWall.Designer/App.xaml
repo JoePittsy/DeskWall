@@ -1,5 +1,48 @@
-<Application x:Class="DeskWall.Designer.App"
+﻿<Application x:Class="DeskWall.Designer.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="System"
              ShutdownMode="OnExplicitShutdown">
+  <Application.Resources>
+    <!-- Colours come from the Fluent dictionary's own tokens, through DynamicResource everywhere,
+         so a light/dark switch while the designer is open repaints instead of leaving black text on
+         a black card. Spacing is a 4 px grid, used as 4 / 8 / 12 / 16 / 24.
+         No style here uses BasedOn: ThemeMode merges the Fluent dictionary into these same
+         Application.Resources, and a StaticResource lookup into it while this block is still being
+         parsed is not a race worth running. The type ramp is written out instead. -->
+
+    <Style x:Key="SectionHeader" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="Body" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Caption" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Hint" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- A gallery card and a knobs group are the same surface: one layer above the window, hairline
+         stroke, 8 px radius. -->
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12" />
+    </Style>
+  </Application.Resources>
 </Application>

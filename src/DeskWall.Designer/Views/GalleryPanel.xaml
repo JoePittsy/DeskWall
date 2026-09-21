@@ -1,0 +1,93 @@
+﻿<UserControl x:Class="DeskWall.Designer.Views.GalleryPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v="clr-namespace:DeskWall.Designer.Views">
+  <UserControl.Resources>
+    <!-- The card IS the button. A phone home screen adds a widget when you tap the widget, and a
+         column of eight Add buttons would be eight more controls saying what the card already is;
+         the "+ Add" caption inside names the gesture without being a second target. -->
+    <Style x:Key="CardButton" TargetType="Button">
+      <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,0,12" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" SnapsToDevicePixels="True" CornerRadius="8"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}">
+              <Grid>
+                <ContentPresenter />
+                <!-- The hover wash sits over the photo as well as the card, so the whole card
+                     lights up rather than only its text half. -->
+                <Border x:Name="Wash" CornerRadius="8" Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                        Opacity="0" IsHitTestVisible="False" />
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                <Setter TargetName="Wash" Property="Opacity" Value="1" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <DataTemplate x:Key="CardTemplate">
+      <Button Style="{StaticResource CardButton}" Click="Card_Click" Tag="{Binding Key}"
+              ToolTip="{Binding Description}"
+              AutomationProperties.Name="{Binding Name}"
+              AutomationProperties.HelpText="{Binding Description}">
+        <StackPanel>
+          <Border CornerRadius="7,7,0,0" ClipToBounds="True" Background="#20000000">
+            <Image Source="{Binding Image}" Stretch="Uniform" />
+          </Border>
+          <Grid Margin="12,10,12,12">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0">
+              <TextBlock DockPanel.Dock="Right" Text="+ Add" VerticalAlignment="Center" Margin="8,0,0,0"
+                         FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+              <Border DockPanel.Dock="Right" CornerRadius="9" Padding="7,1" Margin="8,0,0,0"
+                      VerticalAlignment="Center" Visibility="{Binding CountVisibility}"
+                      Background="{DynamicResource AccentFillColorDefaultBrush}">
+                <TextBlock Text="{Binding Count}" FontSize="11"
+                           Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+              </Border>
+              <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+            </DockPanel>
+            <TextBlock Grid.Row="1" Text="{Binding Description}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
+            <TextBlock Grid.Row="2" Text="{Binding Requires}" Visibility="{Binding RequiresVisibility}"
+                       Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+          </Grid>
+        </StackPanel>
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <DockPanel>
+    <TextBlock DockPanel.Dock="Top" Text="Widgets" Style="{StaticResource SectionHeader}"
+               Margin="16,16,16,12" />
+    <TextBlock x:Name="EmptyNote" DockPanel.Dock="Bottom" Style="{StaticResource Hint}" Margin="16,0,16,16"
+               Visibility="Collapsed"
+               Text="No widget templates found. They ship beside the designer in widgets\, and you can add your own under the DeskWall folder." />
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,0,16,16">
+      <ItemsControl x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}" />
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

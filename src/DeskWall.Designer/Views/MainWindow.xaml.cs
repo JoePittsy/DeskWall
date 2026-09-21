@@ -1,186 +1,251 @@
-﻿using System.IO;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Threading;
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Model.Widgets;
 using CRect = DeskWall.Core.Rect;
 
 namespace DeskWall.Designer.Views;
 
 /// <summary>
-/// The shell.
+/// The window.
 /// <para>
-/// Job: keep the right layout file open for the right display, and get an edit from the canvas to
-/// the wallpaper in one keystroke.
+/// Job: get a widget onto the column and looking right in under a minute, without the owner seeing
+/// a coordinate or a binding. Three panes and a verb: pick from the gallery on the left, see it on
+/// the wallpaper in the middle, change what it says on the right, Apply.
 /// </para>
 /// <para>
-/// That sentence is what adjudicates. Deliberately left out: a menu bar (every command it would
-/// hold is a toolbar button, a canvas gesture or a key); a status bar (the canvas has one, and a
-/// second would repeat it); undo, redo, zoom and align buttons (they live on the canvas and its
-/// context menu, and copying them here would turn the toolbar into a list of everything the app can
-/// do instead of the four things the shell decides); a Save-As dialog and a recent-files list (a
-/// layout belongs to a display, so where it is written is derived, not chosen); an empty state (with
-/// no layout the shell does not open at all, FirstRun does); icons on buttons, separators, group
-/// boxes and panel headings; splitters and dockable panels; a confirmation dialog for Apply and any
-/// progress indicator (Apply writes one file, and the wallpaper changing is the confirmation).
-/// </para>
-/// <para>
-/// The toolbar carries four facts, each once: the layout file name with a dirty marker (without it,
-/// nothing on screen says whether what you see has reached disk); the display this layout is for
-/// (the preview of a scaled layout looks identical, so nothing else can tell you); the
-/// "scaled from ..." banner and its one button (without it you would silently edit a stretched copy
-/// of another display's layout and Apply it as this one's); and, in grey, "F9 sources F10 properties
-/// F11 layers" - the one label here that is not a control, because the collapse keys have no other
-/// affordance and without it the feature does not exist.
+/// Deliberately left out: a menu bar; a display selector and a "copy from another display" button
+/// (a layout belongs to the display in front of you, and the store scales the rest); a file name
+/// with a dirty marker (Apply is enabled exactly when there is something to apply, which says the
+/// same thing with no text); zoom, align, duplicate, bring-to-front and the rest of a drawing
+/// program's verbs (a widget's position is the arranger's answer); panel collapse keys; a
+/// confirmation for Apply. The status line at the foot says when it last reached the wallpaper and
+/// whether the daemon is there to paint it.
 /// </para>
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const double SourcesWidth = 280;
-    private const double PropertiesWidth = 320;
+    /// <summary>What every starter layout uses, and what a brand new layout starts with: the one
+    /// Spotlight asset that is on every Windows 11 install. Only a default - the Wallpaper panel
+    /// changes it.</summary>
+    public const string DefaultBaseImage =
+        @"C:\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\DesktopSpotlight\Assets\Images\image_3.jpg";
 
     private readonly LayoutStore _store;
     private readonly PreviewRenderer _renderer;
+    private readonly DispatcherTimer _status = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly DispatcherTimer _galleryRefresh = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly IReadOnlyList<WidgetTemplate> _catalog;
 
     private Settings _settings;
     private DesignerModel _model = null!;
     private LiveSources? _live;
-    private string? _scaledFrom;
-    private bool _syncingCombo;
+    private string _sourcesKey = "";
     private bool _allowClose;
 
-    public MainWindow(LayoutStore store, Settings settings, DisplaySignature signature, LayoutResolution resolution)
+    public MainWindow(LayoutStore store, Settings settings, DisplaySignature signature, LayoutResolution? resolution)
     {
         InitializeComponent();
         _store = store;
         _settings = settings;
-
-        // The preview always resolves against whatever the sources have produced most recently;
-        // LiveSources is owned by SourcesPanel and replaced whenever the layout's source list
-        // changes, so this reads the field rather than capturing an instance.
+        _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         _renderer = new PreviewRenderer(() => _live?.Tree() ?? ValueTree.Empty);
 
-        Sources.LiveSourcesChanged += OnLiveSourcesChanged;
-        Layers.TemplateChildActivated += OnTemplateChildActivated;
+        Gallery.AddRequested += Add;
+        Preview.Reordered += ReorderWidget;
+        Preview.Moved += MoveUnlocked;
+        Preview.IsUnlocked = id => _model.Layout.Widgets is { } w && w.TryGetValue(id, out var r) && r.Unlocked;
+        Knobs.RemoveRequested += Remove;
+        Knobs.ArrangeRequested += () => Arrange("Arrange");
 
-        RestoreWindowPlacement();
-        ApplyPanelVisibility();
+        RestorePlacement();
         Open(signature, resolution);
+
+        _status.Tick += (_, _) => RefreshStatus();
+        _status.Start();
+        _galleryRefresh.Tick += (_, _) => { _galleryRefresh.Stop(); Gallery.Refresh(); };
     }
 
     public DesignerModel Model => _model;
 
-    // ---- opening a layout --------------------------------------------------------------------
+    // ---- opening ---------------------------------------------------------------------------------
 
-    /// <summary>Point the whole shell at one layout for one display. A scaled resolution is opened
-    /// with no path: it came out of another display's file and must never be written back over it,
-    /// so Apply has to create this display's own layout first (which is what the banner says).</summary>
-    private void Open(DisplaySignature signature, LayoutResolution resolution)
+    /// <summary>Point the window at one layout for one display. No layout at all is not a dialog: an
+    /// empty one is made here and the gallery is the first thing seen, which is the whole first-run
+    /// story. A scaled resolution opens with no path, so Apply has to write this display's own file
+    /// rather than overwrite the layout it was borrowed from.</summary>
+    private void Open(DisplaySignature signature, LayoutResolution? resolution)
     {
         if (_model is not null) _model.Changed -= OnModelChanged;
 
-        _scaledFrom = resolution.Scaled ? resolution.SourceSignature.Key : null;
-        _model = new DesignerModel(resolution.Layout, signature, resolution.Scaled ? null : resolution.SourcePath);
+        var layout = resolution?.Layout ?? new LayoutFile { BaseImage = DefaultBaseImage };
+        var path = resolution is { Scaled: false } ? resolution.SourcePath : null;
+        _model = new DesignerModel(layout, signature, path);
         _model.Changed += OnModelChanged;
 
-        Sources.Attach(_model);      // raises LiveSourcesChanged, which feeds the renderer and the properties panel
-        Properties.Attach(_model);
-        Layers.Attach(_model);
-        Editor.Attach(_model, _renderer);
+        ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
 
-        RefreshDisplayCombo();
-        RefreshToolbar();
+        Preview.Attach(_model, _renderer);
+        Knobs.Attach(_model, _catalog);
+        Gallery.Load(_catalog, BaseImageForCards(), () => _live?.Tree() ?? ValueTree.Empty);
+
+        RebuildLiveSources();
+        RefreshChrome();
         Remember(s => { s.LastSignatureKey = signature.Key; s.LastLayoutPath = _model.Path; });
     }
 
-    private void OnModelChanged() => RefreshToolbar();
-
-    private void OnLiveSourcesChanged(LiveSources live)
+    private string BaseImageForCards()
     {
-        if (ReferenceEquals(_live, live)) return;
-        if (_live is not null) _live.Updated -= OnLiveUpdated;
-        _live = live;
-        _live.Updated += OnLiveUpdated;
-        Properties.Live = live;
-        if (_model is not null) _renderer.Request(_model);
+        var image = _model.Layout.BaseImage;
+        if (image.Length > 0 && File.Exists(image)) return image;
+        return File.Exists(DefaultBaseImage) ? DefaultBaseImage : image;
     }
 
-    /// <summary>A source published new values: the preview is now out of date even though nothing
-    /// was edited. Raised off the UI thread, and Request reads the model, so it marshals first.</summary>
+    private void OnModelChanged()
+    {
+        RebuildLiveSources();
+        RefreshChrome();
+    }
+
+    private void RefreshChrome()
+    {
+        LayoutNameText.Text = LayoutLabel();
+        LayoutNameText.ToolTip = _model.Path;
+        DisplayText.Text = ShellState.DisplayLabel(_model.Signature.Key);
+        UndoButton.IsEnabled = _model.CanUndo;
+        RedoButton.IsEnabled = _model.CanRedo;
+        ApplyButton.IsEnabled = _model.Path is null || _model.Dirty;
+        Gallery.SetCounts(Counts());
+        RefreshStatus();
+    }
+
+    /// <summary>What the top line calls the open layout. A layout saved for a display is named after
+    /// the display, and a display signature is a hundred characters of device path and GUID: printing
+    /// that as a title says nothing and fills the bar. The fact worth stating is which of the three
+    /// cases you are in, and the line below already says which display.</summary>
+    private string LayoutLabel()
+    {
+        if (_model.Path is null) return "New layout";
+        return string.Equals(_model.Path, ShellState.LayoutPathFor(_model.Signature), StringComparison.OrdinalIgnoreCase)
+            ? "Layout for this display"
+            : Path.GetFileNameWithoutExtension(_model.Path);
+    }
+
+    private Dictionary<string, int> Counts()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (_model.Layout.Widgets is not { } widgets) return counts;
+        foreach (var record in widgets.Values)
+            counts[record.Template] = counts.GetValueOrDefault(record.Template) + 1;
+        return counts;
+    }
+
+    /// <summary>The running sources: the layout's, plus one of each source every catalogue widget
+    /// wants. The extras are what makes a gallery card a real render rather than a photo with
+    /// nothing on it - the weather card cannot show a temperature unless something is fetching one -
+    /// and the layout's own definition always wins on a name clash, so adding the widget changes
+    /// nothing. Rebuilt only when the set actually differs: doing it on every knob turn would
+    /// restart the weather fetch on each keystroke.</summary>
+    private void RebuildLiveSources()
+    {
+        var defs = new List<SourceDef>(_model.Layout.Sources);
+        foreach (var source in _catalog.SelectMany(t => t.Sources))
+            if (!defs.Any(d => string.Equals(d.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
+                defs.Add(source);
+
+        var key = string.Join(";", defs.Select(s =>
+            $"{s.Name}|{s.Type}|{s.EverySeconds}|{string.Join(",", s.Settings.Select(kv => kv.Key + "=" + kv.Value))}"));
+        if (key == _sourcesKey && _live is not null) return;
+        _sourcesKey = key;
+
+        var previous = _live;
+        if (previous is not null) previous.Updated -= OnLiveUpdated;
+        _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
+        _live.Updated += OnLiveUpdated;
+        Knobs.Live = _live;
+        previous?.Dispose();
+        _renderer.Request(_model);
+    }
+
+    /// <summary>A source published. The preview is cheap and goes at once; the gallery's eight
+    /// renders wait until the flurry of first reads has settled.</summary>
     private void OnLiveUpdated() => Dispatcher.BeginInvoke(new Action(() =>
     {
-        if (_model is not null) _renderer.Request(_model);
+        _renderer.Request(_model);
+        _galleryRefresh.Stop();
+        _galleryRefresh.Start();
     }));
 
-    /// <summary>The layers panel can select a repeater's template child, which has no rect of its
-    /// own on the canvas. The properties panel edits it; the canvas outlines the repeater it lives
-    /// in, so "where is that" still has an answer on screen.</summary>
-    private void OnTemplateChildActivated(ComponentDef child, RepeaterDef parent)
+    // ---- the four things that change a layout ------------------------------------------------------
+
+    private void Add(WidgetTemplate template)
     {
-        Properties.ShowTemplateChild(child, parent);
-        Editor.HighlightComponent(parent.Id);
-    }
-
-    // ---- toolbar ------------------------------------------------------------------------------
-
-    private void RefreshToolbar()
-    {
-        FileText.Text = ShellState.FileLabel(_model.Path, _model.Dirty);
-        ApplyButton.IsEnabled = _model.Path is null || _model.Dirty;
-        RevertButton.IsEnabled = _model.Dirty;
-
-        if (_scaledFrom is null) Banner.Visibility = Visibility.Collapsed;
-        else
+        string? added = null;
+        _model.Edit($"Add {template.Name}", l =>
         {
-            BannerText.Text = ShellState.BannerText(_scaledFrom);
-            Banner.Visibility = Visibility.Visible;
-        }
-
-        // "Copy from..." is only an answer when this display has no layout of its own to copy over.
-        CopyFromButton.Visibility = _store.Entries.ContainsKey(_model.Signature.Key)
-            ? Visibility.Collapsed : Visibility.Visible;
+            // Dropped at the far end of the column so Order puts it last in its own anchor group;
+            // Arrange then gives it its real place.
+            var column = Column();
+            added = WidgetInstance.Add(l, template, new CRect(column.X, column.Bottom, 0, 0));
+            ArrangeIn(l);
+        });
+        if (added is not null) SelectInstance(added);
     }
 
-    private void RefreshDisplayCombo()
+    private void Remove(string instanceId)
     {
-        _syncingCombo = true;
-        try
+        _model.Edit("Remove widget", l =>
         {
-            var choices = ShellState.DisplayChoices(MonitorKeys(), _store.Entries.Keys).ToList();
-            if (!choices.Any(c => string.Equals(c.Key, _model.Signature.Key, StringComparison.OrdinalIgnoreCase)))
-                choices.Insert(0, new DisplayChoice(_model.Signature.Key, ShellState.DisplayLabel(_model.Signature.Key)));
-            DisplayCombo.ItemsSource = choices;
-            DisplayCombo.SelectedItem = choices.First(c => string.Equals(c.Key, _model.Signature.Key, StringComparison.OrdinalIgnoreCase));
-        }
-        finally { _syncingCombo = false; }
+            WidgetInstance.Remove(l, instanceId);
+            ArrangeIn(l);
+        });
+        _model.ClearSelection();
     }
 
-    private static IReadOnlyList<string> MonitorKeys()
+    private void ReorderWidget(string instanceId, int index)
     {
-        // Enumerate goes through IDesktopWallpaper; a shell that is mid-restart hands back a COM
-        // failure, and a designer that cannot list monitors must still edit the layout it has open.
-        try { return Monitors.Enumerate().Select(m => m.Signature.Key).ToList(); }
-        catch (Exception) { return Array.Empty<string>(); }
+        if (!Reorder.Changes(Arranger.Order(_model.Layout), instanceId, index)) return;
+        _model.Edit("Reorder", l => Arranger.Arrange(l, _catalog, Reorder.Move(Arranger.Order(l), instanceId, index),
+            _model.Signature.Width, _model.Signature.Height));
+        SelectInstance(instanceId);
     }
 
-    // ---- commands -----------------------------------------------------------------------------
+    private void MoveUnlocked(string instanceId, int dx, int dy)
+        => _model.Move(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList(), dx, dy);
+
+    private void Arrange(string label) => _model.Edit(label, ArrangeIn);
+
+    private void ArrangeIn(LayoutFile l)
+        => Arranger.Arrange(l, _catalog, Arranger.Order(l), _model.Signature.Width, _model.Signature.Height);
+
+    private CRect Column() => Arranger.Column(_model.Signature.Width, _model.Signature.Height);
+
+    private void SelectInstance(string instanceId)
+        => _model.Select(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList());
+
+    // ---- commands ------------------------------------------------------------------------------------
+
+    private void Undo_Click(object sender, RoutedEventArgs e) => _model.Undo();
+
+    private void Redo_Click(object sender, RoutedEventArgs e) => _model.Redo();
 
     private void Apply_Click(object sender, RoutedEventArgs e) => Apply();
 
-    private void SaveForDisplay_Click(object sender, RoutedEventArgs e) => Apply();
-
-    /// <summary>Apply is save. With no path (a scaled layout, or a starter that has not been written
-    /// yet) it first creates this display's own layout file and registers it, which is the only way
-    /// the daemon will ever pick it up.</summary>
+    /// <summary>Apply is save: write the layout to this display's path and register it, which is the
+    /// only way the daemon ever picks it up. Its watcher repaints within two seconds.</summary>
     private bool Apply()
     {
-        // Property edits commit on LostFocus; Ctrl+S never moves focus, so without this the value
-        // being typed is not in the document that gets written (and the dirty marker clears).
+        // A knob commits on LostFocus; Ctrl+S never moves focus, so without this the value being
+        // typed is not in the document that gets written.
         Keyboard.ClearFocus();
         var created = _model.Path is null;
         var dest = _model.Path ?? ShellState.LayoutPathFor(_model.Signature);
@@ -193,7 +258,6 @@ public partial class MainWindow : Window
             }
             _model.Save();
             if (created) _store.Set(_model.Signature, dest);
-            _scaledFrom = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
@@ -202,13 +266,11 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
+        _appliedAt = DateTime.Now;
         Remember(s => { s.LastSignatureKey = _model.Signature.Key; s.LastLayoutPath = _model.Path; });
-        RefreshDisplayCombo();
-        RefreshToolbar();
+        RefreshChrome();
         return true;
     }
-
-    private void Revert_Click(object sender, RoutedEventArgs e) => _model.RevertToSaved();
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
@@ -219,145 +281,82 @@ public partial class MainWindow : Window
             ShowInTaskbar = false,
         };
         page.ShowDialog();
-        // The page can have written settings.json (tray, start at logon) and the layout store
-        // (remove an entry, use this layout for the current display).
         _settings = Settings.Load();
-        RefreshDisplayCombo();
-        RefreshToolbar();
+        RefreshChrome();
     }
-
-    /// <summary>Take another display's layout, scale it to this one and make it this display's own.
-    /// The store is the only list of candidates there is, so it is the menu.</summary>
-    private void CopyFrom_Click(object sender, RoutedEventArgs e)
-    {
-        var others = _store.Entries
-            .Where(kv => !string.Equals(kv.Key, _model.Signature.Key, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (others.Count == 0)
-        {
-            MessageBox.Show(this, "No other display has a layout to copy.", "DeskWall",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-        var menu = new ContextMenu { PlacementTarget = CopyFromButton, Placement = PlacementMode.Bottom };
-        foreach (var (key, path) in others)
-        {
-            var item = new MenuItem { Header = $"{ShellState.DisplayLabel(key)}   {Path.GetFileName(path)}", Tag = key };
-            item.Click += CopyFromItem_Click;
-            menu.Items.Add(item);
-        }
-        menu.IsOpen = true;
-    }
-
-    private void CopyFromItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem { Tag: string sourceKey }) return;
-        if (!ConfirmDiscard()) return;
-        var dest = ShellState.LayoutPathFor(_model.Signature);
-        try
-        {
-            var sourcePath = _store.Entries[sourceKey];
-            var scaled = LayoutScaler.Scale(LayoutFile.Load(sourcePath), DisplaySignature.Parse(sourceKey), _model.Signature);
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            scaled.Save(dest);
-            _store.Set(_model.Signature, dest);
-            Open(_model.Signature, new LayoutResolution(scaled, dest, _model.Signature, Scaled: false));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException
-                                      or System.Text.Json.JsonException or KeyNotFoundException)
-        {
-            MessageBox.Show(this, $"Could not copy that layout: {ex.Message}", "DeskWall",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void DisplayCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_syncingCombo || DisplayCombo.SelectedItem is not DisplayChoice choice) return;
-        if (string.Equals(choice.Key, _model.Signature.Key, StringComparison.OrdinalIgnoreCase)) return;
-
-        DisplaySignature signature;
-        try { signature = DisplaySignature.Parse(choice.Key); }
-        catch (FormatException) { RefreshDisplayCombo(); return; }
-
-        if (!ConfirmDiscard()) { RefreshDisplayCombo(); return; }
-
-        var resolution = _store.Resolve(signature);
-        if (resolution is null)
-        {
-            var first = new FirstRun(signature, _store) { Owner = this };
-            if (first.ShowDialog() != true) { RefreshDisplayCombo(); return; }
-            resolution = _store.Resolve(signature);
-            if (resolution is null) { RefreshDisplayCombo(); return; }
-        }
-        Open(signature, resolution);
-    }
-
-    /// <summary>Yes/No/Cancel over unsaved edits. True means "carry on".</summary>
-    private bool ConfirmDiscard()
-    {
-        if (!_model.Dirty) return true;
-        var answer = MessageBox.Show(this,
-            $"Apply the changes to {ShellState.FileLabel(_model.Path, dirty: false)} first?",
-            "DeskWall", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-        return answer switch
-        {
-            MessageBoxResult.Yes => Apply(),
-            MessageBoxResult.No => true,
-            _ => false,
-        };
-    }
-
-    // ---- keyboard -------------------------------------------------------------------------------
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
         if (e.Handled) return;
-        // F10 arrives as a system key (it would otherwise open a menu bar this window does not have).
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        switch (key)
+        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        // Not while a box is being typed into: Delete and Ctrl+Z belong to the text there.
+        var typing = Keyboard.FocusedElement is System.Windows.Controls.TextBox;
+        switch (e.Key)
         {
-            case Key.S when (Keyboard.Modifiers & ModifierKeys.Control) != 0:
-                Apply(); e.Handled = true; break;
-            case Key.F9:
-                TogglePanel(p => p.ShowSources = !p.ShowSources); e.Handled = true; break;
-            case Key.F10:
-                TogglePanel(p => p.ShowProperties = !p.ShowProperties); e.Handled = true; break;
-            case Key.F11:
-                TogglePanel(p => p.ShowLayers = !p.ShowLayers); e.Handled = true; break;
+            case Key.S when ctrl: Apply(); e.Handled = true; break;
+            case Key.Z when ctrl && !typing: _model.Undo(); e.Handled = true; break;
+            case Key.Y when ctrl && !typing: _model.Redo(); e.Handled = true; break;
+            case Key.Delete when !typing && SelectedInstance() is { } id: Remove(id); e.Handled = true; break;
+            case Key.Escape when !typing: _model.ClearSelection(); e.Handled = true; break;
         }
     }
 
-    private void TogglePanel(Action<Settings> toggle)
+    private string? SelectedInstance()
+        => _model is { Selection.Count: > 0 } ? _model.Find(_model.Selection[0])?.Widget : null;
+
+    // ---- the status line ------------------------------------------------------------------------------
+
+    private DateTime? _appliedAt;
+
+    /// <summary>Two facts, read from the machine, never from a channel of our own: when this layout
+    /// last reached disk, and whether the process that paints it is running. The daemon's own last
+    /// error, when it has one, replaces both - it is the only thing worth reading then.</summary>
+    private void RefreshStatus()
     {
-        toggle(_settings);
-        ApplyPanelVisibility();
-        // Write the resulting state, not the toggle: re-running a flip against whatever is on disk
-        // would land on the opposite answer if the file had moved under us.
-        bool sources = _settings.ShowSources, properties = _settings.ShowProperties, layers = _settings.ShowLayers;
-        Remember(s => { s.ShowSources = sources; s.ShowProperties = properties; s.ShowLayers = layers; });
+        var applied = _appliedAt is { } at ? $"Applied {at:HH:mm}"
+            : _model.Path is { } p && File.Exists(p) ? $"Applied {File.GetLastWriteTime(p):HH:mm}"
+            : "Not applied yet";
+
+        var running = false;
+        var procs = Process.GetProcessesByName("deskwall");
+        try { running = procs.Length > 0; }
+        finally { foreach (var proc in procs) proc.Dispose(); }
+
+        var error = LastDaemonError();
+        StatusText.Text = error is not null
+            ? $"{applied}  \u00b7  daemon: {error}"
+            : string.Format(CultureInfo.InvariantCulture, "{0}  \u00b7  daemon {1}", applied, running ? "running" : "not running");
     }
 
-    private void ApplyPanelVisibility()
+    private static string? LastDaemonError()
     {
-        SourcesColumn.Width = new GridLength(_settings.ShowSources ? SourcesWidth : 0);
-        SourcesHost.Visibility = _settings.ShowSources ? Visibility.Visible : Visibility.Collapsed;
-        PropertiesColumn.Width = new GridLength(_settings.ShowProperties ? PropertiesWidth : 0);
-        PropertiesHost.Visibility = _settings.ShowProperties ? Visibility.Visible : Visibility.Collapsed;
-        LayersHost.Visibility = _settings.ShowLayers ? Visibility.Visible : Visibility.Collapsed;
+        var path = Paths.InRuntime("deskwall.log");
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var last = File.ReadAllLines(path).LastOrDefault(l => l.Contains("[ERROR]", StringComparison.Ordinal));
+            if (last is null) return null;
+            var i = last.IndexOf("[ERROR]", StringComparison.Ordinal);
+            return last[(i + 7)..].Trim();
+        }
+        catch (IOException) { return null; }
     }
 
-    // ---- window placement and settings ----------------------------------------------------------
+    // ---- window placement and settings -------------------------------------------------------------------
 
-    private void RestoreWindowPlacement()
+    private void RestorePlacement()
     {
-        if (_settings.WindowLeft is { } left && _settings.WindowTop is { } top &&
-            _settings.WindowWidth is { } width && _settings.WindowHeight is { } height &&
-            ShellState.OnScreen(left, top, width, height, MonitorBounds()))
+        if (ShellState.Placement(_settings.WindowLeft, _settings.WindowTop, _settings.WindowWidth, _settings.WindowHeight, MonitorBounds())
+            is { } placement)
         {
             WindowStartupLocation = WindowStartupLocation.Manual;
-            Left = left; Top = top; Width = width; Height = height;
+            Left = placement.Left; Top = placement.Top; Width = placement.Width; Height = placement.Height;
+        }
+        else
+        {
+            Width = ShellState.DefaultWidth;
+            Height = ShellState.DefaultHeight;
         }
         if (_settings.WindowMaximized) WindowState = WindowState.Maximized;
     }
@@ -368,8 +367,8 @@ public partial class MainWindow : Window
         catch (Exception) { return Array.Empty<CRect>(); }
     }
 
-    /// <summary>Read-modify-write, every time: the settings page writes the same file, and the
-    /// daemon reads it, so the shell must never push a stale whole-file copy back over either.</summary>
+    /// <summary>Read-modify-write, every time: the settings page writes the same file and the daemon
+    /// reads it, so the window must never push a stale whole-file copy back over either.</summary>
     private void Remember(Action<Settings> mutate)
     {
         try
@@ -402,9 +401,25 @@ public partial class MainWindow : Window
         });
     }
 
+    private bool ConfirmDiscard()
+    {
+        if (!_model.Dirty && _model.Path is not null) return true;
+        if (!_model.Dirty) return true;
+        var answer = MessageBox.Show(this, "Apply the changes before closing?", "DeskWall",
+            MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        return answer switch
+        {
+            MessageBoxResult.Yes => Apply(),
+            MessageBoxResult.No => true,
+            _ => false,
+        };
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        _status.Stop();
+        _galleryRefresh.Stop();
         _renderer.Dispose();
         _live?.Dispose();
         Application.Current?.Shutdown();

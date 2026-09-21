@@ -1,0 +1,18 @@
+﻿<UserControl x:Class="DeskWall.Designer.Views.PreviewView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="True"
+             FocusVisualStyle="{x:Null}"
+             Background="Transparent">
+  <Grid>
+    <!-- The surface is added as this border's child in code: it draws the frame, the column and the
+         selection, and nothing about it is worth expressing as a visual tree. -->
+    <Border x:Name="Host" ClipToBounds="True" Background="Transparent" />
+
+    <!-- One control over the preview, bottom right, because "show me the column full size" is the
+         only thing anyone wants to do to a picture of a wallpaper. -->
+    <Button x:Name="ZoomToggle" Content="Column at 1:1"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16"
+            Padding="12,6" Click="ZoomToggle_Click" />
+  </Grid>
+</UserControl>

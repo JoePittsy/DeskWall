@@ -76,6 +76,22 @@ public static class ShellState
         return false;
     }
 
+    /// <summary>The window's default size. 1440x900 is the smallest rectangle that still fits the
+    /// three columns (gallery, preview, knobs) with the preview wide enough to show a 3440-wide
+    /// wallpaper at a readable scale.</summary>
+    public const double DefaultWidth = 1440, DefaultHeight = 900;
+
+    /// <summary>Where to open the window: the remembered rectangle when it still lands on a monitor
+    /// that exists now, otherwise null, meaning "default size, let Windows centre it".
+    /// <para>Apollo streaming and RDP both change the monitor set under a closed designer, and a
+    /// window restored onto a monitor that is no longer there cannot be dragged back.</para></summary>
+    public static (double Left, double Top, double Width, double Height)? Placement(
+        double? left, double? top, double? width, double? height, IEnumerable<Rect> monitorBounds)
+    {
+        if (left is not { } l || top is not { } t || width is not { } w || height is not { } h) return null;
+        return OnScreen(l, t, w, h, monitorBounds) ? (l, t, w, h) : null;
+    }
+
     /// <summary>Starters reference weather icons as runtime:assets/weather/&lt;code&gt;.png. Copy the
     /// set that ships beside the exe into the runtime dir once; never overwrite a file that is
     /// already there. A missing source directory (e.g. a build that has not linked the assets) is a
