@@ -11,7 +11,7 @@
       <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="0" />
-      <Setter Property="Margin" Value="0,0,0,12" />
+      <Setter Property="Margin" Value="0,0,0,8" />
       <Setter Property="Cursor" Value="Hand" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Template">
@@ -23,8 +23,6 @@
                     BorderThickness="{TemplateBinding BorderThickness}">
               <Grid>
                 <ContentPresenter />
-                <!-- The hover wash sits over the photo as well as the card, so the whole card
-                     lights up rather than only its text half. -->
                 <Border x:Name="Wash" CornerRadius="8" Background="{DynamicResource SubtleFillColorSecondaryBrush}"
                         Opacity="0" IsHitTestVisible="False" />
               </Grid>
@@ -48,34 +46,32 @@
               ToolTip="{Binding Description}"
               AutomationProperties.Name="{Binding Name}"
               AutomationProperties.HelpText="{Binding Description}">
-        <StackPanel>
-          <Border CornerRadius="7,7,0,0" ClipToBounds="True" Background="#20000000">
-            <Image Source="{Binding Image}" Stretch="Uniform" />
-          </Border>
-          <Grid Margin="12,10,12,12">
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <DockPanel Grid.Row="0">
-              <TextBlock DockPanel.Dock="Right" Text="+ Add" VerticalAlignment="Center" Margin="8,0,0,0"
-                         FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-              <Border DockPanel.Dock="Right" CornerRadius="9" Padding="7,1" Margin="8,0,0,0"
-                      VerticalAlignment="Center" Visibility="{Binding CountVisibility}"
-                      Background="{DynamicResource AccentFillColorDefaultBrush}">
-                <TextBlock Text="{Binding Count}" FontSize="11"
-                           Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
-              </Border>
-              <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                         Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-            </DockPanel>
-            <TextBlock Grid.Row="1" Text="{Binding Description}" Style="{StaticResource Caption}" Margin="0,2,0,0" />
-            <TextBlock Grid.Row="2" Text="{Binding Requires}" Visibility="{Binding RequiresVisibility}"
-                       Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
-                       Foreground="{DynamicResource SystemFillColorCautionBrush}" />
-          </Grid>
-        </StackPanel>
+        <Grid Margin="12,10,12,11">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <DockPanel Grid.Row="0">
+            <TextBlock DockPanel.Dock="Right" Text="+ Add" VerticalAlignment="Center" Margin="8,0,0,0"
+                       FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+            <Border DockPanel.Dock="Right" CornerRadius="9" Padding="7,1" Margin="8,0,0,0"
+                    VerticalAlignment="Center" Visibility="{Binding CountVisibility}"
+                    Background="{DynamicResource AccentFillColorDefaultBrush}">
+              <TextBlock Text="{Binding Count}" FontSize="11"
+                         Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+            </Border>
+            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          </DockPanel>
+          <!-- The description is the card now that the picture is gone, so it wraps in full rather
+               than being trimmed to a single line under a preview that already showed the shape. -->
+          <TextBlock Grid.Row="1" Text="{Binding Description}" Style="{StaticResource Caption}"
+                     TextWrapping="Wrap" Margin="0,3,0,0" />
+          <TextBlock Grid.Row="2" Text="{Binding Requires}" Visibility="{Binding RequiresVisibility}"
+                     Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+        </Grid>
       </Button>
     </DataTemplate>
   </UserControl.Resources>

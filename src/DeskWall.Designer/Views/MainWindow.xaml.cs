@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -47,7 +47,6 @@ public partial class MainWindow : Window
     private readonly LayoutStore _store;
     private readonly PreviewRenderer _renderer;
     private readonly DispatcherTimer _status = new() { Interval = TimeSpan.FromSeconds(5) };
-    private readonly DispatcherTimer _galleryRefresh = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly IReadOnlyList<WidgetTemplate> _catalog;
 
     private Settings _settings;
@@ -72,7 +71,6 @@ public partial class MainWindow : Window
 
         _status.Tick += (_, _) => RefreshStatus();
         _status.Start();
-        _galleryRefresh.Tick += (_, _) => { _galleryRefresh.Stop(); Gallery.Refresh(); };
     }
 
     public DesignerModel Model => _model;
@@ -95,7 +93,7 @@ public partial class MainWindow : Window
 
         Preview.Attach(_model, _renderer);
         Knobs.Attach(_model, _catalog);
-        Gallery.Load(_catalog, () => _live?.Tree() ?? ValueTree.Empty);
+        Gallery.Load(_catalog);
 
         RebuildLiveSources();
         RefreshChrome();
@@ -178,8 +176,6 @@ public partial class MainWindow : Window
     private void OnLiveUpdated() => Dispatcher.BeginInvoke(new Action(() =>
     {
         _renderer.Request(_model);
-        _galleryRefresh.Stop();
-        _galleryRefresh.Start();
     }));
 
     // ---- the four things that change a layout ------------------------------------------------------
@@ -413,7 +409,6 @@ public partial class MainWindow : Window
     {
         base.OnClosed(e);
         _status.Stop();
-        _galleryRefresh.Stop();
         _renderer.Dispose();
         _live?.Dispose();
         Application.Current?.Shutdown();
