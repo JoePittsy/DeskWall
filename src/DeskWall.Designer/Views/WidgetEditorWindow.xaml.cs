@@ -79,6 +79,7 @@ public partial class WidgetEditorWindow : Window
 
         NameBox.Text = _document.Name;
         DescriptionBox.Text = _document.Description;
+        ShowSize();
         SelectAnchor();
 
         RebuildLiveSources();
@@ -388,6 +389,14 @@ public partial class WidgetEditorWindow : Window
             MessageBoxResult.No => true,
             _ => false,
         };
+    }
+
+    /// <summary>Close without asking again, for a caller that has just asked
+    /// (<see cref="ConfirmDiscard"/>) and is about to open the editor on something else.</summary>
+    public void ForceClose()
+    {
+        _allowClose = true;
+        Close();
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)

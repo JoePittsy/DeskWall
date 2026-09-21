@@ -261,20 +261,20 @@ public partial class SourcesPanel : UserControl
         foreach (var field in fields) Form.Children.Add(BuildRow(def, field, values));
     }
 
+    /// <summary>Caption above the field, not beside it: this column is 296 px wide, and a label
+    /// and a Knob toggle either side of a url box leave about a hundred pixels of url.</summary>
     private FrameworkElement BuildRow(SourceDef def, SourceField field, Dictionary<string, string> values)
     {
-        var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
-        var label = new TextBlock
+        var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+        stack.Children.Add(new TextBlock
         {
             Text = field.Label,
-            Width = 96,
             FontSize = 12,
-            Margin = new Thickness(0, 4, 4, 0),
+            Margin = new Thickness(0, 0, 0, 3),
             Foreground = Brush("TextFillColorSecondaryBrush"),
-        };
-        DockPanel.SetDock(label, Dock.Left);
-        row.Children.Add(label);
+        });
 
+        var row = new DockPanel();
         if (BuildKnobToggle(def, field) is { } toggle)
         {
             DockPanel.SetDock(toggle, Dock.Right);
@@ -286,15 +286,18 @@ public partial class SourcesPanel : UserControl
             var combo = new ComboBox { ItemsSource = field.Choices, SelectedItem = values[field.Key] };
             combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s) Commit(def.Name, field.Key, s); };
             row.Children.Add(combo);
-            return row;
+        }
+        else
+        {
+            var box = new TextBox { Text = values[field.Key], ToolTip = values[field.Key] };
+            void Do() => Commit(def.Name, field.Key, box.Text.Trim());
+            box.LostFocus += (_, _) => Do();
+            box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Do(); Keyboard.ClearFocus(); } };
+            row.Children.Add(box);
         }
 
-        var box = new TextBox { Text = values[field.Key] };
-        void Do() => Commit(def.Name, field.Key, box.Text.Trim());
-        box.LostFocus += (_, _) => Do();
-        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Do(); Keyboard.ClearFocus(); } };
-        row.Children.Add(box);
-        return row;
+        stack.Children.Add(row);
+        return stack;
     }
 
     /// <summary>The same "Make adjustable" toggle a property row has (spec 3.4). Not offered on
@@ -309,8 +312,8 @@ public partial class SourcesPanel : UserControl
             Content = "Knob",
             FontSize = 11,
             Padding = new Thickness(6, 1, 6, 1),
-            Margin = new Thickness(6, 2, 0, 0),
-            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
             IsChecked = _document.IsSettingAdjustable(name, field.Key),
             ToolTip = "Let whoever places this widget change it",
         };

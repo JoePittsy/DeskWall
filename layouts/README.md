@@ -11,7 +11,9 @@ layout proportionally when the display signature has no layout of its own.
 | `column-system.json` | Clock, Leeds weather, Tailscale state, four hardware dials (CPU/GPU/RAM load, GPU temperature) and the drives row, all in the right-hand column. No Steam covers. See "column-system.json requirements" below. |
 
 `clock-disks.json` and `column-system.json` are generated from the shipped widget templates
-(`widgets/*.json`, `docs/layout-format.md` "Widgets") by a small test-side generator
+(`widgets/*.json`, `docs/layout-format.md` "Widgets"; the designer's widget editor writes the
+owner's own into `%LOCALAPPDATA%\DeskWall\widgets\`, which the gallery reads alongside them)
+by a small test-side generator
 (`tests/DeskWall.Designer.Tests/Widgets/StarterGenerator.cs`), not hand-placed; a test
 (`StarterGeneratorTests`) asserts the two stay equal so they cannot drift apart silently. They
 are otherwise ordinary layout files - open one directly with `deskwall tick --layout` like any

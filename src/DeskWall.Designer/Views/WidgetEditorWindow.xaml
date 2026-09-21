@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="clr-namespace:DeskWall.Designer.Views"
         Title="Widget editor"
-        Width="1320" Height="840" MinWidth="1040" MinHeight="640"
+        Width="1380" Height="840" MinWidth="1100" MinHeight="640"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
   <Grid>
@@ -65,17 +65,19 @@
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="296" />
         <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="330" />
+        <!-- Wide enough for the properties panel's X/Y/W/H/Z row on one line: wrapped, the Z box
+             lands under the X label and reads as a second row of something else. -->
+        <ColumnDefinition Width="390" />
       </Grid.ColumnDefinitions>
 
       <DockPanel Grid.Column="0" Margin="16,16,16,16">
         <TextBlock DockPanel.Dock="Top" Text="Parts" Style="{StaticResource SectionHeader}"
                    Margin="0,0,0,8" />
         <UniformGrid DockPanel.Dock="Top" Columns="2" Rows="2" Margin="0,0,0,20">
-          <Button Content="Text" Tag="Text" Click="Part_Click" Height="34" Margin="0,0,4,4" />
-          <Button Content="Image" Tag="Image" Click="Part_Click" Height="34" Margin="4,0,0,4" />
-          <Button Content="Bar" Tag="Bar" Click="Part_Click" Height="34" Margin="0,4,4,0" />
-          <Button Content="Dial" Tag="Dial" Click="Part_Click" Height="34" Margin="4,4,0,0" />
+          <Button Content="Text" Tag="Text" Click="Part_Click" Height="34" Margin="0,0,4,4" HorizontalAlignment="Stretch" />
+          <Button Content="Image" Tag="Image" Click="Part_Click" Height="34" Margin="4,0,0,4" HorizontalAlignment="Stretch" />
+          <Button Content="Bar" Tag="Bar" Click="Part_Click" Height="34" Margin="0,4,4,0" HorizontalAlignment="Stretch" />
+          <Button Content="Dial" Tag="Dial" Click="Part_Click" Height="34" Margin="4,4,0,0" HorizontalAlignment="Stretch" />
         </UniformGrid>
         <v:SourcesPanel x:Name="Sources" />
       </DockPanel>

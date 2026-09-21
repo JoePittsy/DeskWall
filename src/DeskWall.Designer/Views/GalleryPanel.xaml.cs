@@ -38,6 +38,18 @@ public partial class GalleryPanel : UserControl
     /// widget.</summary>
     public event Action<WidgetTemplate>? AddRequested;
 
+    /// <summary>Build one from scratch.</summary>
+    public event Action? NewRequested;
+
+    /// <summary>Open one of the owner's own templates in the widget editor.</summary>
+    public event Action<WidgetTemplate>? EditRequested;
+
+    /// <summary>Open a copy of this template, shipped or not, as a new unsaved widget.</summary>
+    public event Action<WidgetTemplate>? DuplicateRequested;
+
+    /// <summary>Delete one of the owner's own template files.</summary>
+    public event Action<WidgetTemplate>? DeleteRequested;
+
     /// <summary>Fill the gallery. Nothing here depends on what the sources have published, so unlike
     /// the preview cards this needs no refresh once the live values arrive.</summary>
     public void Load(IReadOnlyList<WidgetTemplate> templates)
@@ -58,6 +70,21 @@ public partial class GalleryPanel : UserControl
     {
         if (sender is not Button { Tag: string key }) return;
         if (_templates.FirstOrDefault(t => t.Key == key) is { } t) AddRequested?.Invoke(t);
+    }
+
+    private void New_Click(object sender, RoutedEventArgs e) => NewRequested?.Invoke();
+
+    private void Edit_Click(object sender, RoutedEventArgs e) => Raise(sender, EditRequested);
+
+    private void Duplicate_Click(object sender, RoutedEventArgs e) => Raise(sender, DuplicateRequested);
+
+    private void Delete_Click(object sender, RoutedEventArgs e) => Raise(sender, DeleteRequested);
+
+    /// <summary>A context-menu item's DataContext is the card it was opened on, which is the only
+    /// way back to the template from inside the item template.</summary>
+    private static void Raise(object sender, Action<WidgetTemplate>? handler)
+    {
+        if (sender is FrameworkElement { DataContext: CardView card }) handler?.Invoke(card.Template);
     }
 
     /// <summary>One card. A view model rather than a hand-built visual tree, because the count badge
@@ -82,6 +109,10 @@ public partial class GalleryPanel : UserControl
         }
 
         public Visibility CountVisibility => _count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        /// <summary>Edit and Delete are for the owner's own files only: a shipped template lives
+        /// beside the exe and is replaced by the next install.</summary>
+        public Visibility MineVisibility => WidgetCatalog.IsUserTemplate(Template) ? Visibility.Visible : Visibility.Collapsed;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
