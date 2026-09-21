@@ -1,6 +1,7 @@
 using System.IO;
 using DeskWall.Core;
 using DeskWall.Core.Display;
+using DeskWall.Core.Layout;
 
 namespace DeskWall.Designer.Model;
 
@@ -8,11 +9,46 @@ namespace DeskWall.Designer.Model;
 /// the short form a human can pick from.</summary>
 public sealed record DisplayChoice(string Key, string Label);
 
+/// <summary>What the window opens: the document, the canvas it is authored on, and the file it came
+/// from (null only when nothing was registered and this is a brand new layout).</summary>
+public sealed record OpenTarget(LayoutFile Layout, DisplaySignature Signature, string? Path);
+
 /// <summary>The shell's decisions that are not WPF: where a layout for a display gets written, what
 /// the display selector offers, what the toolbar says. Separated from MainWindow so it can be
 /// tested without a message pump.</summary>
 public static class ShellState
 {
+    /// <summary>What to open for the display in front of the owner, given what
+    /// <see cref="LayoutStore.Resolve"/> answered for it.
+    /// <para>
+    /// The daemon paints whatever Resolve returns, so the designer must open the same thing or it is
+    /// editing a layout nobody can see. Resolve also takes the <em>closest</em> match and scales it,
+    /// which is what happens over RDP: this session's signature is 1692x1031 or thereabouts while the
+    /// store's entries are keyed at 3440x1440. Opening the scaled copy would let the owner edit a
+    /// layout that exists nowhere on disk, and Apply would then write those shrunken rects back over
+    /// the authored file.
+    /// </para>
+    /// <para>
+    /// So: open the file Resolve pointed at, unscaled, in the coordinates it was authored in, and
+    /// edit on the canvas the matched store key names. A layout edited over Remote Desktop is then
+    /// identical to one edited at the console, and Apply writes the one file both signatures already
+    /// resolve to. Only an empty store - no entry for any display - gets a new layout, and that one
+    /// belongs to the display actually in front of the owner.
+    /// </para></summary>
+    /// <param name="load">reads the authored file; null when it cannot be read. A resolution's file
+    /// was readable a moment ago, so this only fires on a genuine race, and then the scaled copy is
+    /// opened with no path rather than being allowed to overwrite the authored one.</param>
+    public static OpenTarget OpenFrom(LayoutResolution? resolution, DisplaySignature display,
+        Func<string, LayoutFile?> load, string defaultBaseImage)
+    {
+        ArgumentNullException.ThrowIfNull(load);
+        if (resolution is null) return new OpenTarget(new LayoutFile { BaseImage = defaultBaseImage }, display, null);
+        if (!resolution.Scaled) return new OpenTarget(resolution.Layout, resolution.SourceSignature, resolution.SourcePath);
+        return load(resolution.SourcePath) is { } authored
+            ? new OpenTarget(authored, resolution.SourceSignature, resolution.SourcePath)
+            : new OpenTarget(resolution.Layout, display, null);
+    }
+
     /// <summary>Where a layout saved "for this display" goes: runtime/layouts/&lt;safe key&gt;.json.
     /// A display signature contains a device path, which is full of characters a file name cannot
     /// hold.</summary>

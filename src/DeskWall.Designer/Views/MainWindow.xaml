@@ -21,8 +21,10 @@
       <DockPanel LastChildFill="False">
         <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
           <TextBlock x:Name="LayoutNameText" FontSize="14" FontWeight="SemiBold"
+                     MaxWidth="560" TextTrimming="CharacterEllipsis"
                      Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
           <TextBlock x:Name="DisplayText" FontSize="12" Margin="0,1,0,0"
+                     MaxWidth="560" TextTrimming="CharacterEllipsis"
                      Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
         </StackPanel>
 

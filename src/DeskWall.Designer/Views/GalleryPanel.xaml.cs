@@ -25,7 +25,6 @@ public partial class GalleryPanel : UserControl
 {
     private readonly ObservableCollection<CardView> _cards = new();
     private IReadOnlyList<WidgetTemplate> _templates = Array.Empty<WidgetTemplate>();
-    private string _baseImage = "";
     private Func<RecordValue> _values = () => ValueTree.Empty;
 
     public GalleryPanel()
@@ -38,12 +37,10 @@ public partial class GalleryPanel : UserControl
     /// widget.</summary>
     public event Action<WidgetTemplate>? AddRequested;
 
-    /// <summary>Fill the gallery and start rendering its pictures. Safe to call again when the base
-    /// image changes: the cards are rebuilt against the new photo.</summary>
-    public void Load(IReadOnlyList<WidgetTemplate> templates, string baseImage, Func<RecordValue> values)
+    /// <summary>Fill the gallery and start rendering its pictures.</summary>
+    public void Load(IReadOnlyList<WidgetTemplate> templates, Func<RecordValue> values)
     {
         _templates = templates;
-        _baseImage = baseImage;
         _values = values;
         _cards.Clear();
         foreach (var t in templates) _cards.Add(new CardView(t));
@@ -73,7 +70,6 @@ public partial class GalleryPanel : UserControl
     private void RenderPictures()
     {
         var cards = _cards.ToList();
-        var baseImage = _baseImage;
         var values = _values;
         _ = Task.Run(() =>
         {
@@ -82,7 +78,7 @@ public partial class GalleryPanel : UserControl
                 BitmapSource? image = null;
                 try
                 {
-                    var rendered = CardRenderer.Render(card.Template, baseImage, values());
+                    var rendered = CardRenderer.Render(card.Template, values());
                     image = BitmapSource.Create(rendered.Width, rendered.Height, 96, 96,
                         PixelFormats.Pbgra32, null, rendered.Bgra, rendered.Width * 4);
                     image.Freeze();

@@ -79,35 +79,37 @@ public partial class MainWindow : Window
 
     // ---- opening ---------------------------------------------------------------------------------
 
-    /// <summary>Point the window at one layout for one display. No layout at all is not a dialog: an
-    /// empty one is made here and the gallery is the first thing seen, which is the whole first-run
-    /// story. A scaled resolution opens with no path, so Apply has to write this display's own file
-    /// rather than overwrite the layout it was borrowed from.</summary>
+    /// <summary>Point the window at the layout the daemon would paint on this display. What that is
+    /// (and why a scaled resolution still opens the authored file, on the authored canvas) is
+    /// <see cref="ShellState.OpenFrom"/>. No layout at all anywhere is not a dialog: an empty one is
+    /// made here and the gallery is the first thing seen, which is the whole first-run story.</summary>
     private void Open(DisplaySignature signature, LayoutResolution? resolution)
     {
         if (_model is not null) _model.Changed -= OnModelChanged;
 
-        var layout = resolution?.Layout ?? new LayoutFile { BaseImage = DefaultBaseImage };
-        var path = resolution is { Scaled: false } ? resolution.SourcePath : null;
-        _model = new DesignerModel(layout, signature, path);
+        var target = ShellState.OpenFrom(resolution, signature, LoadAuthored, DefaultBaseImage);
+        _model = new DesignerModel(target.Layout, target.Signature, target.Path);
         _model.Changed += OnModelChanged;
 
         ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
 
         Preview.Attach(_model, _renderer);
         Knobs.Attach(_model, _catalog);
-        Gallery.Load(_catalog, BaseImageForCards(), () => _live?.Tree() ?? ValueTree.Empty);
+        Gallery.Load(_catalog, () => _live?.Tree() ?? ValueTree.Empty);
 
         RebuildLiveSources();
         RefreshChrome();
-        Remember(s => { s.LastSignatureKey = signature.Key; s.LastLayoutPath = _model.Path; });
+        // The model's signature, not the monitor's: it is the one that resolves straight back to
+        // this file if the shell cannot enumerate monitors next time.
+        Remember(s => { s.LastSignatureKey = _model.Signature.Key; s.LastLayoutPath = _model.Path; });
     }
 
-    private string BaseImageForCards()
+    /// <summary>The authored file behind a resolution, or null if it has become unreadable between
+    /// the store reading it and now.</summary>
+    private static LayoutFile? LoadAuthored(string path)
     {
-        var image = _model.Layout.BaseImage;
-        if (image.Length > 0 && File.Exists(image)) return image;
-        return File.Exists(DefaultBaseImage) ? DefaultBaseImage : image;
+        try { return LayoutFile.Load(path); }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidOperationException) { return null; }
     }
 
     private void OnModelChanged()
@@ -128,17 +130,12 @@ public partial class MainWindow : Window
         RefreshStatus();
     }
 
-    /// <summary>What the top line calls the open layout. A layout saved for a display is named after
-    /// the display, and a display signature is a hundred characters of device path and GUID: printing
-    /// that as a title says nothing and fills the bar. The fact worth stating is which of the three
-    /// cases you are in, and the line below already says which display.</summary>
-    private string LayoutLabel()
-    {
-        if (_model.Path is null) return "New layout";
-        return string.Equals(_model.Path, ShellState.LayoutPathFor(_model.Signature), StringComparison.OrdinalIgnoreCase)
-            ? "Layout for this display"
-            : Path.GetFileNameWithoutExtension(_model.Path);
-    }
+    /// <summary>What the top line calls the open layout: the name of the file being edited, ellipsed
+    /// if it is long, with the full path on the tooltip. It said "Layout for this display" before,
+    /// which is true of every layout it will ever open and so says nothing; the file name is the one
+    /// fact that tells the owner whether the designer found the layout his desktop is showing.
+    /// Only a layout with no file yet has no name.</summary>
+    private string LayoutLabel() => _model.Path is null ? "New layout" : Path.GetFileName(_model.Path);
 
     private Dictionary<string, int> Counts()
     {
@@ -150,8 +147,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>The running sources: the layout's, plus one of each source every catalogue widget
-    /// wants. The extras are what makes a gallery card a real render rather than a photo with
-    /// nothing on it - the weather card cannot show a temperature unless something is fetching one -
+    /// wants. The extras are what makes a gallery card a real render rather than an empty field -
+    /// the weather card cannot show a temperature unless something is fetching one -
     /// and the layout's own definition always wins on a name clash, so adding the widget changes
     /// nothing. Rebuilt only when the set actually differs: doing it on every knob turn would
     /// restart the weather fetch on each keystroke.</summary>
@@ -219,8 +216,15 @@ public partial class MainWindow : Window
         SelectInstance(instanceId);
     }
 
-    private void MoveUnlocked(string instanceId, int dx, int dy)
-        => _model.Move(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList(), dx, dy);
+    /// <summary>A free move: a widget the arranger has been told to leave alone, or a loose component
+    /// from a layout written before widgets existed, which the arranger never owned in the first
+    /// place. Either way it is one undo entry.</summary>
+    private void MoveUnlocked(string id, int dx, int dy)
+    {
+        var ids = WidgetInstance.Components(_model.Layout, id).Select(c => c.Id).ToList();
+        if (ids.Count == 0 && _model.Find(id) is not null) ids.Add(id);
+        if (ids.Count > 0) _model.Move(ids, dx, dy);
+    }
 
     private void Arrange(string label) => _model.Edit(label, ArrangeIn);
 
