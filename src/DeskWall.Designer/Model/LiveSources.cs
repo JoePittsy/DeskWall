@@ -1,4 +1,5 @@
-﻿using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Events;
+using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 
@@ -54,6 +55,25 @@ public sealed class LiveSources : IDisposable
     }
 
     public RecordValue Tree() { lock (_registryLock) return _registry.Tree(); }
+
+    /// <summary>Publish the pushed providers the designer knows about, so the binding picker
+    /// offers them and the preview draws a component bound to one. Replaces the whole set: a
+    /// provider the user has just forgotten must stop being published.
+    /// <para>The designer does not own the pipe (the daemon does), so these come from the
+    /// remembered records on disk and from the panel's test events.</para></summary>
+    public void SetProviders(IEnumerable<ProviderRecord> records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        var now = _clock.Now;
+        lock (_registryLock)
+        {
+            var wanted = new HashSet<string>(records.Select(r => r.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (var gone in _registry.ProviderNames.Where(n => !wanted.Contains(n)).ToList())
+                _registry.RemoveProvider(gone);
+            foreach (var r in records) _registry.SetProvider(r.Name, r.ToValues(now));
+        }
+        if (!_disposed) Updated?.Invoke();
+    }
 
     public IReadOnlyList<SourceSnapshot> Snapshots
     {
