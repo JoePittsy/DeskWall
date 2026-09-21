@@ -139,4 +139,57 @@ public class ShellStateTests
 
         ShellState.CopyAssets(src);   // must not throw
     }
+    // ---- where the window opens ---------------------------------------------------------------
+
+    private static readonly Rect[] OneMonitor = [new Rect(0, 0, 3440, 1440)];
+
+    [Fact]
+    public void Placement_Restores_A_Rectangle_That_Still_Lands_On_A_Monitor()
+    {
+        var placement = ShellState.Placement(200, 150, 1440, 900, OneMonitor);
+
+        Assert.NotNull(placement);
+        Assert.Equal((200d, 150d, 1440d, 900d), placement!.Value);
+    }
+
+    [Fact]
+    public void Placement_Is_Null_When_The_Window_Would_Open_Off_Every_Monitor()
+    {
+        // The remembered position of a second monitor that is no longer attached - or of the
+        // ultrawide before Apollo streaming dropped the session to 1920x1200.
+        Assert.Null(ShellState.Placement(3600, 100, 1440, 900, OneMonitor));
+        Assert.Null(ShellState.Placement(100, -1200, 1440, 900, OneMonitor));
+    }
+
+    [Fact]
+    public void Placement_Keeps_A_Window_That_Only_Overlaps_An_Edge()
+    {
+        // Half off the right-hand edge is still draggable back, so it is not thrown away.
+        Assert.NotNull(ShellState.Placement(3000, 100, 1440, 900, OneMonitor));
+    }
+
+    [Fact]
+    public void Placement_Is_Null_When_Nothing_Was_Remembered()
+    {
+        Assert.Null(ShellState.Placement(null, null, null, null, OneMonitor));
+        Assert.Null(ShellState.Placement(200, null, 1440, 900, OneMonitor));
+    }
+
+    [Fact]
+    public void Placement_Is_Null_When_No_Monitor_Could_Be_Enumerated()
+    {
+        // A session still coming up: better the default, centred, than a position nobody can verify.
+        Assert.Null(ShellState.Placement(200, 150, 1440, 900, []));
+    }
+
+    [Fact]
+    public void Placement_Refuses_A_Degenerate_Rectangle()
+        => Assert.Null(ShellState.Placement(200, 150, 0, 900, OneMonitor));
+
+    [Fact]
+    public void The_Default_Window_Is_The_Size_The_Three_Panes_Need()
+    {
+        Assert.Equal(1440, ShellState.DefaultWidth);
+        Assert.Equal(900, ShellState.DefaultHeight);
+    }
 }

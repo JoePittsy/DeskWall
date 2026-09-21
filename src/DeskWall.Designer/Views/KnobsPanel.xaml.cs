@@ -185,19 +185,21 @@ public partial class KnobsPanel : UserControl
     /// back to SetKnob. The list therefore shows Display(...) and carries the raw value alongside.</summary>
     private ComboBox ChoiceControl(string instanceId, WidgetTemplate template, Knob knob, string current, IReadOnlyList<string> choices)
     {
-        var items = choices.Select(c => new Choice(c)).ToList();
-        var combo = new ComboBox { ItemsSource = items, DisplayMemberPath = "Label", HorizontalAlignment = HorizontalAlignment.Stretch };
-        combo.SelectedItem = items.FirstOrDefault(c => string.Equals(c.Value, current, StringComparison.OrdinalIgnoreCase))
-            ?? items.FirstOrDefault(c => string.Equals(c.Label, Display(current), StringComparison.OrdinalIgnoreCase))
-            ?? items.FirstOrDefault();
-        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is Choice c) Commit(instanceId, template, knob, c.Value); };
+        var combo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+        // Real ComboBoxItems with the label as their Content, rather than a wrapper object and a
+        // DisplayMemberPath: this way what a screen reader announces is what is on screen, instead
+        // of the composite the knob actually stores.
+        foreach (var choice in choices)
+            combo.Items.Add(new ComboBoxItem { Content = Display(choice), Tag = choice });
+        combo.SelectedItem =
+            combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => string.Equals((string?)i.Tag, current, StringComparison.OrdinalIgnoreCase))
+            ?? combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => string.Equals((string?)i.Content, Display(current), StringComparison.OrdinalIgnoreCase))
+            ?? combo.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (combo.SelectedItem is ComboBoxItem { Tag: string value }) Commit(instanceId, template, knob, value);
+        };
         return combo;
-    }
-
-    /// <summary>One entry of a Choice or Drive knob: what the owner reads, and what gets stored.</summary>
-    private sealed record Choice(string Value)
-    {
-        public string Label => Display(Value);
     }
 
     /// <summary>The part of a knob value a human is meant to see. Knob values may be composites of
