@@ -68,6 +68,19 @@ public static class LayoutResolver
                     PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal));
                 break;
 
+            case DialDef dl:
+                var dfrac = Math.Clamp(PropertyReader.Number(dl.Fraction, scope) ?? 0, 0, 1);
+                var dthr = PropertyReader.Number(dl.Threshold, scope) ?? 1;
+                var dfill = dfrac >= dthr
+                    ? PropertyReader.Color(dl.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
+                    : PropertyReader.Color(dl.Fill, scope) ?? Color.Parse("#EBFFFFFF");
+                result.Add(new ResolvedDial(id, rect, def.Z, dfrac,
+                    PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF"), dfill,
+                    (float)(PropertyReader.Number(dl.Thickness, scope) ?? 6),
+                    (float)(PropertyReader.Number(dl.StartAngle, scope) ?? 135),
+                    (float)(PropertyReader.Number(dl.Sweep, scope) ?? 270)));
+                break;
+
             case ShortcutDef s:
                 var target = PropertyReader.Text(s.Target, scope);
                 if (string.IsNullOrWhiteSpace(target)) break;   // nothing to launch: no icon

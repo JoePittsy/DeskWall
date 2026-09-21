@@ -6,6 +6,7 @@ namespace DeskWall.Core.Layout;
 [JsonDerivedType(typeof(TextDef), "text")]
 [JsonDerivedType(typeof(ImageDef), "image")]
 [JsonDerivedType(typeof(BarDef), "bar")]
+[JsonDerivedType(typeof(DialDef), "dial")]
 [JsonDerivedType(typeof(ShortcutDef), "shortcut")]
 [JsonDerivedType(typeof(RepeaterDef), "repeater")]
 public abstract class ComponentDef
@@ -44,6 +45,22 @@ public sealed class BarDef : ComponentDef
     public PropertyValue Threshold { get; set; } = PropertyValue.Literal(1);
     public PropertyValue ThresholdFill { get; set; } = PropertyValue.Literal("#D13438");
     public PropertyValue Direction { get; set; } = PropertyValue.Literal("horizontal");
+}
+
+/// <summary>A thin arc showing one fraction. Same value semantics as <see cref="BarDef"/>; the
+/// geometry is an arc centred in Rect instead of a filled box.</summary>
+public sealed class DialDef : ComponentDef
+{
+    public required PropertyValue Fraction { get; set; }
+    public PropertyValue Track { get; set; } = PropertyValue.Literal("#46FFFFFF");
+    public PropertyValue Fill { get; set; } = PropertyValue.Literal("#EBFFFFFF");
+    public PropertyValue Threshold { get; set; } = PropertyValue.Literal(1);
+    public PropertyValue ThresholdFill { get; set; } = PropertyValue.Literal("#D13438");
+    public PropertyValue Thickness { get; set; } = PropertyValue.Literal(6);
+    /// <summary>Degrees clockwise from 12 o'clock where the sweep begins.</summary>
+    public PropertyValue StartAngle { get; set; } = PropertyValue.Literal(135);
+    /// <summary>Degrees of arc for fraction 1.</summary>
+    public PropertyValue Sweep { get; set; } = PropertyValue.Literal(270);
 }
 
 public sealed class ShortcutDef : ComponentDef

@@ -101,6 +101,47 @@ public class LayoutResolverTests
         var ex = Assert.Throws<InvalidOperationException>(() => LayoutResolver.Resolve(layout, ValueTree.Empty));
         Assert.Contains("a", ex.Message);
     }
+
+    [Fact]
+    public void Dial_Resolves_Defaults_And_Clamps()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [10, 10, 80, 80], "fraction": 1.7 } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(1.0, d.Fraction);
+        Assert.Equal(Color.Parse("#46FFFFFF"), d.Track);
+        // A clamped 1.7 is exactly at the default threshold of 1, so the fill is the threshold
+        // colour, as it is for a full bar. The default fill is covered by the fraction-0 test below.
+        Assert.Equal(Color.Parse("#D13438"), d.Fill);
+        Assert.Equal(6f, d.Thickness);
+        Assert.Equal(135f, d.StartAngle);
+        Assert.Equal(270f, d.Sweep);
+    }
+
+    [Fact]
+    public void Dial_At_Or_Above_Threshold_Uses_ThresholdFill()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": 0.9, "threshold": 0.9, "thresholdFill": "#FF112233" } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(Color.Parse("#FF112233"), d.Fill);
+    }
+
+    [Fact]
+    public void Dial_Bound_Fraction_Missing_Falls_Back_To_Zero()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": { "bind": "hw.cpu" } } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(0.0, d.Fraction);
+        Assert.Equal(Color.Parse("#EBFFFFFF"), d.Fill);   // below the default threshold: the default fill
+    }
 }
 
 /// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was
