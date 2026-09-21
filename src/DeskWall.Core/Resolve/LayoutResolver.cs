@@ -51,7 +51,7 @@ public static class LayoutResolver
                 break;
 
             case ImageDef i:
-                result.Add(new ResolvedImage(id, rect, def.Z, PropertyReader.Text(i.Source, scope) ?? "",
+                result.Add(new ResolvedImage(id, rect, def.Z, ExpandRuntime(PropertyReader.Text(i.Source, scope) ?? ""),
                     PropertyReader.Enum<Fit>(i.Fit, scope) ?? Fit.Cover,
                     (float)(PropertyReader.Number(i.Radius, scope) ?? 0),
                     (float)(PropertyReader.Number(i.Opacity, scope) ?? 1)));
@@ -66,6 +66,19 @@ public static class LayoutResolver
                 result.Add(new ResolvedBar(id, rect, def.Z, frac,
                     PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF"), fill,
                     PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal));
+                break;
+
+            case DialDef dl:
+                var dfrac = Math.Clamp(PropertyReader.Number(dl.Fraction, scope) ?? 0, 0, 1);
+                var dthr = PropertyReader.Number(dl.Threshold, scope) ?? 1;
+                var dfill = dfrac >= dthr
+                    ? PropertyReader.Color(dl.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
+                    : PropertyReader.Color(dl.Fill, scope) ?? Color.Parse("#EBFFFFFF");
+                result.Add(new ResolvedDial(id, rect, def.Z, dfrac,
+                    PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF"), dfill,
+                    (float)(PropertyReader.Number(dl.Thickness, scope) ?? 6),
+                    (float)(PropertyReader.Number(dl.StartAngle, scope) ?? 135),
+                    (float)(PropertyReader.Number(dl.Sweep, scope) ?? 270)));
                 break;
 
             case ShortcutDef s:
@@ -98,6 +111,17 @@ public static class LayoutResolver
         }
     }
 
+    /// <summary>"runtime:assets/weather/61.png" -> %LOCALAPPDATA%\DeskWall\assets\weather\61.png. Lets a
+    /// committed starter name a per-user file without a per-user absolute path. Braces are not used
+    /// for the token because a composite format string would swallow them.</summary>
+    private static string ExpandRuntime(string source)
+    {
+        const string prefix = "runtime:";
+        if (!source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return source;
+        var rest = source[prefix.Length..].Replace('/', '\\').TrimStart('\\');
+        return Paths.InRuntime(rest.Split('\\', StringSplitOptions.RemoveEmptyEntries));
+    }
+
     private static bool IsAuto(PropertyValue p) => !p.IsBound && string.Equals(p.LiteralText, "auto", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -125,7 +149,10 @@ public static class LayoutResolver
     {
         var img = r.Template.OfType<ImageDef>().FirstOrDefault();
         if (img is null) return 0;
-        var path = PropertyReader.Text(img.Source, item);
+        // Expand before the remote check and File.Exists, exactly as the ImageDef case does: a
+        // "runtime:" source measured as written never exists, and every cover silently fell back
+        // to the 2:3 placeholder.
+        var path = PropertyReader.Text(img.Source, item) is { } src ? ExpandRuntime(src) : null;
         if (path is not null && RemoteImageCache.IsRemote(path)) path = remote?.Invoke(path);
         if (path is null || !File.Exists(path))
             return vertical ? (int)Math.Round(img.Rect.W * 1.5) : (int)Math.Round(img.Rect.H / 1.5);   // 2:3 placeholder, as the POC did

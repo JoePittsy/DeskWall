@@ -101,6 +101,96 @@ public class LayoutResolverTests
         var ex = Assert.Throws<InvalidOperationException>(() => LayoutResolver.Resolve(layout, ValueTree.Empty));
         Assert.Contains("a", ex.Message);
     }
+
+    [Fact]
+    public void Dial_Resolves_Defaults_And_Clamps()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [10, 10, 80, 80], "fraction": 1.7 } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(1.0, d.Fraction);
+        Assert.Equal(Color.Parse("#46FFFFFF"), d.Track);
+        // A clamped 1.7 is exactly at the default threshold of 1, so the fill is the threshold
+        // colour, as it is for a full bar. The default fill is covered by the fraction-0 test below.
+        Assert.Equal(Color.Parse("#D13438"), d.Fill);
+        Assert.Equal(6f, d.Thickness);
+        Assert.Equal(135f, d.StartAngle);
+        Assert.Equal(270f, d.Sweep);
+    }
+
+    [Fact]
+    public void Dial_At_Or_Above_Threshold_Uses_ThresholdFill()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": 0.9, "threshold": 0.9, "thresholdFill": "#FF112233" } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(Color.Parse("#FF112233"), d.Fill);
+    }
+
+    [Fact]
+    public void Dial_Bound_Fraction_Missing_Falls_Back_To_Zero()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": { "bind": "hw.cpu" } } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(0.0, d.Fraction);
+        Assert.Equal(Color.Parse("#EBFFFFFF"), d.Fill);   // below the default threshold: the default fill
+    }
+
+    [Fact]
+    public void Image_Source_Runtime_Prefix_Resolves_Into_The_Runtime_Dir()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "image", "id": "i", "rect": [0, 0, 10, 10],
+                                "source": { "bind": "w.code | \"runtime:assets/weather/{0}.png\"" } } ] }
+            """);
+        var tree = ValueTree.Of(("w", new RecordValue(new Dictionary<string, Value> { ["code"] = new NumberValue(61) })));
+        var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, tree)));
+        Assert.Equal(Paths.InRuntime("assets", "weather", "61.png"), img.Path);
+    }
+
+    [Fact]
+    public void Image_Source_Without_Prefix_Is_Unchanged()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "image", "id": "i", "rect": [0, 0, 10, 10], "source": "C:\\pics\\a.png" } ] }
+            """);
+        var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(@"C:\pics\a.png", img.Path);
+    }
+
+    /// <summary>Fix round 1: the repeater's "auto" cell height measures the first image child
+    /// through its own read of <c>img.Source</c>, which did not expand "runtime:". The file was
+    /// therefore never found and every runtime-dir cover fell back to the 2:3 placeholder aspect.</summary>
+    [Fact]
+    public void Auto_Cell_Height_Measures_A_Runtime_Image_Source()
+    {
+        var path = Paths.InRuntime("test-assets", "wide.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using (var s = Surface.Create(40, 10)) s.SavePng(path);   // 4:1, nothing like the 2:3 placeholder
+
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [
+                { "type": "repeater", "id": "r", "rect": [0, 0, 200, 400], "items": { "bind": "d.items" },
+                  "axis": "vertical", "cellHeight": "auto",
+                  "template": [ { "type": "image", "id": "i", "rect": [0, 0, 80, 20], "source": "runtime:test-assets/wide.png" } ] } ] }
+            """);
+        var item = new RecordValue(new Dictionary<string, Value> { ["name"] = new TextValue("a") });
+        var tree = ValueTree.Of(("d", new RecordValue(new Dictionary<string, Value> { ["items"] = new ListValue([item], "name") })));
+
+        var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, tree)));
+        Assert.Equal(path, img.Path);
+        Assert.Equal(20, img.Rect.H);   // 80 * 10 / 40; the 2:3 placeholder would have said 120
+    }
 }
 
 /// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was

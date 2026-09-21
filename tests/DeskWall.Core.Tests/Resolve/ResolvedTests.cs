@@ -32,3 +32,26 @@ public class ResolvedImageContentKeyTests
         Assert.Equal(16, ContentKey.Of(img).Length);
     }
 }
+
+/// <summary>A dial's key must be as insensitive to sub-pixel wobble as a bar's: the hardware
+/// source's 5-minute average moves in the fourth decimal between reads and would otherwise
+/// repaint the arc every tick.</summary>
+public class ResolvedDialTests
+{
+    [Fact]
+    public void Dial_Key_Quantises_Fraction_To_Three_Decimals()
+    {
+        var a = new ResolvedDial("d", new Rect(0, 0, 80, 80), 0, 0.5001, Color.Parse("#46FFFFFF"), Color.Parse("#EBFFFFFF"), 6, 135, 270);
+        var b = a with { Fraction = 0.5004 };
+        var c = a with { Fraction = 0.501 };
+        Assert.Equal(string.Join("|", a.KeyParts()), string.Join("|", b.KeyParts()));
+        Assert.NotEqual(string.Join("|", a.KeyParts()), string.Join("|", c.KeyParts()));
+    }
+
+    [Fact]
+    public void Dial_Paint_Bounds_Is_Its_Rect()
+    {
+        var d = new ResolvedDial("d", new Rect(5, 6, 80, 80), 0, 0.5, Color.Parse("#46FFFFFF"), Color.Parse("#EBFFFFFF"), 6, 135, 270);
+        Assert.Equal(d.Rect, d.PaintBounds);
+    }
+}

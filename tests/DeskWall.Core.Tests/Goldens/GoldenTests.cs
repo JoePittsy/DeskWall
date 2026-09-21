@@ -8,7 +8,7 @@ using Xunit;
 namespace DeskWall.Core.Tests.Goldens;
 
 /// <summary>
-/// Renders four fixed layouts through the real Direct2D path (Surface, FrameRenderer,
+/// Renders five fixed layouts through the real Direct2D path (Surface, FrameRenderer,
 /// LayoutResolver - no shortcut through a mock) and compares the result, pixel for pixel, against
 /// a checked-in PNG under Goldens/. This is the only test coverage that would catch a change to
 /// how text, bars, images or repeaters actually paint; everything else in Render/ and Resolve/
@@ -23,7 +23,7 @@ namespace DeskWall.Core.Tests.Goldens;
 /// <para>
 /// To regenerate the goldens after a deliberate renderer change, run once with the environment
 /// variable GOLDENS_UPDATE=1 set (for example: <c>GOLDENS_UPDATE=1 dotnet test --filter
-/// FullyQualifiedName~GoldenTests</c>). That writes the four PNGs under the test output's Goldens
+/// FullyQualifiedName~GoldenTests</c>). That writes the PNGs under the test output's Goldens
 /// folder instead of comparing; copy them back over tests/DeskWall.Core.Tests/Goldens/*.png in the
 /// source tree and commit with a message that says which renderer commit they were made from.
 /// Never set GOLDENS_UPDATE in CI - a run with it set always "passes" without checking anything.
@@ -108,6 +108,14 @@ public class GoldenTests
         // Zero, half, and a fraction at/above the threshold (switches fill colour), plus one
         // vertical bar. All literal fractions: no source in the loop.
         RunGolden("bar-states", ValueTree.Empty);
+    }
+
+    [Fact]
+    public void Dial_States()
+    {
+        // Zero, half, full, over threshold (fill colour switches), 12 px thick, a full 360 sweep from
+        // 12 o'clock, a 40 px dial, and a non-square rect (arc centred, radius from the short side).
+        RunGolden("dial-states", ValueTree.Empty);
     }
 
     [Fact]

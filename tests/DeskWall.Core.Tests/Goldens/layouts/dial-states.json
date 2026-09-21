@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "baseImage": "unused.jpg",
+  "sources": [],
+  "components": [
+    { "type": "dial", "id": "zero",      "rect": [40, 40, 120, 120],  "fraction": 0 },
+    { "type": "dial", "id": "half",      "rect": [200, 40, 120, 120], "fraction": 0.5 },
+    { "type": "dial", "id": "full",      "rect": [360, 40, 120, 120], "fraction": 1 },
+    { "type": "dial", "id": "threshold", "rect": [520, 40, 120, 120], "fraction": 0.9, "threshold": 0.85 },
+    { "type": "dial", "id": "thick",     "rect": [680, 40, 120, 120], "fraction": 0.7, "thickness": 12 },
+    { "type": "dial", "id": "topsweep",  "rect": [40, 200, 120, 120], "fraction": 0.5, "startAngle": 0, "sweep": 360 },
+    { "type": "dial", "id": "small",     "rect": [200, 200, 40, 40],  "fraction": 0.75, "thickness": 4 },
+    { "type": "dial", "id": "wide",      "rect": [360, 200, 200, 100], "fraction": 0.6 }
+  ]
+}

@@ -63,7 +63,7 @@ Example:
 
 | Property | Default | Notes |
 |---|---|---|
-| `source` | required | Local path or `http(s)` URL. A remote URL is resolved through the remote image cache before drawing (`docs/sources.md`); a cache miss draws the same fallback plate as a missing local file. |
+| `source` | required | Local path or `http(s)` URL. A remote URL is resolved through the remote image cache before drawing (`docs/sources.md`); a cache miss draws the same fallback plate as a missing local file. A local path may start with `runtime:` to be resolved under the runtime dir (`runtime:assets/weather/{0}.png`). |
 | `fit` | `"cover"` | `cover` \| `contain` \| `stretch`. |
 | `radius` | `0` | Corner radius in pixels. |
 | `opacity` | `1` | 0..1. |
@@ -81,6 +81,26 @@ Example:
 
 Threshold colouring is a component property, not something a binding expression computes; the
 spec deliberately keeps bindings free of conditionals (spec 4.2).
+
+### `dial`
+
+A thin arc. Same value semantics as `bar` (clamped fraction, threshold colouring), drawn as a
+stroked arc centred in `rect` with radius `min(w, h) / 2 - thickness / 2` and flat caps.
+
+| Property | Default | Notes |
+|---|---|---|
+| `fraction` | required | 0..1, clamped. |
+| `track` | `"#46FFFFFF"` | Full-sweep arc under the fill. |
+| `fill` | `"#EBFFFFFF"` | The value arc, below `threshold`. |
+| `threshold` | `1` | At or above this fraction, `thresholdFill` is used instead of `fill`. A fraction of 1 is therefore at the default threshold, exactly as for `bar`. |
+| `thresholdFill` | `"#D13438"` | |
+| `thickness` | `6` | Stroke width in pixels. Scales with the smaller of the two display factors, not the geometric mean, because the radius comes from the short side of the rect. |
+| `startAngle` | `135` | Degrees **clockwise from 12 o'clock** where the sweep begins. |
+| `sweep` | `270` | Degrees of arc for fraction 1. 360 or more draws a closed ring (as two arcs; one D2D arc segment cannot describe a full turn). |
+
+Angles are always clockwise from 12 o'clock, so the default `135` / `270` is the familiar gauge
+open at the bottom. Nothing but the arc is drawn: a number inside the dial is an ordinary `text`
+component the layout places over it.
 
 ### `shortcut`
 
@@ -213,6 +233,9 @@ it (`LayoutScaler.Scale`) rather than leaving the canvas blank:
 - Every component `rect` scales by `(sx, sy) = (toWidth / fromWidth, toHeight / fromHeight)`.
 - `TextDef.Size`, `TextDef.EffectRadius` and `ImageDef.Radius` scale by the geometric mean
   `sqrt(sx * sy)`, so a font or corner radius does not stretch non-uniformly.
+- `DialDef.Thickness` scales by `min(sx, sy)` instead: the arc's radius is taken from the short
+  side of its rect, and the geometric mean is 1 for a display that halves in width and doubles in
+  height, which would leave the stroke wider than the ring it is drawn on.
 - A repeater's `gap` scales by the same geometric mean; its `cellHeight` scales by `sy` (vertical
   axis) or `sx` (horizontal axis) unless it is `"auto"`, which is resolution-independent by
   construction and is left alone.

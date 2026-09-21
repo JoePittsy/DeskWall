@@ -167,6 +167,30 @@ public class SurfaceTests
         Assert.Equal(((byte)255, (byte)255, (byte)0, (byte)0), a.GetPixel(5, 5));
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), a.GetPixel(15, 5));
     }
+
+    /// <summary>DrawArc's guards: a stroke wider than the short side and a zero-sized rect both
+    /// give a radius of zero or less. They must return before the geometry is built, not hand D2D
+    /// a negative radius and not throw. A sane arc on the same surface afterwards proves the
+    /// guards are not simply swallowing every call.</summary>
+    [Fact]
+    public void DrawArc_Degenerate_Geometry_Draws_Nothing_And_Does_Not_Throw()
+    {
+        var bg = new Color(255, 10, 20, 30);
+        using var s = Surface.Create(40, 40);
+        using var reference = Surface.Create(40, 40);
+        s.Clear(bg);
+        reference.Clear(bg);
+
+        s.DrawArc(new Rect(0, 0, 40, 40), 135, 270, 60, Color.White);   // thickness > the short side
+        s.DrawArc(new Rect(20, 20, 0, 0), 0, 360, 4, Color.White);      // no rect at all
+
+        Assert.Equal(((byte)255, (byte)10, (byte)20, (byte)30), s.GetPixel(20, 20));
+        Assert.Equal(0, DeskWall.Core.Tests.Goldens.Compare.Diff(s, reference).DifferentPixels);
+
+        s.DrawArc(new Rect(0, 0, 40, 40), 0, 360, 4, Color.White);      // radius 18, stroke over y 0..4
+        Assert.True(s.GetPixel(20, 2).R > 200, "a well-formed arc must still paint");
+        Assert.Equal(((byte)255, (byte)10, (byte)20, (byte)30), s.GetPixel(20, 20));   // and only on the ring
+    }
 }
 
 public class FrameRendererTests
