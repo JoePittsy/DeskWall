@@ -20,6 +20,11 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     private MemoryReading? _lastMem;
     private Timer? _timer;
     private readonly bool _autoStart;
+    private bool _disposed;
+
+    /// <summary>Readings lost to a reader that threw. The readers are written not to throw, but this
+    /// counts the times one did anyway; Core sources have no logger to report it to.</summary>
+    public int ReaderFaults { get; private set; }
 
     public HardwareSource(string name, TimeSpan every, TimeSpan sample, TimeSpan window, IHardwareReader reader, bool autoStart = true)
         : base(name, every)
@@ -44,35 +49,45 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     private static double Seconds(Dictionary<string, string> s, string key, double fallback)
         => s.TryGetValue(key, out var v) && double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0 ? d : fallback;
 
-    /// <summary>Take one reading of every metric. Called by the timer; public so tests drive it.</summary>
+    /// <summary>Take one reading of every metric. Called by the timer; public so tests drive it.
+    /// <para>Nothing escapes: this runs on a <see cref="Timer"/> callback, and an exception out of a
+    /// timer callback takes the whole process down. The readers are written not to throw, but a
+    /// driver reset under NVML, or a reader added later, must cost one sample and nothing more.</para></summary>
     public void SampleOnce()
     {
         lock (_lock)
         {
-            var cpu = _reader.ReadCpu();
-            if (cpu is { } c)
+            try
             {
-                if (_lastCpu is { } prev && CpuTimes.Load(prev, c) is { } load) _cpu.Add(load);
-                _lastCpu = c;
+                var cpu = _reader.ReadCpu();
+                if (cpu is { } c)
+                {
+                    if (_lastCpu is { } prev && CpuTimes.Load(prev, c) is { } load) _cpu.Add(load);
+                    _lastCpu = c;
+                }
+                var mem = _reader.ReadMemory();
+                if (mem is { } m && m.TotalBytes > 0)
+                {
+                    _ram.Add((double)m.UsedBytes / m.TotalBytes);
+                    _lastMem = m;
+                }
+                if (_reader.HasGpu && _reader.ReadGpu() is { } g)
+                {
+                    _gpu.Add(Math.Clamp(g.Utilization, 0, 1));
+                    _gpuMem.Add(Math.Clamp(g.MemoryFraction, 0, 1));
+                    _gpuTemp.Add(g.TemperatureC);
+                }
             }
-            var mem = _reader.ReadMemory();
-            if (mem is { } m && m.TotalBytes > 0)
+            catch (Exception)
             {
-                _ram.Add((double)m.UsedBytes / m.TotalBytes);
-                _lastMem = m;
-            }
-            if (_reader.HasGpu && _reader.ReadGpu() is { } g)
-            {
-                _gpu.Add(Math.Clamp(g.Utilization, 0, 1));
-                _gpuMem.Add(Math.Clamp(g.MemoryFraction, 0, 1));
-                _gpuTemp.Add(g.TemperatureC);
+                ReaderFaults++;
             }
         }
     }
 
     public override ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
-        if (_autoStart && _timer is null) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
+        if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
         lock (_lock)
         {
             var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase)
@@ -110,5 +125,15 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
         }
     }
 
-    public void Dispose() { _timer?.Dispose(); _timer = null; }
+    /// <summary>Stops the sampler and lets go of whatever the reader holds (NVML, on this machine).
+    /// Idempotent: the host may dispose a source it has already replaced, and shutting NVML down
+    /// twice or freeing its module twice is not safe.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _timer?.Dispose();
+        _timer = null;
+        (_reader as IDisposable)?.Dispose();
+    }
 }

@@ -116,6 +116,8 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         }
 
         log.Info("daemon stop");
+        SourceFactory.DisposeAll(_active?.Sources);   // stop the samplers before the process goes
+        _active = null;
         _win = null;
         _watcher = null;
         return 0;
@@ -140,7 +142,15 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
                 return;
             }
             if (_active is null || _active.SignatureKey != monitor.Signature.Key || reactivate)
+            {
+                // Every layout edit and every display change rebuilds the whole set of sources, and a
+                // source may hold a timer and a native library (`hardware` holds both), so the set
+                // being replaced has to be let go of. Disposed only once Activate has returned: if it
+                // throws, _active still points at the old set and that set must still be alive.
+                var replaced = _active;
                 _active = Activate(monitor);
+                if (!ReferenceEquals(replaced, _active)) SourceFactory.DisposeAll(replaced?.Sources);
+            }
             if (_active is null)
             {
                 // Spec 3.2: no layout means no frame. Whatever is on screen stays there.

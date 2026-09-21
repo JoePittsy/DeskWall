@@ -15,6 +15,7 @@ public sealed unsafe class NvmlGpuReader : IDisposable
     private readonly delegate* unmanaged[Cdecl]<IntPtr, Memory*, int> _getMem;
     private readonly delegate* unmanaged[Cdecl]<IntPtr, int, uint*, int> _getTemp;
     private readonly delegate* unmanaged[Cdecl]<int> _shutdown;
+    private bool _disposed;
 
     [StructLayout(LayoutKind.Sequential)] private struct Utilization { public uint Gpu; public uint Memory; }
     [StructLayout(LayoutKind.Sequential)] private struct Memory { public ulong Total; public ulong Free; public ulong Used; }
@@ -60,6 +61,7 @@ public sealed unsafe class NvmlGpuReader : IDisposable
 
     public GpuReading? Read()
     {
+        if (_disposed) return null;
         Utilization u; Memory m; uint t;
         if (_getUtil(_device, &u) != 0) return null;
         if (_getMem(_device, &m) != 0) return null;
@@ -68,5 +70,13 @@ public sealed unsafe class NvmlGpuReader : IDisposable
         return new GpuReading(u.Gpu / 100.0, memFrac, t);
     }
 
-    public void Dispose() { _shutdown(); NativeLibrary.Free(_lib); }
+    /// <summary>Idempotent, and it has to be: nvmlShutdown balances nvmlInit_v2 one for one, and
+    /// freeing the module twice drops a reference this instance never took.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        try { _shutdown(); } catch (Exception) { }
+        NativeLibrary.Free(_lib);
+    }
 }

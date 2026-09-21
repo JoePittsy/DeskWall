@@ -26,7 +26,8 @@ public sealed class LiveSources : IDisposable
     private int _ticking;
     private bool _disposed;
 
-    public LiveSources(IReadOnlyList<SourceDef> defs, Secrets secrets, IClock clock)
+    /// <param name="create">Test seam: how a def becomes a source. Null means the real factory.</param>
+    public LiveSources(IReadOnlyList<SourceDef> defs, Secrets secrets, IClock clock, Func<SourceDef, ISource>? create = null)
     {
         _clock = clock;
         _entries = new List<Entry>(defs.Count);
@@ -35,7 +36,7 @@ public sealed class LiveSources : IDisposable
             var entry = new Entry { Def = def };
             try
             {
-                entry.Source = SourceFactory.Create(def, clock, secrets);
+                entry.Source = create is null ? SourceFactory.Create(def, clock, secrets) : create(def);
                 if (entry.Source is AsyncSource async)
                 {
                     entry.OnCompleted = _ => OnAsyncCompleted(entry);
@@ -127,5 +128,8 @@ public sealed class LiveSources : IDisposable
         _timer.Dispose();
         foreach (var e in _entries)
             if (e.Source is AsyncSource a && e.OnCompleted is { } handler) a.Completed -= handler;
+        // The designer builds a new LiveSources on every edit to the Sources list, so a source that
+        // holds a timer or a native library (`hardware` holds both) would leak one per edit.
+        SourceFactory.DisposeAll(_entries.Select(e => e.Source).OfType<ISource>());
     }
 }

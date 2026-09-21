@@ -123,4 +123,65 @@ public class HardwareSourceTests
         s.SampleOnce(); s.SampleOnce();
         Assert.Equal(2, N(await s.RefreshAsync(default), "samples"));
     }
+
+    private sealed class ThrowingReader : IHardwareReader
+    {
+        public int Calls;
+        public bool HasGpu => false;
+        public CpuTimes? ReadCpu() => null;
+        public GpuReading? ReadGpu() => null;
+        public MemoryReading? ReadMemory()
+            => ++Calls == 1 ? throw new InvalidOperationException("driver reset") : new MemoryReading(1, 4);
+    }
+
+    private sealed class DisposableReader : IHardwareReader, IDisposable
+    {
+        public int Disposals;
+        public bool HasGpu => false;
+        public CpuTimes? ReadCpu() => null;
+        public MemoryReading? ReadMemory() => null;
+        public GpuReading? ReadGpu() => null;
+        public void Dispose() => Disposals++;
+    }
+
+    /// <summary>The sampler runs on a System.Threading.Timer, and an exception out of a timer
+    /// callback kills the process. A reader that throws must cost one sample, not the daemon.</summary>
+    [Fact]
+    public async Task Reader_That_Throws_Does_Not_Escape_And_The_Next_Sample_Still_Counts()
+    {
+        var r = new ThrowingReader();
+        var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: false);
+        s.SampleOnce();                              // throws inside; must not propagate
+        s.SampleOnce();
+        var rec = await s.RefreshAsync(default);
+        Assert.Equal(1, N(rec, "samples"));
+        Assert.Equal(0.25, N(rec, "ram"), 3);
+        Assert.Equal(1, s.ReaderFaults);
+    }
+
+    [Fact]
+    public async Task Timer_Samples_On_Its_Own_Once_RefreshAsync_Has_Started_It()
+    {
+        var r = new FakeReader();
+        for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
+        using var s = Make2(r, TimeSpan.FromMilliseconds(50), autoStart: true);
+        await s.RefreshAsync(default);               // starts the timer
+        await Task.Delay(300);
+        var rec = await s.RefreshAsync(default);
+        Assert.True(N(rec, "samples") >= 2, $"samples was {N(rec, "samples")}");
+    }
+
+    [Fact]
+    public void Dispose_Disposes_A_Reader_That_Holds_Resources()
+    {
+        var r = new DisposableReader();
+        var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: false);
+        s.Dispose();
+        s.Dispose();                                 // idempotent: NVML must not be shut down twice
+        Assert.Equal(1, r.Disposals);
+        Make(new FakeReader()).Dispose();            // a reader that holds nothing is simply left alone
+    }
+
+    private static HardwareSource Make2(IHardwareReader r, TimeSpan sample, bool autoStart)
+        => new("hw", TimeSpan.FromSeconds(60), sample, TimeSpan.FromSeconds(300), r, autoStart);
 }
