@@ -45,4 +45,19 @@ public class LayoutScalerTests
         Assert.True(((TextDef)s.Components[0]).Size.IsBound);
         Assert.Equal("auto", ((RepeaterDef)s.Components[1]).CellHeight.LiteralText);
     }
+
+    [Fact]
+    public void Dial_Thickness_Scales_With_The_Smaller_Factor()
+    {
+        // A dial's radius comes from the short side of its rect (min(w, h) / 2 - thickness / 2), so
+        // the stroke tracks the smaller of the two factors, not the geometric mean a text size uses:
+        // at sx 0.5, sy 2 the mean is 1 and a 10 px stroke would swallow a rect that halved in width.
+        var layout = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 100, 100], "fraction": 0.5, "thickness": 10 } ] }
+        """);
+        var scaled = LayoutScaler.Scale(layout, new DisplaySignature("A", 1000, 1000, 100), new DisplaySignature("B", 500, 2000, 100));
+        var d = Assert.IsType<DialDef>(Assert.Single(scaled.Components));
+        Assert.Equal("5", d.Thickness.LiteralText);
+    }
 }

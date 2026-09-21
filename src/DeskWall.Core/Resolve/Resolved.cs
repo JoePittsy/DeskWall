@@ -52,6 +52,15 @@ public sealed record ResolvedBar(string Id, Rect Rect, int Z, double Fraction, C
     public override IEnumerable<string> KeyParts() => [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString()];
 }
 
+/// <summary>A thin arc: Track over the full Sweep, Fill over Sweep * Fraction, both Thickness px
+/// wide and centred in Rect. Nothing else is drawn; a number inside is a text component.</summary>
+public sealed record ResolvedDial(string Id, Rect Rect, int Z, double Fraction, Color Track, Color Fill, float Thickness, float StartAngle, float Sweep) : Resolved(Id, Rect, Z)
+{
+    // Same quantisation as ResolvedBar: a 5-minute average moves below a pixel between reads.
+    public override IEnumerable<string> KeyParts() =>
+        [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Thickness.ToString("R"), StartAngle.ToString("R"), Sweep.ToString("R")];
+}
+
 /// <summary>Draws nothing. The shortcut manager (Phase 3) owns a desktop icon over Rect.</summary>
 public sealed record ResolvedShortcut(string Id, Rect Rect, int Z, string Target, string Tooltip, int Slot) : Resolved(Id, Rect, Z)
 {

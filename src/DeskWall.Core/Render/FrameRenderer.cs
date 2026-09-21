@@ -86,6 +86,11 @@ public sealed class FrameRenderer(int width, int height)
                     : new Rect(b.Rect.X, b.Rect.Bottom - (int)Math.Round(b.Rect.H * f), b.Rect.W, (int)Math.Round(b.Rect.H * f));
                 if (fill.W > 0 && fill.H > 0) frame.FillRect(fill, b.Fill);
                 break;
+            case ResolvedDial d:
+                frame.DrawArc(d.Rect, d.StartAngle, d.Sweep, d.Thickness, d.Track);
+                var sweep = (float)(d.Sweep * Math.Clamp(d.Fraction, 0, 1));
+                if (sweep > 0) frame.DrawArc(d.Rect, d.StartAngle, sweep, d.Thickness, d.Fill);
+                break;
             case ResolvedShortcut:
                 break;   // draws nothing; Phase 3 owns the icon
         }

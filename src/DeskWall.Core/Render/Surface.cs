@@ -371,6 +371,50 @@ public sealed unsafe class Surface : IDisposable
         finally { brush->Release(); }
     });
 
+    /// <summary>Stroke an arc of a circle centred in <paramref name="r"/>, radius min(w,h)/2 -
+    /// thickness/2, from <paramref name="startDeg"/> (clockwise from 12 o'clock) through
+    /// <paramref name="sweepDeg"/> degrees clockwise. Flat caps. A sweep of 360 or more is drawn as two
+    /// half circles because a single D2D arc segment cannot describe a full turn.</summary>
+    public void DrawArc(Rect r, float startDeg, float sweepDeg, float thickness, Color c) => Draw(rt =>
+    {
+        if (sweepDeg <= 0 || thickness <= 0) return;
+        var radius = Math.Min(r.W, r.H) / 2f - thickness / 2f;
+        if (radius <= 0) return;
+        var cx = r.X + r.W / 2f; var cy = r.Y + r.H / 2f;
+        var brush = Brush(rt, c);
+        ID2D1PathGeometry* geo = null; ID2D1GeometrySink* sink = null;
+        try
+        {
+            s_d2d->CreatePathGeometry(&geo);
+            geo->Open(&sink);
+            var segments = sweepDeg >= 360 ? 2 : 1;
+            var per = Math.Min(sweepDeg, 360) / segments;
+            sink->BeginFigure(Point(cx, cy, radius, startDeg), D2D1_FIGURE_BEGIN.D2D1_FIGURE_BEGIN_HOLLOW);
+            for (var i = 1; i <= segments; i++)
+            {
+                var arc = new D2D1_ARC_SEGMENT
+                {
+                    point = Point(cx, cy, radius, startDeg + per * i),
+                    size = new D2D_SIZE_F { width = radius, height = radius },
+                    rotationAngle = 0,
+                    sweepDirection = D2D1_SWEEP_DIRECTION.D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                    arcSize = per > 180 ? D2D1_ARC_SIZE.D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE.D2D1_ARC_SIZE_SMALL,
+                };
+                sink->AddArc(&arc);
+            }
+            sink->EndFigure(D2D1_FIGURE_END.D2D1_FIGURE_END_OPEN);
+            sink->Close();
+            rt->DrawGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, thickness, null);
+        }
+        finally { if (sink is not null) sink->Release(); if (geo is not null) geo->Release(); brush->Release(); }
+    });
+
+    private static D2D_POINT_2F Point(float cx, float cy, float radius, float deg)
+    {
+        var rad = (deg - 90) * Math.PI / 180;   // 0 deg = 12 o'clock, clockwise
+        return new D2D_POINT_2F { x = cx + radius * (float)Math.Cos(rad), y = cy + radius * (float)Math.Sin(rad) };
+    }
+
     public void DrawSurface(Surface src, Rect dst, Fit fit, float opacity = 1, float radius = 0) => Draw(rt =>
     {
         src.ReleaseRenderTarget();

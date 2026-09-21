@@ -31,6 +31,12 @@ public static class LayoutScaler
             case ImageDef i:
                 ScaleLiteral(i, nameof(ImageDef.Radius), sm);
                 break;
+            case DialDef dl:
+                // Not sm: the arc's radius is taken from the short side of the rect, so a stroke
+                // scaled by the geometric mean would eat a dial whose width halved while its
+                // height doubled (sm = 1 there). The smaller factor keeps the ring proportional.
+                ScaleLiteral(dl, nameof(DialDef.Thickness), Math.Min(sx, sy));
+                break;
             case RepeaterDef r:
                 r.Gap = (int)Math.Round(r.Gap * sm);
                 if (!r.CellHeight.IsBound && !string.Equals(r.CellHeight.LiteralText, "auto", StringComparison.OrdinalIgnoreCase))
@@ -48,6 +54,7 @@ public static class LayoutScaler
             case (TextDef t, nameof(TextDef.Size)): t.Size = ScaleNumber(t.Size, factor); break;
             case (TextDef t, nameof(TextDef.EffectRadius)): t.EffectRadius = ScaleNumber(t.EffectRadius, factor); break;
             case (ImageDef i, nameof(ImageDef.Radius)): i.Radius = ScaleNumber(i.Radius, factor); break;
+            case (DialDef dl, nameof(DialDef.Thickness)): dl.Thickness = ScaleNumber(dl.Thickness, factor); break;
         }
     }
 

@@ -120,6 +120,31 @@ ID2D1RenderTarget.DrawBitmap(ID2D1Bitmap*, D2D_RECT_F* dst, float opacity, D2D1_
 Note for Task 7: `GetMonitorRECT` throws (does not return a failing HRESULT) for a detached
 monitor id; wrap in try/catch `COMException` and skip.
 
+Path geometry, added 2026-09-21 for the `dial` component (`Surface.DrawArc`). Declared in
+`NativeMethods.txt`: `ID2D1PathGeometry`, `ID2D1GeometrySink`, `ID2D1SimplifiedGeometrySink`,
+`D2D1_ARC_SEGMENT`, `D2D1_SWEEP_DIRECTION`, `D2D1_ARC_SIZE`, `D2D1_FIGURE_BEGIN`,
+`D2D1_FIGURE_END`, `D2D_SIZE_F`, `D2D_POINT_2F`. Shapes that compiled:
+
+```
+ID2D1Factory.CreatePathGeometry(ID2D1PathGeometry**)
+ID2D1PathGeometry.Open(ID2D1GeometrySink**)
+ID2D1GeometrySink.AddArc(D2D1_ARC_SEGMENT*)                      // by pointer
+ID2D1GeometrySink.BeginFigure(D2D_POINT_2F, D2D1_FIGURE_BEGIN)   // start point BY VALUE
+ID2D1GeometrySink.EndFigure(D2D1_FIGURE_END)
+ID2D1GeometrySink.Close()
+ID2D1RenderTarget.DrawGeometry(ID2D1Geometry*, ID2D1Brush*, float strokeWidth, ID2D1StrokeStyle*)
+```
+
+Confirmed: with `allowMarshaling: false` the generator copies the base interface's methods onto
+the derived struct, so `BeginFigure`/`EndFigure`/`Close` (declared on
+`ID2D1SimplifiedGeometrySink`) are callable straight off an `ID2D1GeometrySink*` with no cast.
+Measured: `ID2D1SimplifiedGeometrySink` does **not** have to be listed for that to work -
+`ID2D1GeometrySink` pulls its base in on its own, and the build is clean without the line. It is
+listed anyway, for the reader. `ID2D1StrokeStyle` needs no declaration either: passing `null` for
+the default flat-capped stroke compiles without it. A sweep of 360 or more is emitted as two
+segments because one `D2D1_ARC_SEGMENT` whose end point is its start point describes no arc; the
+`dial-states` golden shows the resulting ring closed.
+
 ## Task 10 measurements
 
 JIT Release `deskwall.exe tick --measure`, layout `layouts/clock-disks.json` (clock + 3 drive rows = 7
