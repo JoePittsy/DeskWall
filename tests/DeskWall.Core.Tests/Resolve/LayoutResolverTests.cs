@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
@@ -206,6 +206,25 @@ public class LayoutResolverTests
         var r = LayoutResolver.Resolve(layout, Tree());
         var clock = Assert.IsType<ResolvedText>(Assert.Single(r));
         Assert.Equal("14:32", clock.Text);
+    }
+
+    /// <summary>The map format needs no component change: `color` is a bindable property like any
+    /// other, so a bool from a script drives the colour a text paints in.</summary>
+    [Fact]
+    public void Text_Colour_Bound_To_A_Map_Paints_The_Mapped_Colour()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "text", "id": "vol", "rect": [0, 0, 80, 20], "text": "60%",
+                                "color": { "bind": "volume.muted | \"?true=#FFD13438,false=#EBFFFFFF\"" } } ] }
+            """);
+        Color Paint(bool muted)
+        {
+            var tree = ValueTree.Of(("volume", new RecordValue(new Dictionary<string, Value> { ["muted"] = new BoolValue(muted) })));
+            return Assert.IsType<ResolvedText>(Assert.Single(LayoutResolver.Resolve(layout, tree))).Style.Color;
+        }
+        Assert.Equal(Color.Parse("#FFD13438"), Paint(true));
+        Assert.Equal(Color.Parse("#EBFFFFFF"), Paint(false));
     }
 }
 

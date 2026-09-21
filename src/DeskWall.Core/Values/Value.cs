@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace DeskWall.Core.Values;
 
@@ -6,7 +6,8 @@ namespace DeskWall.Core.Values;
 public abstract record Value
 {
     /// <summary>Render as text. <paramref name="format"/> is a .NET format string for the
-    /// value's type, or a composite format containing {0}, or null for the default.
+    /// value's type, or a composite format containing {0}, or a map beginning with '?', or null
+    /// for the default.
     /// A malformed format string (an argument index the value does not supply, an unbalanced
     /// brace, an unknown type specifier) falls back to the unformatted text rather than throwing:
     /// a user-authored layout must never abort the tick. Spec 3.2 / plan Task 6.</summary>
@@ -15,6 +16,11 @@ public abstract record Value
         var inv = CultureInfo.InvariantCulture;
         try
         {
+            // A map: "?true=#D13438,false=#EBFFFFFF" picks a string by the value's own text. It
+            // lives here rather than in a component because color, text and an image path are all
+            // bindable properties, so one feature makes all three react to a bool.
+            if (format is not null && format.StartsWith('?') && format.Contains('='))
+                return MapLookup(format, ToText(null));
             if (format is not null && format.Contains("{0"))
                 return string.Format(inv, format, Raw());
             return this switch
@@ -33,6 +39,29 @@ public abstract record Value
         {
             return ToText(null);
         }
+    }
+
+    /// <summary>"?a=one,b=two,*=other" -> the entry whose key matches <paramref name="text"/>,
+    /// case-insensitively. No match and no '*' entry is the **empty string**, not the unformatted
+    /// text: showing nothing when a flag is false is the whole point of the feature. Keys are
+    /// trimmed (a space after the comma is a typo, not a key); the picked text is taken verbatim.
+    /// A key or a value therefore cannot contain ',' or '='; docs/layout-format.md says so.</summary>
+    private static string MapLookup(string format, string text)
+    {
+        var rest = format.AsSpan(1);
+        string? fallback = null;
+        while (!rest.IsEmpty)
+        {
+            var comma = rest.IndexOf(',');
+            var pair = comma < 0 ? rest : rest[..comma];
+            rest = comma < 0 ? [] : rest[(comma + 1)..];
+            var eq = pair.IndexOf('=');
+            if (eq < 0) continue;                       // not a pair; a map is allowed to carry junk
+            var key = pair[..eq].Trim();
+            if (key.Length == 1 && key[0] == '*') fallback = new string(pair[(eq + 1)..]);
+            else if (key.Equals(text, StringComparison.OrdinalIgnoreCase)) return new string(pair[(eq + 1)..]);
+        }
+        return fallback ?? "";
     }
 
     /// <summary>The CLR object for composite formatting.</summary>

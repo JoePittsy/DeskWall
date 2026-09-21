@@ -1,4 +1,4 @@
-# Layout file format
+﻿# Layout file format
 
 A layout is one JSON file. It names a base image, the sources it needs, and the components
 placed on the canvas in physical pixels. Source of truth for this document: `LayoutFile.cs`,
@@ -168,8 +168,9 @@ Twelve examples, each valid against the value trees the built-in sources publish
     names a per-user absolute path. See `assets/weather/README.md` for the icon set this recipe
     expects at that path.
 
-Two format rules matter (`Value.ToText`, spec 4.2):
+Three format rules matter (`Value.ToText`, spec 4.2):
 
+- A format string whose first character is `?` is a **map** (below).
 - A format string containing `{0` is treated as a *composite* format and applied with
   `string.Format` to the value's raw CLR object (the underlying string, double, `DateTimeOffset`
   or bool). Anything else is applied as a plain .NET format string to the value's own
@@ -177,6 +178,28 @@ Two format rules matter (`Value.ToText`, spec 4.2):
 - A malformed format (an argument index the value does not supply, an unbalanced brace, an
   unknown type specifier) falls back to the unformatted text rather than throwing. A layout
   authoring mistake must never abort a tick.
+
+### The map format: a value picks a string
+
+A format beginning with `?` is a comma-separated list of `key=text` pairs. The key is matched
+against the value's **own plain text** (what it renders with no format at all),
+case-insensitively, and the matching entry's text is the result.
+
+    volume.json.muted | "?true=#D13438,false=#EBFFFFFF"     a bool driving a colour
+    volume.json.muted | "?true=muted"                       text when true, nothing when false
+    weather.json.current.is_day | "?1=day,0=night,*=?"      a number driving text
+
+- `*=text` is the fallback for any value no key matched.
+- **No match and no `*` is the empty string**, not the unformatted value: drawing nothing when a
+  flag is false is the point of the `muted` case above.
+- Keys are trimmed, so `?a=one, b=two` works; the picked text is taken verbatim, so it may be
+  blank or carry spaces.
+- A key or a picked text cannot contain `,` or `=`; there is no escape.
+- A format starting with `?` with no `=` anywhere is **not** a map and is handled as an ordinary
+  format string, so nothing that worked before maps existed changed.
+
+No component knows about maps. `color`, `text` and an image's `source` are all ordinary bindable
+properties, so the one rule in `Value.ToText` makes all three react to a bool.
 
 A binding that cannot be resolved (a missing field, an out-of-range index, a key with no match,
 indexing into the wrong shape of value) resolves to `null`; the bound property then falls back to
