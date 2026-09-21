@@ -41,6 +41,8 @@ public sealed unsafe class Surface : IDisposable
 
     private IWICBitmap* _bmp;
     private ID2D1RenderTarget* _rt;
+    // The same object as _rt, queried once per render target; null only if the QI ever fails.
+    private ID2D1DeviceContext* _dc;
 
     /// <summary>Surfaces created but not yet disposed. Test-only (finding 7 regression tests);
     /// production code never reads it.</summary>
@@ -50,6 +52,15 @@ public sealed unsafe class Surface : IDisposable
     public int Height { get; }
 
     private Surface(IWICBitmap* bmp, int w, int h) { _bmp = bmp; Width = w; Height = h; Interlocked.Increment(ref LiveCount); }
+
+    /// <summary>The process-wide DirectWrite factory, created on first use. Internal so
+    /// <see cref="TextMeasure"/> can build a layout without a second factory: DirectWrite objects
+    /// created by different factories are not interchangeable, and a measurement taken against one
+    /// factory's font collection is not necessarily the layout the other one draws.</summary>
+    internal static IDWriteFactory* DWriteFactory
+    {
+        get { EnsureFactories(); return s_dw; }
+    }
 
     private static void EnsureFactories()
     {
@@ -319,12 +330,26 @@ public sealed unsafe class Surface : IDisposable
             rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE.D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             _rt = rt;
+            // Same COM object, richer interface. ID2D1RenderTarget::DrawBitmap offers only nearest
+            // and linear, and linear samples 2x2 texels, which aliases on a downscale - the 96 px
+            // weather icons are drawn into 56 px. ID2D1DeviceContext::DrawBitmap takes the full
+            // D2D1_INTERPOLATION_MODE set. Every Windows 8+ render target implements it, and this
+            // one is queried rather than assumed: a failed QI just leaves _dc null and DrawSurface
+            // falls back to the linear path, so nothing here depends on the QI succeeding.
+            ID2D1DeviceContext* dc; var iid = typeof(ID2D1DeviceContext).GUID;
+            _dc = rt->QueryInterface(&iid, (void**)&dc).Succeeded ? dc : null;
         }
         return _rt;
     }
 
+    /// <summary>Whether this surface's render target gave up an <c>ID2D1DeviceContext</c>, and so
+    /// can honour <see cref="Resample.High"/> rather than silently falling back to bilinear.
+    /// Test-only; production code never branches on it.</summary>
+    internal bool HasDeviceContext { get { Rt(); return _dc is not null; } }
+
     private void ReleaseRenderTarget()
     {
+        if (_dc is not null) { _dc->Release(); _dc = null; }   // QueryInterface AddRef'd it
         if (_rt is not null) { _rt->Release(); _rt = null; }
     }
 
@@ -415,7 +440,9 @@ public sealed unsafe class Surface : IDisposable
         return new D2D_POINT_2F { x = cx + radius * (float)Math.Cos(rad), y = cy + radius * (float)Math.Sin(rad) };
     }
 
-    public void DrawSurface(Surface src, Rect dst, Fit fit, float opacity = 1, float radius = 0) => Draw(rt =>
+    /// <param name="resample">Which filter to scale with. See <see cref="Resample"/>: the default is
+    /// the good one, and only the base image asks for the cheap one.</param>
+    public void DrawSurface(Surface src, Rect dst, Fit fit, float opacity = 1, float radius = 0, Resample resample = Resample.High) => Draw(rt =>
     {
         src.ReleaseRenderTarget();
         ID2D1Bitmap* bmp; rt->CreateBitmapFromWicBitmap((IWICBitmapSource*)src._bmp, null, &bmp);
@@ -439,7 +466,10 @@ public sealed unsafe class Surface : IDisposable
                 };
                 rt->PushLayer(&lp, null);
             }
-            rt->DrawBitmap(bmp, &dstRect, opacity, D2D1_BITMAP_INTERPOLATION_MODE.D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcRect);
+            if (_dc is not null && resample == Resample.High)
+                _dc->DrawBitmap(bmp, &dstRect, opacity, D2D1_INTERPOLATION_MODE.D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &srcRect, null);
+            else
+                rt->DrawBitmap(bmp, &dstRect, opacity, D2D1_BITMAP_INTERPOLATION_MODE.D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcRect);
             if (radius > 0) rt->PopLayer();
         }
         finally { bmp->Release(); if (geo is not null) geo->Release(); }
@@ -452,93 +482,76 @@ public sealed unsafe class Surface : IDisposable
         {
             // Glyph runs and the effect ring both paint outside the layout box, and the incremental
             // renderer only restores the base inside PaintBounds; clip to exactly that so nothing
-            // can be painted that a later tick will not clean up. Margin is shared with
-            // ResolvedText.PaintBounds through TextStyle.PaintMargin.
-            var margin = style.PaintMargin();
-            var clip = new D2D_RECT_F
-            {
-                left = rect.X - margin, top = rect.Y - margin,
-                right = rect.Right + margin, bottom = rect.Bottom + margin,
-            };
+            // can be painted that a later tick will not clean up. The bounds come from
+            // TextMeasure.PaintBounds - the same call ResolvedText.PaintBounds makes, off the same
+            // cached measurement of the same layout - so the clip and the dirty rect are one value,
+            // not two that have to be kept in step. They used to be rect + a constant margin, which
+            // pinned the painted region to the authored rect: a font size larger than the rect had
+            // its glyphs trimmed, and a right-aligned run wider than the rect started left of
+            // rect.X and disappeared almost entirely.
+            var bounds = TextMeasure.PaintBounds(text, style, rect);
+            var clip = new D2D_RECT_F { left = bounds.X, top = bounds.Y, right = bounds.Right, bottom = bounds.Bottom };
             rt->PushAxisAlignedClip(&clip, D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             try
             {
-                IDWriteTextFormat* fmt;
-                fixed (char* fam = style.Font) fixed (char* loc = "en-GB")
-                    s_dw->CreateTextFormat(fam, null, (DWRITE_FONT_WEIGHT)Math.Clamp(style.Weight, 1, 999), DWRITE_FONT_STYLE.DWRITE_FONT_STYLE_NORMAL,
-                        DWRITE_FONT_STRETCH.DWRITE_FONT_STRETCH_NORMAL, style.Size, loc, &fmt);
+                var layout = TextMeasure.CreateLayout(text, style, rect.W, rect.H);
                 try
                 {
-                    fmt->SetTextAlignment(style.Align switch
-                    {
-                        Align.Right => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_TRAILING,
-                        Align.Center => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_CENTER,
-                        _ => DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING,
-                    });
-                    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-                    fmt->SetWordWrapping(DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_NO_WRAP);
-
-                    IDWriteTextLayout* layout;
-                    fixed (char* p = text) s_dw->CreateTextLayout(p, (uint)text.Length, fmt, rect.W, rect.H, &layout);
+                    var origin = new D2D_POINT_2F { x = rect.X, y = rect.Y };
+                    var main = Brush(rt, style.Color);
                     try
                     {
-                        var origin = new D2D_POINT_2F { x = rect.X, y = rect.Y };
-                        var main = Brush(rt, style.Color);
-                        try
+                        if (style.Effect != TextEffect.None && style.EffectColor.A > 0)
                         {
-                            if (style.Effect != TextEffect.None && style.EffectColor.A > 0)
+                            var eff = Brush(rt, style.EffectColor);
+                            try
                             {
-                                var eff = Brush(rt, style.EffectColor);
-                                try
+                                switch (style.Effect)
                                 {
-                                    switch (style.Effect)
-                                    {
-                                        case TextEffect.Plate:
-                                            DWRITE_TEXT_METRICS m; layout->GetMetrics(&m);
-                                            var plate = new D2D1_ROUNDED_RECT
+                                    case TextEffect.Plate:
+                                        DWRITE_TEXT_METRICS m; layout->GetMetrics(&m);
+                                        var plate = new D2D1_ROUNDED_RECT
+                                        {
+                                            rect = new D2D_RECT_F { left = rect.X + m.left - 8, top = rect.Y + m.top - 4, right = rect.X + m.left + m.width + 8, bottom = rect.Y + m.top + m.height + 4 },
+                                            radiusX = style.Radius, radiusY = style.Radius,
+                                        };
+                                        rt->FillRoundedRectangle(&plate, (ID2D1Brush*)eff);
+                                        break;
+                                    case TextEffect.Outline:
+                                        // Eight one-and-a-half-pixel offsets in the effect colour read as a stroke at text sizes.
+                                        foreach (var (dx, dy) in Ring(1.5f))
+                                        {
+                                            var o = new D2D_POINT_2F { x = origin.x + dx, y = origin.y + dy };
+                                            rt->DrawTextLayout(o, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                                        }
+                                        break;
+                                    default: // Shadow
+                                        // Soft shadow approximated by stacking low-alpha copies in a ring of Radius/2 around
+                                        // a (1,1) offset. A true Gaussian effect needs ID2D1DeviceContext; see Phase 1 ledger ruling.
+                                        var rad = Math.Max(1f, style.Radius);
+                                        var ring = Ring(rad / 2f);
+                                        var soft = Brush(rt, style.EffectColor with { A = (byte)Math.Max(8, style.EffectColor.A / 4) });
+                                        try
+                                        {
+                                            foreach (var (dx, dy) in ring)
                                             {
-                                                rect = new D2D_RECT_F { left = rect.X + m.left - 8, top = rect.Y + m.top - 4, right = rect.X + m.left + m.width + 8, bottom = rect.Y + m.top + m.height + 4 },
-                                                radiusX = style.EffectRadius, radiusY = style.EffectRadius,
-                                            };
-                                            rt->FillRoundedRectangle(&plate, (ID2D1Brush*)eff);
-                                            break;
-                                        case TextEffect.Outline:
-                                            // Eight one-and-a-half-pixel offsets in the effect colour read as a stroke at text sizes.
-                                            foreach (var (dx, dy) in Ring(1.5f))
-                                            {
-                                                var o = new D2D_POINT_2F { x = origin.x + dx, y = origin.y + dy };
-                                                rt->DrawTextLayout(o, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                                                var o = new D2D_POINT_2F { x = origin.x + 1 + dx, y = origin.y + 1 + dy };
+                                                rt->DrawTextLayout(o, layout, (ID2D1Brush*)soft, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
                                             }
-                                            break;
-                                        default: // Shadow
-                                            // Soft shadow approximated by stacking low-alpha copies in a ring of EffectRadius/2 around
-                                            // a (1,1) offset. A true Gaussian effect needs ID2D1DeviceContext; see Phase 1 ledger ruling.
-                                            var rad = Math.Max(1f, style.EffectRadius);
-                                            var ring = Ring(rad / 2f);
-                                            var soft = Brush(rt, style.EffectColor with { A = (byte)Math.Max(8, style.EffectColor.A / 4) });
-                                            try
-                                            {
-                                                foreach (var (dx, dy) in ring)
-                                                {
-                                                    var o = new D2D_POINT_2F { x = origin.x + 1 + dx, y = origin.y + 1 + dy };
-                                                    rt->DrawTextLayout(o, layout, (ID2D1Brush*)soft, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
-                                                }
-                                                var core = new D2D_POINT_2F { x = origin.x + 1, y = origin.y + 1 };
-                                                rt->DrawTextLayout(core, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
-                                            }
-                                            finally { soft->Release(); }
-                                            break;
-                                    }
+                                            var core = new D2D_POINT_2F { x = origin.x + 1, y = origin.y + 1 };
+                                            rt->DrawTextLayout(core, layout, (ID2D1Brush*)eff, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                                        }
+                                        finally { soft->Release(); }
+                                        break;
                                 }
-                                finally { eff->Release(); }
                             }
-                            rt->DrawTextLayout(origin, layout, (ID2D1Brush*)main, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
+                            finally { eff->Release(); }
                         }
-                        finally { main->Release(); }
+                        rt->DrawTextLayout(origin, layout, (ID2D1Brush*)main, D2D1_DRAW_TEXT_OPTIONS.D2D1_DRAW_TEXT_OPTIONS_NONE);
                     }
-                    finally { layout->Release(); }
+                    finally { main->Release(); }
                 }
-                finally { fmt->Release(); }
+                finally { layout->Release(); }
             }
             finally { rt->PopAxisAlignedClip(); }
         });

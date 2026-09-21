@@ -56,7 +56,7 @@ Example:
 | `color` | `"#EBFFFFFF"` | ARGB hex. |
 | `align` | `"left"` | `left` \| `center` \| `right`. |
 | `effect` | `"shadow"` | Text effect style. |
-| `effectRadius` | `6` | Blur radius in pixels for the shadow. |
+| `effectRadius` | `"auto"` | Blur radius in pixels for the shadow. `"auto"` (and any other non-number) means a tenth of `size`, floored at 1 px: 64 -> 6, 40 -> 4, 13 -> 1. A flat 6 px is a drop shadow on a 64 px clock and a dark crust on a 13 px label, so the default follows the font; set a number to pin it. |
 | `effectColor` | `"#A0000000"` | ARGB hex for the shadow/outline/plate. |
 
 ### `image`
@@ -232,7 +232,9 @@ it (`LayoutScaler.Scale`) rather than leaving the canvas blank:
 
 - Every component `rect` scales by `(sx, sy) = (toWidth / fromWidth, toHeight / fromHeight)`.
 - `TextDef.Size`, `TextDef.EffectRadius` and `ImageDef.Radius` scale by the geometric mean
-  `sqrt(sx * sy)`, so a font or corner radius does not stretch non-uniformly.
+  `sqrt(sx * sy)`, so a font or corner radius does not stretch non-uniformly. An
+  `effectRadius` of `"auto"` is left alone, like `cellHeight`: it is derived from the scaled
+  `size` when the layout is resolved, so scaling it here would apply the factor twice.
 - `DialDef.Thickness` scales by `min(sx, sy)` instead: the arc's radius is taken from the short
   side of its rect, and the geometric mean is 1 for a display that halves in width and doubles in
   height, which would leave the stroke wider than the ring it is drawn on.

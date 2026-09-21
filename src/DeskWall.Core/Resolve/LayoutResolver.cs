@@ -46,7 +46,9 @@ public static class LayoutResolver
                     Color: PropertyReader.Color(t.Color, scope) ?? Color.White,
                     Align: PropertyReader.Enum<Align>(t.Align, scope) ?? Align.Left,
                     Effect: PropertyReader.Enum<TextEffect>(t.Effect, scope) ?? TextEffect.Shadow,
-                    EffectRadius: (float)(PropertyReader.Number(t.EffectRadius, scope) ?? 6),
+                    // Null, not a constant: an unreadable or "auto" radius leaves TextStyle to derive
+                    // one from the size it was given, so the proportional default follows the font.
+                    EffectRadius: (float?)PropertyReader.Number(t.EffectRadius, scope),
                     EffectColor: PropertyReader.Color(t.EffectColor, scope) ?? new Color(160, 0, 0, 0))));
                 break;
 
