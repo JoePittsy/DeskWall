@@ -51,7 +51,7 @@ public static class LayoutResolver
                 break;
 
             case ImageDef i:
-                result.Add(new ResolvedImage(id, rect, def.Z, PropertyReader.Text(i.Source, scope) ?? "",
+                result.Add(new ResolvedImage(id, rect, def.Z, ExpandRuntime(PropertyReader.Text(i.Source, scope) ?? ""),
                     PropertyReader.Enum<Fit>(i.Fit, scope) ?? Fit.Cover,
                     (float)(PropertyReader.Number(i.Radius, scope) ?? 0),
                     (float)(PropertyReader.Number(i.Opacity, scope) ?? 1)));
@@ -109,6 +109,17 @@ public static class LayoutResolver
                 }
                 break;
         }
+    }
+
+    /// <summary>"runtime:assets/weather/61.png" -> %LOCALAPPDATA%\DeskWall\assets\weather\61.png. Lets a
+    /// committed starter name a per-user file without a per-user absolute path. Braces are not used
+    /// for the token because a composite format string would swallow them.</summary>
+    private static string ExpandRuntime(string source)
+    {
+        const string prefix = "runtime:";
+        if (!source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return source;
+        var rest = source[prefix.Length..].Replace('/', '\\').TrimStart('\\');
+        return Paths.InRuntime(rest.Split('\\', StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static bool IsAuto(PropertyValue p) => !p.IsBound && string.Equals(p.LiteralText, "auto", StringComparison.OrdinalIgnoreCase);

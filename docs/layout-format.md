@@ -63,7 +63,7 @@ Example:
 
 | Property | Default | Notes |
 |---|---|---|
-| `source` | required | Local path or `http(s)` URL. A remote URL is resolved through the remote image cache before drawing (`docs/sources.md`); a cache miss draws the same fallback plate as a missing local file. |
+| `source` | required | Local path or `http(s)` URL. A remote URL is resolved through the remote image cache before drawing (`docs/sources.md`); a cache miss draws the same fallback plate as a missing local file. A local path may start with `runtime:` to be resolved under the runtime dir (`runtime:assets/weather/{0}.png`). |
 | `fit` | `"cover"` | `cover` \| `contain` \| `stretch`. |
 | `radius` | `0` | Corner radius in pixels. |
 | `opacity` | `1` | 0..1. |

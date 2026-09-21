@@ -142,6 +142,30 @@ public class LayoutResolverTests
         Assert.Equal(0.0, d.Fraction);
         Assert.Equal(Color.Parse("#EBFFFFFF"), d.Fill);   // below the default threshold: the default fill
     }
+
+    [Fact]
+    public void Image_Source_Runtime_Prefix_Resolves_Into_The_Runtime_Dir()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "image", "id": "i", "rect": [0, 0, 10, 10],
+                                "source": { "bind": "w.code | \"runtime:assets/weather/{0}.png\"" } } ] }
+            """);
+        var tree = ValueTree.Of(("w", new RecordValue(new Dictionary<string, Value> { ["code"] = new NumberValue(61) })));
+        var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, tree)));
+        Assert.Equal(Paths.InRuntime("assets", "weather", "61.png"), img.Path);
+    }
+
+    [Fact]
+    public void Image_Source_Without_Prefix_Is_Unchanged()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "image", "id": "i", "rect": [0, 0, 10, 10], "source": "C:\\pics\\a.png" } ] }
+            """);
+        var img = Assert.IsType<ResolvedImage>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(@"C:\pics\a.png", img.Path);
+    }
 }
 
 /// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was
