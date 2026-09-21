@@ -76,7 +76,7 @@ attributes, never reject an event for missing `specversion`.
 
 | Attribute | Required | Use |
 |---|---|---|
-| `source` | yes | Which declared source this patches. The only routing key in v1. |
+| `source` | yes | Which provider this patches, declared or not. The only routing key in v1. |
 | `data` | yes | An object. Merged into that source's `data` record. |
 | `type` | no | What happened. Recorded, bindable, shown in diagnostics. Does not route in v1. |
 | `subject` | no | Recorded and bindable. Does not route in v1. |
@@ -174,7 +174,7 @@ discovered.
 - Handles and threads before and after: the expectation is one blocked thread and a small number
   of handles, and the hardware source's NVML cost (37 MB, 190 handles, 3 threads) is the precedent
   for checking rather than assuming.
-- An idle machine with an event source declared still wakes once a minute.
+- An idle machine with a provider in the registry still wakes once a minute.
 - A burst of events produces the expected small number of repaints, with the final state correct.
 - The cost of one accepted event end to end, from write to wake.
 
