@@ -2,7 +2,7 @@
   "version": 1,
   "name": "Hardware dial",
   "description": "CPU, GPU, RAM load or GPU temperature as an arc, from the native sampler.",
-  "size": [80, 78],
+  "size": [80, 80],
   "sources": [
     { "name": "hardware", "type": "hardware" }
   ],
