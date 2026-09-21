@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "name": "Hardware dial",
+  "description": "CPU, GPU, RAM load or GPU temperature as an arc, from the native sampler.",
+  "size": [80, 80],
+  "sources": [
+    { "name": "hardware", "type": "hardware" }
+  ],
+  "components": [
+    { "type": "dial", "id": "dial", "rect": [0, 0, 80, 80], "z": 1, "fraction": { "bind": "hardware.cpu" }, "threshold": 0.9 },
+    { "type": "text", "id": "value", "rect": [0, 26, 80, 28], "z": 2, "text": { "bind": "hardware.cpuPct | \"{0}%\"" }, "size": 18, "align": "center", "effect": "none" },
+    { "type": "text", "id": "label", "rect": [0, 62, 80, 16], "z": 2, "text": "cpu", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none" }
+  ],
+  "knobs": [
+    { "id": "metric", "label": "Metric", "type": "choice",
+      "default": "CPU||hardware.cpu||hardware.cpuPct | \"{0}%\"||cpu",
+      "choices": [
+        "CPU||hardware.cpu||hardware.cpuPct | \"{0}%\"||cpu",
+        "GPU||hardware.gpu||hardware.gpuPct | \"{0}%\"||gpu",
+        "RAM||hardware.ram||hardware.ramPct | \"{0}%\"||ram",
+        "GPU temperature||hardware.gpuTempFraction||hardware.gpuTempC | \"{0}°\"||gpu °C"
+      ],
+      "sets": [
+        "components.dial.fraction=bind:hardware.cpu",
+        "components.value.text=bind:hardware.cpuPct | \"{0}%\"",
+        "components.label.text"
+      ] },
+    { "id": "warnAt", "label": "Warn at", "type": "number", "default": "0.9", "min": 0, "max": 1,
+      "sets": [ "components.dial.threshold" ] }
+  ]
+}

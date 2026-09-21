@@ -74,6 +74,38 @@ public class LayoutFileTests
     public void Unknown_Type_Throws()
         => Assert.ThrowsAny<Exception>(() => LayoutFile.Parse("""{ "version": 1, "baseImage": "x", "sources": [], "components": [ { "type": "gauge", "id": "g", "rect": [0,0,1,1] } ] }"""));
 
+    /// <summary>The designer's widget picker fields (spec "designer widgets" section 3):
+    /// component-level ownership and the layout-level instance record round trip untouched, and a
+    /// layout that never used the picker keeps <c>Widgets</c> null rather than gaining an empty
+    /// object on every save.</summary>
+    [Fact]
+    public void Widget_Fields_Round_Trip()
+    {
+        const string json = """
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [ { "type": "text", "id": "weather-1.temp", "rect": [0,0,10,10], "text": "hi", "widget": "weather-1" } ],
+          "widgets": { "weather-1": { "template": "weather", "knobs": { "town": "Leeds" }, "unlocked": true } } }
+        """;
+        var l = LayoutFile.Parse(json);
+        Assert.Equal("weather-1", l.Components[0].Widget);
+        Assert.Equal("weather", l.Widgets!["weather-1"].Template);
+        Assert.Equal("Leeds", l.Widgets["weather-1"].Knobs["town"]);
+        Assert.True(l.Widgets["weather-1"].Unlocked);
+
+        var again = LayoutFile.Parse(l.ToJson());
+        Assert.Equal(l.ToJson(), again.ToJson());
+        Assert.Equal("weather-1", again.Components[0].Widget);
+        Assert.Equal("weather", again.Widgets!["weather-1"].Template);
+    }
+
+    [Fact]
+    public void Widget_Fields_Default_To_Null_Not_Empty()
+    {
+        var l = LayoutFile.Parse(Json);
+        Assert.Null(l.Widgets);
+        Assert.All(l.Components, c => Assert.Null(c.Widget));
+    }
+
     /// <summary>Finding 10: a failing Save used to leave &lt;path&gt;.tmp behind forever.</summary>
     [Fact]
     public void Save_Failure_Leaves_No_Tmp_File()

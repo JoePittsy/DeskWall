@@ -1,255 +1,253 @@
-using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using DeskWall.Core;
 using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
+using DeskWall.Designer.Model;
 
-namespace DeskWall.Designer.Model;
+namespace DeskWall.Designer.Model.Widgets;
 
-/// <summary>Stamping a template into a layout, and everything that then has to be kept true about
-/// it: ids are prefixed with the instance, sources are shared by name, knobs write through to the
-/// components and sources they name, and removing the widget takes its sources with it.</summary>
+/// <summary>Adds, edits and removes widget instances on a <see cref="LayoutFile"/>. See
+/// <c>docs/layout-format.md</c> "Widgets" for the instantiation rules and the knob <c>sets</c>
+/// grammar this implements.</summary>
 public static class WidgetInstance
 {
-    /// <summary>Add the widget at <paramref name="origin"/>. Returns the instance id
-    /// ("&lt;key&gt;-&lt;n&gt;", n the first free number).</summary>
+    private static readonly Regex TokenSuffix = new(@":\{(\w+)\}$");
+    private const string PartSeparator = "||";
+
+    /// <summary>Adds the widget to the layout: components copied with ids "&lt;instanceId&gt;.&lt;id&gt;",
+    /// Widget = instanceId, rects offset by origin; sources merged by name (same name+type reused;
+    /// clash -&gt; "&lt;name&gt;2" and bindings rewritten); knob defaults applied; layout.Widgets[instanceId]
+    /// = new WidgetRecord. Returns instanceId ("&lt;key&gt;-&lt;n&gt;", n = first free).</summary>
     public static string Add(LayoutFile layout, WidgetTemplate t, Rect origin)
     {
-        ArgumentNullException.ThrowIfNull(layout);
-        ArgumentNullException.ThrowIfNull(t);
-
+        layout.Widgets ??= new();
         var instanceId = NextInstanceId(layout, t.Key);
-        var rename = MergeSources(layout, t);
 
-        foreach (var c in Clone(t.Components))
+        var renameMap = MergeSources(layout, t.Sources);
+
+        var clones = WidgetJson.CloneComponents(t.Components);
+        foreach (var c in clones)
         {
-            c.Id = $"{instanceId}.{c.Id}";
+            var originalId = c.Id;
+            c.Id = $"{instanceId}.{originalId}";
             c.Widget = instanceId;
             c.Rect = c.Rect.Offset(origin.X, origin.Y);
-            foreach (var (from, to) in rename) RewriteSource(c, from, to);
-            layout.Components.Add(c);
+            if (renameMap.Count > 0) RewriteSourceNames(c, renameMap);
         }
+        layout.Components.AddRange(clones);
 
-        layout.Widgets ??= new Dictionary<string, WidgetRecord>(StringComparer.Ordinal);
-        var record = new WidgetRecord { Template = t.Key };
-        layout.Widgets[instanceId] = record;
+        layout.Widgets[instanceId] = new WidgetRecord { Template = t.Key };
         foreach (var knob in t.Knobs) SetKnob(layout, t, instanceId, knob.Id, knob.Default);
+
         return instanceId;
     }
 
-    /// <summary>Remove the widget: its components, its record, and then any source no remaining
-    /// binding names.</summary>
+    /// <summary>Components, the Widgets entry, then any source no remaining component binds to.</summary>
     public static void Remove(LayoutFile layout, string instanceId)
     {
-        ArgumentNullException.ThrowIfNull(layout);
-        layout.Components.RemoveAll(c => string.Equals(c.Widget, instanceId, StringComparison.Ordinal));
+        var removed = layout.Components.Where(c => c.Widget == instanceId).ToList();
+        var touchedSources = removed.SelectMany(SourceNames).Distinct().ToList();
+
+        layout.Components.RemoveAll(c => c.Widget == instanceId);
         layout.Widgets?.Remove(instanceId);
-        var used = SourceNamesInUse(layout);
-        layout.Sources.RemoveAll(s => !used.Contains(s.Name));
+
+        if (touchedSources.Count == 0) return;
+        var stillUsed = layout.Components.SelectMany(SourceNames).ToHashSet(StringComparer.Ordinal);
+        layout.Sources.RemoveAll(s => touchedSources.Contains(s.Name) && !stillUsed.Contains(s.Name));
     }
 
     public static IReadOnlyList<ComponentDef> Components(LayoutFile layout, string instanceId)
-        => layout.Components.Where(c => string.Equals(c.Widget, instanceId, StringComparison.Ordinal)).ToList();
+        => layout.Components.Where(c => c.Widget == instanceId).ToList();
 
-    /// <summary>The union of the instance's declared rects. Zero-size when the instance is gone.</summary>
+    /// <summary>Union of the instance's rects; an empty Rect if the instance owns no component.</summary>
     public static Rect Bounds(LayoutFile layout, string instanceId)
     {
-        var rects = Components(layout, instanceId).Select(c => c.Rect).ToList();
-        if (rects.Count == 0) return default;
-        int x = rects.Min(r => r.X), y = rects.Min(r => r.Y);
-        return new Rect(x, y, rects.Max(r => r.Right) - x, rects.Max(r => r.Bottom) - y);
+        var comps = Components(layout, instanceId);
+        if (comps.Count == 0) return new Rect(0, 0, 0, 0);
+        var minX = comps.Min(c => c.Rect.X);
+        var minY = comps.Min(c => c.Rect.Y);
+        var maxRight = comps.Max(c => c.Rect.Right);
+        var maxBottom = comps.Max(c => c.Rect.Bottom);
+        return new Rect(minX, minY, maxRight - minX, maxBottom - minY);
     }
 
-    /// <summary>Every instance id present, in the order their components first appear.</summary>
-    public static IReadOnlyList<string> Instances(LayoutFile layout)
-    {
-        var seen = new List<string>();
-        foreach (var c in layout.Components)
-            if (c.Widget is { } w && !seen.Contains(w, StringComparer.Ordinal)) seen.Add(w);
-        return seen;
-    }
-
-    /// <summary>Turn one knob: apply each of its <c>sets</c> paths and record the value so it can be
-    /// shown back and re-applied after a template update.</summary>
+    /// <summary>Applies a knob's <c>sets</c> paths for <paramref name="value"/> (see "Widgets" for
+    /// the plain-vs-composite value convention) and records the raw value on the instance's
+    /// WidgetRecord so it can be shown back and re-applied later.</summary>
     public static void SetKnob(LayoutFile layout, WidgetTemplate t, string instanceId, string knobId, string value)
     {
-        var knob = t.Knobs.FirstOrDefault(k => string.Equals(k.Id, knobId, StringComparison.OrdinalIgnoreCase));
-        if (knob is null) return;
+        var knob = t.Knobs.FirstOrDefault(k => k.Id == knobId)
+            ?? throw new ArgumentException($"widget \"{t.Key}\" has no knob \"{knobId}\"", nameof(knobId));
 
-        // A town knob carries its resolved coordinates alongside the name ("Leeds|53.8008|-1.5491")
-        // so one value can fill both {lat} and {lon}; only the name is recorded and shown back.
-        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var recorded = value;
-        if (knob.Type == KnobType.Town)
+        var parts = value.Split(PartSeparator);
+        for (var i = 0; i < knob.Sets.Count; i++)
         {
-            var parts = value.Split('|');
-            recorded = parts[0];
-            if (parts.Length >= 3) { tokens["lat"] = parts[1]; tokens["lon"] = parts[2]; }
-            tokens["town"] = parts[0];
+            var part = parts.Length > i + 1 ? parts[i + 1] : parts[0];
+            ApplySet(layout, instanceId, knob.Sets[i], part);
         }
 
-        foreach (var path in knob.Sets) ApplySet(layout, instanceId, path, value, tokens);
-
-        if (layout.Widgets is not null && layout.Widgets.TryGetValue(instanceId, out var record))
-            record.Knobs[knob.Id] = recorded;
+        layout.Widgets ??= new();
+        if (!layout.Widgets.TryGetValue(instanceId, out var record))
+            layout.Widgets[instanceId] = record = new WidgetRecord { Template = t.Key };
+        record.Knobs[knobId] = value;
     }
 
-    /// <summary>Open-Meteo geocoding, first hit only. Null when the town is not found or the service
-    /// cannot be reached - the caller keeps the text the owner typed either way.</summary>
+    /// <summary>Open-Meteo geocoding, first match. Null when the town has no match or the request
+    /// fails (never throws for a bad town name; a network fault is the caller's problem).</summary>
     public static async Task<(double lat, double lon)?> ResolveTownAsync(string town, HttpClient http)
     {
-        ArgumentNullException.ThrowIfNull(http);
-        if (string.IsNullOrWhiteSpace(town)) return null;
-        var url = "https://geocoding-api.open-meteo.com/v1/search?count=1&name=" + Uri.EscapeDataString(town.Trim());
-        try
-        {
-            var json = await http.GetStringAsync(url).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("results", out var results) ||
-                results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0) return null;
-            var first = results[0];
-            return (first.GetProperty("latitude").GetDouble(), first.GetProperty("longitude").GetDouble());
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException)
-        {
+        var url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(town)}&count=1";
+        using var response = await http.GetAsync(url).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return null;
+        using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+        if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
             return null;
-        }
+        var first = results[0];
+        return (first.GetProperty("latitude").GetDouble(), first.GetProperty("longitude").GetDouble());
     }
 
-    // ---- ids and cloning ---------------------------------------------------------------------
+    // ---- internals ------------------------------------------------------------------------
 
     private static string NextInstanceId(LayoutFile layout, string key)
     {
-        var taken = Instances(layout).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        for (var n = 1; ; n++)
-        {
-            var id = $"{key}-{n}";
-            if (taken.Add(id)) return id;
-        }
+        var n = 1;
+        while (layout.Widgets!.ContainsKey($"{key}-{n}")) n++;
+        return $"{key}-{n}";
     }
 
-    /// <summary>Deep copy through the layout's own serializer, so a repeater brings its template.</summary>
-    private static List<ComponentDef> Clone(IReadOnlyList<ComponentDef> defs)
-        => LayoutFile.Parse(new LayoutFile { BaseImage = "", Components = defs.ToList() }.ToJson()).Components;
-
-    // ---- sources ------------------------------------------------------------------------------
-
-    /// <summary>Add each of the template's sources the layout does not already have. Same name and
-    /// same type is a reuse (one `time` source serves every clock); same name, different type gets
-    /// a suffixed name, and the instance's bindings are rewritten to it.</summary>
-    private static List<(string From, string To)> MergeSources(LayoutFile layout, WidgetTemplate t)
+    /// <summary>Adds/reuses each template source in the layout; returns the template-local source
+    /// name to the actual name used in the layout (identity unless a clash renamed it).</summary>
+    private static Dictionary<string, string> MergeSources(LayoutFile layout, IReadOnlyList<SourceDef> templateSources)
     {
-        var rename = new List<(string, string)>();
-        foreach (var def in t.Sources)
+        var renameMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var src in templateSources)
         {
-            var existing = layout.Sources.FirstOrDefault(s => string.Equals(s.Name, def.Name, StringComparison.OrdinalIgnoreCase));
+            var existing = layout.Sources.FirstOrDefault(s => s.Name == src.Name);
             if (existing is null)
             {
-                layout.Sources.Add(CloneSource(def, def.Name));
-                continue;
+                layout.Sources.Add(WidgetJson.CloneSource(src));
+                renameMap[src.Name] = src.Name;
             }
-            if (string.Equals(existing.Type, def.Type, StringComparison.OrdinalIgnoreCase)) continue;   // reuse
-
-            var name = def.Name; var n = 2;
-            while (layout.Sources.Any(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))) name = $"{def.Name}{n++}";
-            layout.Sources.Add(CloneSource(def, name));
-            rename.Add((def.Name, name));
+            else if (existing.Type == src.Type)
+            {
+                renameMap[src.Name] = src.Name;
+            }
+            else
+            {
+                var newName = NextFreeSourceName(layout, src.Name);
+                var copy = WidgetJson.CloneSource(src);
+                copy.Name = newName;
+                layout.Sources.Add(copy);
+                renameMap[src.Name] = newName;
+            }
         }
-        return rename;
+        return renameMap;
     }
 
-    private static SourceDef CloneSource(SourceDef def, string name) => new()
+    private static string NextFreeSourceName(LayoutFile layout, string baseName)
     {
-        Name = name,
-        Type = def.Type,
-        EverySeconds = def.EverySeconds,
-        Settings = new Dictionary<string, string>(def.Settings, StringComparer.Ordinal),
-    };
-
-    /// <summary>Every source name a binding anywhere in the layout starts with.</summary>
-    private static HashSet<string> SourceNamesInUse(LayoutFile layout)
-    {
-        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in layout.Components) Visit(c, (_, v) => { if (Root(v) is { } r) used.Add(r); return v; });
-        return used;
+        var n = 2;
+        while (layout.Sources.Any(s => s.Name == baseName + n)) n++;
+        return baseName + n;
     }
 
-    private static string? Root(PropertyValue v)
-        => v.Binding?.Path.Count > 0 && v.Binding.Path[0] is NameSegment n ? n.Name : null;
-
-    private static void RewriteSource(ComponentDef c, string from, string to) => Visit(c, (_, v) =>
+    /// <summary>Rewrites every bound property's leading path segment from a template-local source
+    /// name to the actual (possibly renamed) one. Only ever touches a component this same Add call
+    /// just placed, never another widget's.</summary>
+    private static void RewriteSourceNames(ComponentDef c, Dictionary<string, string> renameMap)
     {
-        if (v.Binding is not { } b || Root(v) is not { } r || !string.Equals(r, from, StringComparison.OrdinalIgnoreCase)) return v;
-        return PropertyValue.Bound(new Binding([new NameSegment(to), .. b.Path.Skip(1)], b.Format));
-    });
-
-    /// <summary>Every PropertyValue on a component and, for a repeater, on its template children.
-    /// The visitor returns the value to keep, so this is both a read and a rewrite.</summary>
-    private static void Visit(ComponentDef def, Func<string, PropertyValue, PropertyValue> visit)
-    {
-        foreach (var prop in PropertySchema.For(def))
+        foreach (var prop in PropertySchema.For(c))
         {
-            var current = prop.Get(def);
-            if (current is null) continue;
-            var next = visit(prop.Name, current);
-            if (!ReferenceEquals(next, current)) prop.Set(def, next);
+            var v = prop.Get(c);
+            if (v is null || !v.IsBound) continue;
+            var binding = v.Binding!;
+            if (binding.Path.Count == 0 || binding.Path[0] is not NameSegment ns) continue;
+            if (!renameMap.TryGetValue(ns.Name, out var actualName) || actualName == ns.Name) continue;
+            var newPath = new List<PathSegment> { new NameSegment(actualName) };
+            newPath.AddRange(binding.Path.Skip(1));
+            prop.Set(c, PropertyValue.Bound(new Binding(newPath, binding.Format)));
         }
-        if (def is RepeaterDef r)
-            foreach (var child in r.Template) Visit(child, visit);
     }
 
-    // ---- knob set paths -------------------------------------------------------------------------
-
-    /// <summary>One `sets` entry. Grammar:
-    /// <c>components.&lt;id&gt;.&lt;property&gt;</c>, <c>sources.&lt;name&gt;.settings.&lt;key&gt;</c>,
-    /// either plain (write the value), with <c>:{token}</c> (substitute that token inside the current
-    /// string), or with <c>=bind:&lt;text&gt;</c> (write a binding, with {value} substituted).</summary>
-    private static void ApplySet(LayoutFile layout, string instanceId, string path, string value, Dictionary<string, string> tokens)
+    private static IEnumerable<string> SourceNames(ComponentDef c)
     {
-        string? bindText = null;
-        var eq = path.IndexOf("=bind:", StringComparison.Ordinal);
-        if (eq >= 0) { bindText = path[(eq + 6)..].Replace("{value}", value, StringComparison.Ordinal); path = path[..eq]; }
+        foreach (var prop in PropertySchema.For(c))
+        {
+            var v = prop.Get(c);
+            if (v?.IsBound == true && v.Binding!.Path.Count > 0 && v.Binding.Path[0] is NameSegment ns)
+                yield return ns.Name;
+        }
+    }
 
+    /// <summary>Applies one <c>sets</c> entry. See "Widgets" for the grammar: an optional trailing
+    /// ":{token}" substitutes into the target's current string; otherwise "=bind:" writes a
+    /// binding parsed from <paramref name="part"/> (never from the sets path's own text, which
+    /// only documents the default choice's shape) and anything else writes a literal.</summary>
+    private static void ApplySet(LayoutFile layout, string instanceId, string setPath, string part)
+    {
+        var s = setPath;
         string? token = null;
-        var colon = path.IndexOf(':');
-        if (colon >= 0) { token = path[(colon + 1)..].Trim('{', '}'); path = path[..colon]; }
-
-        var parts = path.Split('.');
-        if (parts.Length >= 3 && parts[0] == "components")
+        var tokenMatch = TokenSuffix.Match(s);
+        if (tokenMatch.Success)
         {
-            var component = layout.Components.FirstOrDefault(c =>
-                string.Equals(c.Id, $"{instanceId}.{parts[1]}", StringComparison.Ordinal));
-            if (component is null) return;
-            var prop = PropertySchema.For(component).FirstOrDefault(p => string.Equals(p.Name, parts[2], StringComparison.OrdinalIgnoreCase));
-            if (prop is null) return;
-            if (bindText is not null) { prop.Set(component, PropertyValue.Bound(Binding.Parse(bindText))); return; }
-            var current = prop.Get(component);
-            prop.Set(component, PropertyValue.Literal(Substitute(current is { IsBound: false } ? current.LiteralText ?? "" : "", token, value, tokens)));
+            token = tokenMatch.Groups[1].Value;
+            s = s[..tokenMatch.Index];
         }
-        else if (parts.Length >= 4 && parts[0] == "sources" && parts[2] == "settings")
+
+        var isBind = false;
+        var bindIndex = s.IndexOf("=bind:", StringComparison.Ordinal);
+        if (bindIndex >= 0)
         {
-            var source = layout.Sources.FirstOrDefault(s => string.Equals(s.Name, parts[1], StringComparison.OrdinalIgnoreCase));
-            if (source is null) return;
-            source.Settings.TryGetValue(parts[3], out var current);
-            source.Settings[parts[3]] = Substitute(current ?? "", token, value, tokens);
+            isBind = true;
+            s = s[..bindIndex];
+        }
+
+        var segments = s.Split('.');
+        if (segments.Length >= 3 && segments[0] == "components")
+        {
+            var id = $"{instanceId}.{segments[1]}";
+            var propertyName = segments[2];
+            var component = layout.Components.FirstOrDefault(c => c.Id == id)
+                ?? throw new InvalidOperationException($"sets path \"{setPath}\": no component \"{id}\"");
+            var prop = PropertySchema.For(component).FirstOrDefault(p => string.Equals(p.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"sets path \"{setPath}\": \"{id}\" has no property \"{propertyName}\"");
+
+            if (token is not null)
+            {
+                var current = prop.Get(component)?.LiteralText ?? "";
+                prop.Set(component, PropertyValue.Literal(current.Replace("{" + token + "}", part)));
+            }
+            else if (isBind)
+            {
+                prop.Set(component, PropertyValue.Bound(Binding.Parse(part)));
+            }
+            else
+            {
+                prop.Set(component, PropertyValue.Literal(part));
+            }
+        }
+        else if (segments.Length >= 4 && segments[0] == "sources" && segments[2] == "settings")
+        {
+            var name = segments[1];
+            var key = segments[3];
+            var source = layout.Sources.FirstOrDefault(x => x.Name == name)
+                ?? throw new InvalidOperationException($"sets path \"{setPath}\": no source \"{name}\"");
+            if (token is not null)
+            {
+                var current = source.Settings.TryGetValue(key, out var v) ? v : "";
+                source.Settings[key] = current.Replace("{" + token + "}", part);
+            }
+            else
+            {
+                source.Settings[key] = part;
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException($"bad sets path \"{setPath}\"");
         }
     }
-
-    /// <summary>No token: the value replaces the whole string. A token: only "{token}" inside the
-    /// current string is replaced, by the matching piece of the value (a town's {lat}/{lon}) or by
-    /// the value itself.</summary>
-    private static string Substitute(string current, string? token, string value, Dictionary<string, string> tokens)
-    {
-        if (token is null) return value;
-        // A knob that carries named pieces (a town's lat and lon) only fills the tokens it has:
-        // writing the town's name where a latitude belongs would point the forecast at the ocean.
-        if (tokens.Count > 0 && !tokens.TryGetValue(token, out _)) return current;
-        var replacement = tokens.TryGetValue(token, out var t) ? t : value;
-        return current.Replace("{" + token + "}", replacement, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>The number a Number knob holds, for a control that wants one.</summary>
-    public static double? Number(string text)
-        => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : null;
 }

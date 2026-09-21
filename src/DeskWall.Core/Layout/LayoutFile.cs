@@ -13,11 +13,10 @@ public sealed class LayoutFile
     public int JpegQuality { get; set; } = 92;
     public List<SourceDef> Sources { get; set; } = new();
     public List<ComponentDef> Components { get; set; } = new();
-
-    /// <summary>Instance id -> what the designer stamped it from. The daemon never reads it; it is
-    /// here so a widget's knobs can be shown back and re-edited, and so the instance can be built
-    /// again after its template changes. Absent in a layout written by hand.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    /// <summary>Widget instance id to the record the designer's widget picker needs to re-edit or
+    /// re-create it. Null (not an empty dictionary) when the layout was never touched by the
+    /// widget picker; the daemon ignores this field entirely (spec 3, `docs/layout-format.md`
+    /// "Widgets"). Component-level ownership is <see cref="ComponentDef.Widget"/>.</summary>
     public Dictionary<string, WidgetRecord>? Widgets { get; set; }
 
     public static LayoutFile Parse(string json)
@@ -42,16 +41,6 @@ public sealed class LayoutFile
             throw;
         }
     }
-}
-
-/// <summary>One widget instance in a layout: which template stamped it, the knob values the owner
-/// chose, and whether the arranger is allowed to move it. Lives in Core only so the layout's
-/// source-generated JSON context can carry it; nothing in Core reads it.</summary>
-public sealed class WidgetRecord
-{
-    public required string Template { get; set; }
-    public Dictionary<string, string> Knobs { get; set; } = new();
-    public bool Unlocked { get; set; }
 }
 
 [JsonSourceGenerationOptions(

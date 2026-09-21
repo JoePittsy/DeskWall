@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "Pending reboot",
+  "description": "Shows when Windows wants a restart.",
+  "size": [172, 20],
+  "sources": [
+    { "name": "system", "type": "system" }
+  ],
+  "components": [
+    { "type": "text", "id": "reboot", "rect": [0, 0, 172, 20], "z": 1,
+      "text": { "bind": "system.pendingReboot | \"Reboot pending: {0}\"" }, "size": 13, "align": "right" }
+  ],
+  "knobs": []
+}

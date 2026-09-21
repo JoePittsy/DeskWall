@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Views;
 

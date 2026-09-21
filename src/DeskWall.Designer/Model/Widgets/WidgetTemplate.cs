@@ -1,160 +1,126 @@
-using System.Globalization;
 using System.IO;
 using System.Text.Json;
-using DeskWall.Core;
+using System.Text.Json.Serialization;
 using DeskWall.Core.Layout;
 
-namespace DeskWall.Designer.Model;
+namespace DeskWall.Designer.Model.Widgets;
 
-/// <summary>What a knob offers. <see cref="KnobType.Town"/> is a text box whose value is resolved
-/// once to coordinates; the rest are the obvious control.</summary>
 public enum KnobType { Number, Text, Choice, Color, Drive, Town }
 
-/// <summary>One dial on a widget's front panel. <paramref name="Sets"/> are the paths written when
-/// it changes: <c>components.&lt;id&gt;.&lt;property&gt;</c>, <c>sources.&lt;name&gt;.settings.&lt;key&gt;</c>,
-/// either with a trailing <c>:{token}</c> to substitute inside the current string, or with
-/// <c>=bind:&lt;binding&gt;</c> to write a binding rather than a literal.</summary>
-public sealed record Knob(
-    string Id,
-    string Label,
-    KnobType Type,
-    string Default,
-    IReadOnlyList<string> Sets,
-    IReadOnlyList<string>? Choices,
-    double? Min,
-    double? Max);
+/// <summary>One control in a widget's knobs panel. See <c>docs/layout-format.md</c> "Widgets" for
+/// the <see cref="Sets"/> grammar and the composite-value convention some knobs need.</summary>
+public sealed record Knob(string Id, string Label, KnobType Type, string Default, IReadOnlyList<string> Sets, IReadOnlyList<string>? Choices, double? Min, double? Max);
 
-/// <summary>A widget the gallery can offer: a footprint, the components that fill it in template
-/// coordinates, the sources they need, and the handful of knobs the owner is allowed to turn.
-/// Loaded from <c>widgets/&lt;key&gt;.json</c>.</summary>
+/// <summary>A widget recipe loaded from <c>widgets/&lt;key&gt;.json</c>: some sources, some
+/// components in template-local coordinates (the widget's own top-left is (0, 0)), and up to
+/// five knobs. Never mutated once loaded; <see cref="WidgetInstance"/> copies from it.</summary>
 public sealed class WidgetTemplate
 {
     public required string Name { get; init; }
-
-    /// <summary>The file name without .json. Identifies the template in a layout's widgets record.</summary>
+    /// <summary>The file name without ".json" -- not a field in the file.</summary>
     public string Key { get; init; } = "";
-
     public required string Description { get; init; }
     public required int Width { get; init; }
     public required int Height { get; init; }
-
-    /// <summary>"top" or "bottom": which end of the column the arranger stacks this widget from.</summary>
+    /// <summary>"top" (default) or "bottom" -- which end of the column <see cref="Arranger"/> stacks
+    /// this widget from.</summary>
     public string Anchor { get; init; } = "top";
-
-    public IReadOnlyList<SourceDef> Sources { get; init; } = Array.Empty<SourceDef>();
-
-    /// <summary>Template coordinates: 0,0 is the widget's top-left.</summary>
-    public IReadOnlyList<ComponentDef> Components { get; init; } = Array.Empty<ComponentDef>();
-
-    public IReadOnlyList<Knob> Knobs { get; init; } = Array.Empty<Knob>();
-
-    /// <summary>A human sentence shown on the card when the widget needs something the machine may
-    /// not have ("Needs an NVIDIA GPU"). Null when it always works.</summary>
+    public IReadOnlyList<SourceDef> Sources { get; init; } = [];
+    public IReadOnlyList<ComponentDef> Components { get; init; } = [];
+    public IReadOnlyList<Knob> Knobs { get; init; } = [];
+    /// <summary>A sentence shown on the gallery card when a requirement (an NVIDIA GPU, Tailscale,
+    /// Steam secrets) may be missing; null when the widget has none.</summary>
     public string? Requires { get; init; }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
 
     public static WidgetTemplate Load(string path)
     {
-        var key = Path.GetFileNameWithoutExtension(path);
-        JsonDocument doc;
-        try { doc = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }); }
-        catch (JsonException ex) { throw new FormatException($"{Path.GetFileName(path)}: {ex.Message}", ex); }
-        using (doc)
+        WidgetTemplateFile? file;
+        try
         {
-            var root = doc.RootElement;
-            var size = Require(root, "size", key);
-            if (size.ValueKind != JsonValueKind.Array || size.GetArrayLength() != 2)
-                throw new FormatException($"{key}.json: 'size' must be [width, height]");
-
-            // Components and sources are parsed by the layout's own source-generated context, so a
-            // template's component objects are exactly a layout's and stay in step with it for free.
-            var shell = $$"""
-                { "version": 1, "baseImage": "",
-                  "sources": {{(root.TryGetProperty("sources", out var s) ? s.GetRawText() : "[]")}},
-                  "components": {{Require(root, "components", key).GetRawText()}} }
-                """;
-            LayoutFile parsed;
-            try { parsed = LayoutFile.Parse(shell); }
-            catch (JsonException ex) { throw new FormatException($"{key}.json: components: {ex.Message}", ex); }
-
-            return new WidgetTemplate
-            {
-                Key = key,
-                Name = Text(root, "name", key) ?? key,
-                Description = Text(root, "description", key) ?? "",
-                Width = size[0].GetInt32(),
-                Height = size[1].GetInt32(),
-                Anchor = Text(root, "anchor", key) ?? "top",
-                Requires = Text(root, "requires", key),
-                Sources = parsed.Sources,
-                Components = parsed.Components,
-                Knobs = ReadKnobs(root, key),
-            };
+            file = JsonSerializer.Deserialize<WidgetTemplateFile>(File.ReadAllText(path), JsonOptions);
         }
-    }
-
-    /// <summary>A layout holding just this widget at 0,0 on <paramref name="baseImage"/>, for the
-    /// gallery card's real render.</summary>
-    public LayoutFile Preview(string baseImage)
-    {
-        var copy = LayoutFile.Parse(new LayoutFile
+        catch (JsonException ex)
         {
-            BaseImage = baseImage,
-            Sources = Sources.ToList(),
-            Components = Components.ToList(),
-        }.ToJson());
-        copy.BaseFit = Fit.Cover;
-        return copy;
-    }
+            throw new FormatException($"{path}: {ex.Message}", ex);
+        }
+        if (file is null) throw new FormatException($"{path}: empty widget file");
+        if (string.IsNullOrWhiteSpace(file.Name)) throw new FormatException($"{path}: missing \"name\"");
+        if (string.IsNullOrWhiteSpace(file.Description)) throw new FormatException($"{path}: missing \"description\"");
+        if (file.Size is null || file.Size.Length != 2) throw new FormatException($"{path}: \"size\" must be [width, height]");
+        if (file.Size[0] <= 0 || file.Size[1] <= 0) throw new FormatException($"{path}: \"size\" must be positive");
 
-    private static JsonElement Require(JsonElement root, string name, string key)
-        => root.TryGetProperty(name, out var e) ? e : throw new FormatException($"{key}.json: '{name}' is missing");
+        var anchor = (file.Anchor ?? "top").ToLowerInvariant();
+        if (anchor is not ("top" or "bottom")) throw new FormatException($"{path}: \"anchor\" must be \"top\" or \"bottom\", was \"{file.Anchor}\"");
 
-    private static string? Text(JsonElement root, string name, string key)
-    {
-        if (!root.TryGetProperty(name, out var e)) return null;
-        if (e.ValueKind != JsonValueKind.String) throw new FormatException($"{key}.json: '{name}' must be a string");
-        return e.GetString();
-    }
-
-    private static List<Knob> ReadKnobs(JsonElement root, string key)
-    {
         var knobs = new List<Knob>();
-        if (!root.TryGetProperty("knobs", out var arr) || arr.ValueKind != JsonValueKind.Array) return knobs;
-        foreach (var k in arr.EnumerateArray())
+        foreach (var k in file.Knobs ?? [])
         {
-            var id = Text(k, "id", key) ?? throw new FormatException($"{key}.json: a knob has no 'id'");
-            var typeText = Text(k, "type", key) ?? "text";
-            if (!Enum.TryParse<KnobType>(typeText, ignoreCase: true, out var type))
-                throw new FormatException($"{key}.json: knob '{id}' has unknown type '{typeText}'");
-            knobs.Add(new Knob(
-                id,
-                Text(k, "label", key) ?? id,
-                type,
-                DefaultText(k),
-                k.TryGetProperty("sets", out var sets) && sets.ValueKind == JsonValueKind.Array
-                    ? sets.EnumerateArray().Select(e => e.GetString() ?? "").Where(v => v.Length > 0).ToList()
-                    : new List<string>(),
-                k.TryGetProperty("choices", out var ch) && ch.ValueKind == JsonValueKind.Array
-                    ? ch.EnumerateArray().Select(e => e.GetString() ?? "").ToList()
-                    : null,
-                k.TryGetProperty("min", out var min) && min.ValueKind == JsonValueKind.Number ? min.GetDouble() : null,
-                k.TryGetProperty("max", out var max) && max.ValueKind == JsonValueKind.Number ? max.GetDouble() : null));
+            if (string.IsNullOrWhiteSpace(k.Id)) throw new FormatException($"{path}: a knob is missing \"id\"");
+            if (k.Type is null || !Enum.TryParse<KnobType>(k.Type, ignoreCase: true, out var kt))
+                throw new FormatException($"{path}: knob \"{k.Id}\" has unknown \"type\" \"{k.Type}\"");
+            knobs.Add(new Knob(k.Id, k.Label ?? k.Id, kt, k.Default ?? "", k.Sets ?? [], k.Choices, k.Min, k.Max));
         }
-        if (knobs.Count > 5) throw new FormatException($"{key}.json: {knobs.Count} knobs; a widget may expose at most five");
-        return knobs;
-    }
+        if (knobs.Count > 5) throw new FormatException($"{path}: {knobs.Count} knobs exceeds the doctrine limit of 5");
 
-    /// <summary>A default may be written as a number or a string; the knob carries text either way.</summary>
-    private static string DefaultText(JsonElement k)
-    {
-        if (!k.TryGetProperty("default", out var d)) return "";
-        return d.ValueKind switch
+        return new WidgetTemplate
         {
-            JsonValueKind.String => d.GetString() ?? "",
-            JsonValueKind.Number => d.GetDouble().ToString(CultureInfo.InvariantCulture),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            _ => "",
+            Name = file.Name,
+            Key = Path.GetFileNameWithoutExtension(path),
+            Description = file.Description,
+            Width = file.Size[0],
+            Height = file.Size[1],
+            Anchor = anchor,
+            Sources = file.Sources ?? [],
+            Components = file.Components ?? [],
+            Knobs = knobs,
+            Requires = file.Requires,
         };
     }
+
+    /// <summary>A layout containing just this widget at (0, 0) on <paramref name="baseImage"/>, for
+    /// a gallery card render. The template's own components/sources are copied, never shared, so
+    /// the caller can freely hand the result to a renderer without risking the template.</summary>
+    public LayoutFile Preview(string baseImage) => new()
+    {
+        BaseImage = baseImage,
+        Sources = Sources.Select(WidgetJson.CloneSource).ToList(),
+        Components = WidgetJson.CloneComponents(Components),
+    };
+}
+
+// ---- JSON shape of widgets/<key>.json; deserialized by reflection (the designer is JIT, not
+// AOT, so there is no source-generated context here) and mapped into WidgetTemplate above, which
+// also lets Load produce error messages that name the file and the field. ----
+
+internal sealed class WidgetTemplateFile
+{
+    public int Version { get; set; } = 1;
+    public string? Name { get; set; }
+    public string? Description { get; set; }
+    public int[]? Size { get; set; }
+    public string? Anchor { get; set; }
+    public string? Requires { get; set; }
+    public List<SourceDef>? Sources { get; set; }
+    public List<ComponentDef>? Components { get; set; }
+    public List<KnobFile>? Knobs { get; set; }
+}
+
+internal sealed class KnobFile
+{
+    public string? Id { get; set; }
+    public string? Label { get; set; }
+    public string? Type { get; set; }
+    public string? Default { get; set; }
+    public List<string>? Sets { get; set; }
+    public List<string>? Choices { get; set; }
+    public double? Min { get; set; }
+    public double? Max { get; set; }
 }

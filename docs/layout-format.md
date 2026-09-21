@@ -247,3 +247,116 @@ A layout registered for the exact current signature is used as-is (`Scaled: fals
 that fails to parse or whose `version` exceeds `LayoutStore.MaxVersion` is reported through the
 log/tray and treated as if nothing were registered for that signature (the previous wallpaper
 stays, spec 3.2) -- it is never used as a stand-in for another display's request.
+
+## Widgets
+
+The designer's widget picker (`docs/superpowers/specs/2026-09-21-designer-widgets-design.md`
+sections 3, 5, 6) adds a layer above the plain layout format described so far: a *widget
+template* (`widgets/<key>.json`, shipped beside the designer exe and also read from
+`%LOCALAPPDATA%\DeskWall\widgets\`) is a small, reusable recipe -- some sources, some components
+in template-local coordinates starting at `(0, 0)`, and up to five *knobs* -- that gets stamped
+onto a layout as one *widget instance*. The daemon and the resolver know nothing about any of
+this: an instantiated widget is ordinary sources and ordinary components, plus two bookkeeping
+fields (`ComponentDef.Widget`, `LayoutFile.Widgets`) both of which resolve/render ignore
+entirely. The model is `DeskWall.Designer.Model.Widgets` (`src/DeskWall.Designer/Model/Widgets/`);
+`WidgetRecord` itself lives in Core (`src/DeskWall.Core/Layout/WidgetRecord.cs`) only so the
+source-generated JSON context can carry `LayoutFile.Widgets` without reflection.
+
+### Template file
+
+```json
+{
+  "version": 1,
+  "name": "Weather",
+  "description": "Temperature and sky for a town, from Open-Meteo. No key needed.",
+  "size": [172, 60],
+  "anchor": "top",
+  "requires": null,
+  "sources": [ { "name": "weather", "type": "http", "every": 900, "settings": { "url": "..." } } ],
+  "components": [ { "type": "text", "id": "temp", "rect": [0, 0, 108, 52], "...": "..." } ],
+  "knobs": [ { "id": "town", "label": "Town", "type": "town", "default": "...", "sets": ["..."] } ]
+}
+```
+
+`name`, `description` and `size` (`[width, height]`) are required; `anchor` (`"top"` or
+`"bottom"`, default `"top"`) and `requires` (a sentence shown on the gallery card when a
+requirement -- an NVIDIA GPU, Tailscale, Steam secrets -- may be missing) are optional. The
+template's key is its file name without `.json` (`WidgetTemplate.Key`), not a field in the file.
+`sources` and `components` are ordinary `SourceDef`/`ComponentDef` JSON exactly as they appear in
+a plain layout, except every component `rect` is relative to the widget's own `(0, 0)`, not the
+canvas.
+
+### Instantiation (`WidgetInstance.Add`)
+
+Adding a template to a layout at an origin: components are deep-copied with `id` rewritten to
+`"<instanceId>.<id>"`, `widget` set to the instance id, and `rect` offset by the origin; each
+source is merged into the layout's `sources` by name (same name and same `type`: reused as-is;
+same name, different `type`: the new source is added under `"<name>2"`, `"<name>3"`, ... and
+every binding the *just-added* components make to the old name is rewritten to the new one --
+this can only reach a component this same `Add` call is placing, never another widget's); knob
+defaults are applied through `SetKnob`; and `layout.Widgets["<instanceId>"]` records the
+template key and the applied knob values. The instance id is `"<templateKey>-<n>"`, `n` the
+smallest positive integer not already used as an instance id in this layout.
+
+### Knobs and the `sets` grammar
+
+A knob's `sets` list names the paths a value change writes to, in order:
+
+| Form | Effect |
+|---|---|
+| `components.<id>.<property>` | Overwrites the component property (found by `<instanceId>.<id>`, matched against `PropertySchema.For` by name) with a **literal**. |
+| `components.<id>.<property>=bind:<text>` | Overwrites the property with a **binding**, parsed from the resolved value (below), not from `<text>` -- `<text>` documents the default choice's shape for a human reading the template but is never parsed. |
+| `sources.<name>.settings.<key>` | Overwrites the named source's setting with a literal. |
+| any of the above, with a trailing `:{token}` | Instead of overwriting, **substitutes** the literal substring `{token}` inside the target's *current* string (its own currently-authored placeholder, e.g. the weather URL's `{lat}`) with the resolved value, leaving the rest of the string as it was. |
+
+A knob's stored value (`Knob.Default`, what a caller passes to `SetKnob`, and what
+`WidgetRecord.Knobs[knobId]` keeps for showing a knob back and re-applying it) may be a **plain
+string** or a **composite** of parts joined by `||` (two pipes, chosen because a binding's own
+`|` format separator and every value a shipped widget writes -- URLs, format strings, captions --
+use a single `|` at most). Part `0` is the whole value for a plain (non-composite) knob and the
+display value for a composite one; for the `i`-th entry in `sets` (0-based), the value substituted
+or written is part `i + 1` when it exists, else part `0`. This is how one knob drives several
+differently-shaped targets:
+
+- **Town** (`weather.json`): default `"Leeds||53.8008||-1.5491"`, `sets`
+  `["sources.weather.settings.url:{lat}", "sources.weather.settings.url:{lon}"]`. Part 0
+  ("Leeds") is what a re-opened knobs panel shows back; part 1 substitutes `{lat}`, part 2
+  substitutes `{lon}` -- both into the *same* setting string, which is why the substitution form
+  exists instead of a plain overwrite (an overwrite could only place one of the two numbers).
+  Because `SetKnob` never makes a network call, a template's `default` for a `town` knob must
+  already carry resolved coordinates; `ResolveTownAsync` (Open-Meteo geocoding, `count=1`) is
+  what the designer calls to turn an arbitrary typed-in town into a fresh `"town||lat||lon"`
+  value before calling `SetKnob` interactively -- it is not consulted for defaults.
+- **Metric** (`dial.json`): a `choice` knob whose four `choices` are themselves full composites,
+  e.g. `"GPU temperature||hardware.gpuTempFraction||hardware.gpuTempC | \"{0}°\"||gpu °C"`.
+  `sets` has three entries -- `components.dial.fraction=bind:...`, `components.value.text=bind:...`,
+  `components.label.text` (plain literal, no `:{token}` needed since the caption fully replaces
+  the label rather than being spliced into it) -- consuming parts 1, 2 and 3 respectively. The
+  four metrics need genuinely different target text (`cpuPct`/`{0}%` vs. `gpuTempC`/`{0}°`), which
+  a single shared template could not express, so the composite carries the whole resolved content
+  per choice rather than a token to drop into one.
+- **Warn at** (`dial.json`): an ordinary `number` knob, default `"0.9"`, `sets`
+  `["components.dial.threshold"]` -- no composite needed; part 0 (the whole value) is used
+  directly. `column-system.json`'s GPU-temperature dial instance overrides this to `"0.83"`
+  itself (`StarterGenerator`), matching the dial widget's own default for every other metric;
+  the widget model has no mechanism for one knob's default to depend on another's value, so a
+  metric-specific default is the instantiator's job, not the template's.
+
+**Known limitation:** `sources.<name>` in a `sets` path is resolved by the template-local name
+literally, not through the rename an `Add`-time source clash would have produced for that
+instance. None of the eight shipped widgets can actually clash (each uses a name no other
+shipped widget also uses, or the same name at the same type), so this only matters if a future
+widget's source name collides with another already-placed widget's differently-typed source of
+the same name; re-editing that knob would then write to the wrong (original) source.
+
+### Arranger
+
+`Arranger.Arrange` lays every non-`Unlocked` instance out as a single vertical stack at
+`ColumnX = 3220`: top-anchored instances downward from `TopY = 40`, bottom-anchored instances
+(`drives.json`) upward from `BottomY = 1400`, `Gap = 16` between instances, using each instance's
+current bounding box (`WidgetInstance.Bounds`, the union of its components' rects) for height --
+it does not resize anything, including a narrower widget like a dial (`80` px) inside the
+`ColumnWidth = 172` px column. `Unlocked` instances (an explicit opt-out, `WidgetRecord.Unlocked`)
+are skipped entirely and keep whatever rect they already have. `column-system.json` and
+`clock-disks.json` are generated this way, not hand-placed, which is why they are not
+pixel-identical to the layouts they replace.

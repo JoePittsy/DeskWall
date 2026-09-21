@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "VPN (Tailscale)",
+  "description": "Tailscale connection state.",
+  "size": [172, 20],
+  "requires": "Needs Tailscale installed at C:\\Program Files\\Tailscale\\tailscale.exe",
+  "sources": [
+    { "name": "tailscale", "type": "command", "every": 300, "settings": {
+        "command": "C:\\Program Files\\Tailscale\\tailscale.exe", "args": "status --json", "timeout": "10" } }
+  ],
+  "components": [
+    { "type": "text", "id": "vpn", "rect": [0, 0, 172, 20], "z": 1,
+      "text": { "bind": "tailscale.json.BackendState | \"VPN {0}\"" }, "size": 13, "align": "right" }
+  ],
+  "knobs": []
+}

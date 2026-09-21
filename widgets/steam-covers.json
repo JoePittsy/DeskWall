@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "Steam covers",
+  "description": "Recently played Steam games; covers click to launch.",
+  "size": [172, 1094],
+  "requires": "Needs a Steam key and SteamID (layouts/README.md \"Steam secrets\")",
+  "sources": [
+    { "name": "steam", "type": "http", "every": 600, "settings": {
+        "url": "https://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v1/?key={secret:steamKey}&steamid={secret:steamId}&count=4&format=json",
+        "unixTimeFields": "rtime_last_played" } }
+  ],
+  "components": [
+    { "type": "repeater", "id": "games", "rect": [0, 0, 172, 1094], "z": 1,
+      "items": { "bind": "steam.json.response.games" }, "axis": "vertical", "gap": 14, "cellHeight": "auto",
+      "template": [
+        { "type": "image", "id": "cover", "rect": [0, 0, 172, 258], "radius": 4,
+          "source": { "bind": "appid | \"https://cdn.cloudflare.steamstatic.com/steam/apps/{0}/library_600x900.jpg\"" } },
+        { "type": "shortcut", "id": "play", "rect": [0, 0, 172, 258], "slot": 8,
+          "target": { "bind": "appid | \"steam://rungameid/{0}\"" }, "tooltip": { "bind": "name | \"Play {0}\"" } }
+      ] }
+  ],
+  "knobs": []
+}

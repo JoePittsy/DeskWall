@@ -10,6 +10,7 @@ using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Model.Widgets;
 using CRect = DeskWall.Core.Rect;
 
 namespace DeskWall.Designer.Views;
@@ -143,9 +144,8 @@ public partial class MainWindow : Window
     {
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         if (_model.Layout.Widgets is not { } widgets) return counts;
-        foreach (var id in WidgetInstance.Instances(_model.Layout))
-            if (widgets.TryGetValue(id, out var record))
-                counts[record.Template] = counts.GetValueOrDefault(record.Template) + 1;
+        foreach (var record in widgets.Values)
+            counts[record.Template] = counts.GetValueOrDefault(record.Template) + 1;
         return counts;
     }
 

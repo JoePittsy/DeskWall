@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Model.Widgets;
 using CRect = DeskWall.Core.Rect;
 
 namespace DeskWall.Designer.Views;
@@ -152,7 +153,7 @@ public partial class PreviewView : UserControl
     private IReadOnlyList<(string Id, CRect Bounds)> Stack()
     {
         if (_model is null) return Array.Empty<(string, CRect)>();
-        return WidgetInstance.Instances(_model.Layout)
+        return Arranger.Order(_model.Layout)
             .Select(id => (id, WidgetInstance.Bounds(_model.Layout, id)))
             .Where(e => e.Item2.W > 0 && e.Item2.H > 0)
             .OrderBy(e => e.Item2.Y)

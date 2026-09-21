@@ -1,36 +1,36 @@
 using System.IO;
 using DeskWall.Core;
 
-namespace DeskWall.Designer.Model;
+namespace DeskWall.Designer.Model.Widgets;
 
-/// <summary>Every widget the gallery can offer: the set that ships beside the exe, plus anything the
-/// owner has dropped in the runtime dir's <c>widgets\</c> folder, which wins on a key clash so a
-/// local edit of a shipped widget is possible without touching the install.</summary>
+/// <summary>Where widget templates live and how they are loaded into the gallery.</summary>
 public static class WidgetCatalog
 {
-    public static string ShippedDir => Path.Combine(AppContext.BaseDirectory, "widgets");
-
-    public static string UserDir => Paths.InRuntime("widgets");
-
-    /// <summary>Load in order; a later directory's key replaces an earlier one's. A directory that
-    /// is not there is not an error (a dev build may have no user widgets at all); a file that will
-    /// not parse is skipped rather than costing the owner the whole gallery.</summary>
+    /// <summary>Loads every "*.json" in each directory, in the order given. A later directory's
+    /// template with the same key replaces an earlier one (so the runtime dir wins over the
+    /// shipped dir when both are passed shipped-then-runtime) but keeps the position the key was
+    /// first seen at, so the gallery's order does not jump around just because a user template
+    /// overrides a shipped one. A directory that does not exist is skipped, not an error.</summary>
     public static IReadOnlyList<WidgetTemplate> Load(params string[] dirs)
     {
-        var byKey = new Dictionary<string, WidgetTemplate>(StringComparer.OrdinalIgnoreCase);
         var order = new List<string>();
+        var byKey = new Dictionary<string, WidgetTemplate>(StringComparer.OrdinalIgnoreCase);
         foreach (var dir in dirs)
         {
             if (!Directory.Exists(dir)) continue;
             foreach (var file in Directory.EnumerateFiles(dir, "*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
-                WidgetTemplate t;
-                try { t = WidgetTemplate.Load(file); }
-                catch (Exception ex) when (ex is FormatException or IOException) { continue; }
-                if (!byKey.ContainsKey(t.Key)) order.Add(t.Key);
-                byKey[t.Key] = t;
+                var template = WidgetTemplate.Load(file);
+                if (!byKey.ContainsKey(template.Key)) order.Add(template.Key);
+                byKey[template.Key] = template;
             }
         }
         return order.Select(k => byKey[k]).ToList();
     }
+
+    /// <summary>Shipped beside the designer exe, linked from the repo's widgets/ (csproj).</summary>
+    public static string ShippedDir => Path.Combine(AppContext.BaseDirectory, "widgets");
+
+    /// <summary>A user's own templates, read after the shipped ones so they can override a key.</summary>
+    public static string UserDir => Paths.InRuntime("widgets");
 }

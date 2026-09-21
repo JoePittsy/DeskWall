@@ -191,6 +191,22 @@ public class LayoutResolverTests
         Assert.Equal(path, img.Path);
         Assert.Equal(20, img.Rect.H);   // 80 * 10 / 40; the 2:3 placeholder would have said 120
     }
+
+    /// <summary>The designer widget picker's <c>ComponentDef.Widget</c> and <c>LayoutFile.Widgets</c>
+    /// (spec "designer widgets" section 3) are ownership bookkeeping only; the daemon's resolver
+    /// never reads them, so a widget-owned component resolves exactly as an unowned one.</summary>
+    [Fact]
+    public void Widget_Owned_Component_Resolves_Like_Any_Other()
+    {
+        var layout = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [ { "type": "text", "id": "clock-1.clock", "rect": [100, 10, 172, 70], "text": { "bind": "time.now | HH:mm" }, "widget": "clock-1" } ],
+          "widgets": { "clock-1": { "template": "clock", "knobs": {} } } }
+        """);
+        var r = LayoutResolver.Resolve(layout, Tree());
+        var clock = Assert.IsType<ResolvedText>(Assert.Single(r));
+        Assert.Equal("14:32", clock.Text);
+    }
 }
 
 /// <summary>Finding 4: template children used to escape their cell on the main axis (the cell was

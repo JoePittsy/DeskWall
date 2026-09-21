@@ -10,6 +10,7 @@ using IOPath = System.IO.Path;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Views;
 
@@ -179,23 +180,44 @@ public partial class KnobsPanel : UserControl
         _model.Edit($"Set {knob.Label}", l => WidgetInstance.SetKnob(l, template, instanceId, knob.Id, value));
     }
 
+    /// <summary>A choice's value may be a composite ("GPU temperature||hardware.gpuTempFraction||...")
+    /// whose first part is the only thing a human should ever see; the whole composite is what goes
+    /// back to SetKnob. The list therefore shows Display(...) and carries the raw value alongside.</summary>
     private ComboBox ChoiceControl(string instanceId, WidgetTemplate template, Knob knob, string current, IReadOnlyList<string> choices)
     {
-        var combo = new ComboBox { ItemsSource = choices, HorizontalAlignment = HorizontalAlignment.Stretch };
-        combo.SelectedItem = choices.FirstOrDefault(c => string.Equals(c, current, StringComparison.OrdinalIgnoreCase)) ?? choices.FirstOrDefault();
-        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s) Commit(instanceId, template, knob, s); };
+        var items = choices.Select(c => new Choice(c)).ToList();
+        var combo = new ComboBox { ItemsSource = items, DisplayMemberPath = "Label", HorizontalAlignment = HorizontalAlignment.Stretch };
+        combo.SelectedItem = items.FirstOrDefault(c => string.Equals(c.Value, current, StringComparison.OrdinalIgnoreCase))
+            ?? items.FirstOrDefault(c => string.Equals(c.Label, Display(current), StringComparison.OrdinalIgnoreCase))
+            ?? items.FirstOrDefault();
+        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is Choice c) Commit(instanceId, template, knob, c.Value); };
         return combo;
+    }
+
+    /// <summary>One entry of a Choice or Drive knob: what the owner reads, and what gets stored.</summary>
+    private sealed record Choice(string Value)
+    {
+        public string Label => Display(Value);
+    }
+
+    /// <summary>The part of a knob value a human is meant to see. Knob values may be composites of
+    /// parts joined by "||" (docs/layout-format.md, "Widgets"); part 0 is the display value.</summary>
+    private static string Display(string value)
+    {
+        var i = value.IndexOf("||", StringComparison.Ordinal);
+        return i < 0 ? value : value[..i];
     }
 
     private TextBox TextControl(string instanceId, WidgetTemplate template, Knob knob, string current)
     {
-        var box = new TextBox { Text = current };
+        var box = new TextBox { Text = Display(current) };
         void Do()
         {
             var text = box.Text.Trim();
             if (knob.Type == KnobType.Number)
             {
-                if (WidgetInstance.Number(text) is not { } n) { box.Text = Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id) ?? knob.Default; return; }
+                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
+                { box.Text = Display(Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id) ?? knob.Default); return; }
                 n = Math.Clamp(n, knob.Min ?? double.MinValue, knob.Max ?? double.MaxValue);
                 text = n.ToString("R", CultureInfo.InvariantCulture);
                 box.Text = text;
@@ -212,7 +234,7 @@ public partial class KnobsPanel : UserControl
         var panel = new DockPanel();
         var swatch = new Rectangle { Width = 24, Height = 24, RadiusX = 4, RadiusY = 4, Margin = new Thickness(0, 0, 8, 0), Stroke = Brush("ControlStrokeColorDefaultBrush"), StrokeThickness = 1 };
         DockPanel.SetDock(swatch, Dock.Left);
-        var box = new TextBox { Text = current };
+        var box = new TextBox { Text = Display(current) };
         void Paint()
         {
             try { swatch.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(box.Text.Trim())); }
@@ -231,18 +253,20 @@ public partial class KnobsPanel : UserControl
     /// half-applied latitude would put the weather somewhere off the coast of Africa.</summary>
     private FrameworkElement TownControl(string instanceId, WidgetTemplate template, Knob knob, string current, StackPanel host)
     {
-        var box = new TextBox { Text = current };
+        var box = new TextBox { Text = Display(current) };
         var note = Hint("");
         note.Margin = new Thickness(0, 4, 0, 0);
         async void Resolve()
         {
             var town = box.Text.Trim();
-            if (town.Length == 0 || string.Equals(town, Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id), StringComparison.OrdinalIgnoreCase)) return;
+            if (town.Length == 0 || string.Equals(town, Display(Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id) ?? ""), StringComparison.OrdinalIgnoreCase)) return;
             note.Text = "looking up...";
             var hit = await WidgetInstance.ResolveTownAsync(town, Http).ConfigureAwait(true);
             if (hit is not { } p) { note.Text = $"'{town}' was not found."; return; }
             note.Text = string.Format(CultureInfo.InvariantCulture, "{0} ({1:0.00}, {2:0.00})", town, p.lat, p.lon);
-            Commit(instanceId, template, knob, string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}", town, p.lat, p.lon));
+            // "town||lat||lon": SetKnob never makes a network call, so the coordinates travel with
+            // the name (docs/layout-format.md, "Widgets").
+            Commit(instanceId, template, knob, string.Format(CultureInfo.InvariantCulture, "{0}||{1}||{2}", town, p.lat, p.lon));
         }
         box.LostFocus += (_, _) => Resolve();
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Resolve(); Keyboard.ClearFocus(); } };

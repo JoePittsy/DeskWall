@@ -3,6 +3,7 @@ using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
 using DeskWall.Core.Values;
+using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Model;
 
@@ -28,6 +29,7 @@ public static class CardRenderer
         var w = CardWidth;
         var h = template.Height + VerticalPadding * 2;
         var layout = template.Preview(baseImage);
+        layout.BaseFit = Fit.Cover;
         var dx = (w - template.Width) / 2;
         foreach (var c in layout.Components) c.Rect = c.Rect.Offset(dx, VerticalPadding);
 
