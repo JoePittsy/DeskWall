@@ -132,3 +132,7 @@ IShellDispatch
 SHChangeNotify
 SHCNE_ID
 SHCNF_FLAGS
+GetSystemTimes
+GlobalMemoryStatusEx
+MEMORYSTATUSEX
+FILETIME

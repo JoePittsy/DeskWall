@@ -225,15 +225,24 @@ internal static class Program
         WallpaperSetter.RecordRestorePoint();
         var manager = opts.Contains("--no-shortcuts") ? null : new ShortcutManager(Calibration.Load());
         var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager);
-        var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
-        if (opts.Contains("--measure")) Console.WriteLine(t.ToTable());
-        else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
-        if (runner.LastShortcutOutcome is { } o)
+        try
         {
-            Console.WriteLine($"shortcuts: written={o.Written} positioned={o.Positioned} removed={o.Removed}");
-            foreach (var w in o.Warnings) Console.Error.WriteLine($"shortcuts: {w}");
+            var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
+            if (opts.Contains("--measure")) Console.WriteLine(t.ToTable());
+            else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
+            if (runner.LastShortcutOutcome is { } o)
+            {
+                Console.WriteLine($"shortcuts: written={o.Written} positioned={o.Positioned} removed={o.Removed}");
+                foreach (var w in o.Warnings) Console.Error.WriteLine($"shortcuts: {w}");
+            }
+            return 0;
         }
-        return 0;
+        finally
+        {
+            // A one-shot tick starts a `hardware` source's sampler on its single RefreshAsync; the
+            // process is about to exit either way, but nothing should be left running behind it.
+            SourceFactory.DisposeAll(sources);
+        }
     }
 
     /// <summary>deskwall shortcuts [--layout path] - read-only: slot, target, planned position and what
@@ -248,12 +257,14 @@ internal static class Program
         if (ResolveLayout(opts, monitor, out var exit) is not { } layout) return exit;
         var clock = SystemClock.Instance;
         var registry = new SourceRegistry();
-        foreach (var s in layout.Sources.Select(s => SourceFactory.Create(s, clock)))
+        var sources = layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
+        foreach (var s in sources)
         {
             var snap = registry.Get(s.Name);
             try { registry.Set(snap.Succeeded(await s.RefreshAsync(CancellationToken.None), clock.Now)); }
             catch (Exception ex) { registry.Set(snap.Failed(ex.Message, clock.Now)); }
         }
+        SourceFactory.DisposeAll(sources);
 
         var resolved = LayoutResolver.Resolve(layout, registry.Tree());
         var shortcuts = ShortcutPlan.Ordered(resolved.OfType<ResolvedShortcut>().ToList());

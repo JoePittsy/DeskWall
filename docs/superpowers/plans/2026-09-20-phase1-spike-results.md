@@ -49,6 +49,20 @@ recorded in the Phase 1 ledger.
 - `GetLastError` is refused by the generator (use `Marshal.GetLastWin32Error`).
 - Project must target `net10.0-windows10.0.19041.0` (TargetPlatformVersion) or CA1416 fires
   as an error for Windows 8+ APIs. `Directory.Build.props` now does this for the whole repo.
+- **`GetSystemTimes` (added 2026-09-21 for the `hardware` source):** the generator emits both a
+  pointer overload and a friendly `out` overload, and puts `[OverloadResolutionPriority(1)]` on
+  the friendly one, so the pointer form the rest of this repo uses does **not** bind -- passing
+  pointers is `CS1620: argument must be passed with the 'out' keyword`. The shape that compiles:
+  `PInvoke.GetSystemTimes(out FILETIME idle, out FILETIME kernel, out FILETIME user)` returning
+  `BOOL`. The `FILETIME` here is `System.Runtime.InteropServices.ComTypes.FILETIME` (CsWin32 maps
+  the Win32 struct onto it), whose `dwHighDateTime`/`dwLowDateTime` are **signed `int`**: combine
+  as `((ulong)(uint)high << 32) | (uint)low`, or a counter past 2^31 100 ns units comes back
+  sign-extended. Listing `FILETIME` in `NativeMethods.txt` is accepted but generates nothing of
+  its own.
+- **`GlobalMemoryStatusEx` / `MEMORYSTATUSEX` (same date):** the ordinary pointer shape,
+  `PInvoke.GlobalMemoryStatusEx(&ms)` returning `BOOL`, with `MEMORYSTATUSEX` in
+  `Windows.Win32.System.SystemInformation` and `ms.dwLength = (uint)sizeof(MEMORYSTATUSEX)` set
+  first. No friendly overload interferes.
 
 ### Exact calls used
 

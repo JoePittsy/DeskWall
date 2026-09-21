@@ -9,7 +9,7 @@ A source is declared in a layout file's `sources` array:
 | Field | Notes |
 |---|---|
 | `name` | The root field bindings use to reach this source's values (`steam.json...`). |
-| `type` | One of `time`, `disks`, `system`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
+| `type` | One of `time`, `disks`, `system`, `hardware`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
 | `every` | Seconds between refreshes. Optional; each type has its own default (below). Ignored by `time`, which is always due on the next whole minute. |
 | `settings` | A flat string-to-string map; each source type documents its own keys below. |
 
@@ -64,6 +64,56 @@ The crash scan reads at most the last 2000 entries of the System event log for i
 and is cached (`SystemSource.CachedCrashEvent`): the answer cannot change while the machine has
 not rebooted, and the scan can take seconds on a busy log, which would otherwise block the tick
 thread (which, in the daemon, is also the message pump) every 15 minutes.
+
+## `hardware`
+
+Settings: `every` (seconds between publishes, default 60), `sample` (seconds between readings,
+default 10), `window` (seconds averaged over, default 300). Each is read from `settings` as a
+positive number; anything unparseable or <= 0 falls back to the default. `every` is the ordinary
+top-level `every` field.
+
+CPU, RAM and (when an NVIDIA GPU is present) GPU load, averaged over a rolling window. A
+`System.Threading.Timer` inside the source, started on the first `RefreshAsync` and stopped on
+`Dispose`, takes one reading of each metric every `sample` seconds into a fixed ring of
+`window / sample` slots (at least 1). `RefreshAsync` itself only reads the rings, so the daemon's
+schedule is unchanged: the source is due every `every` seconds like any other, and the daemon
+still wakes once a minute. A reading that fails is skipped, not recorded as zero.
+
+| Field | Meaning |
+|---|---|
+| `cpu` | average load over the window, 0..1 |
+| `cpuPct` | the same as an integer 0..100, for text |
+| `cpuNow` | latest single reading, 0..1 |
+| `ram` | average used fraction over the window, 0..1 |
+| `ramPct` | the same as an integer 0..100 |
+| `ramUsedGB`, `ramTotalGB` | latest reading, decimal GB to one decimal |
+| `gpu`, `gpuPct`, `gpuNow` | GPU utilisation, same shapes as `cpu`; absent with no GPU reader |
+| `gpuMemory` | GPU memory used fraction, average over the window; absent likewise |
+| `gpuTempC` | average GPU temperature, integer degrees C; absent likewise |
+| `gpuTempFraction` | `gpuTempC / 100`, so a dial can bind it without arithmetic |
+| `samples` | readings in the window right now (0..30 with the defaults) |
+| `window` | window length in seconds |
+
+All values are `NumberValue`. Fractions are published rounded to 3 decimals so a content key does
+not change for a difference below a pixel (the same rule as `ResolvedBar`). A refresh with zero
+samples publishes only `samples: 0` and `window`, and every bound property falls back to its own
+default; nothing throws out of `RefreshAsync`.
+
+CPU load comes from `GetSystemTimes` (`1 - dIdle / d(Kernel + User)`), so it needs two readings:
+the first sample after a start contributes nothing. RAM comes from `GlobalMemoryStatusEx`.
+
+**GPU.** NVML (`nvml.dll`), the library the NVIDIA driver installs in `System32`; the legacy
+`%ProgramFiles%\NVIDIA Corporation\NVSMI\` folder is probed as a fallback. It is loaded with
+`NativeLibrary.TryLoad` and called through unmanaged function pointers (no marshalling, native
+AOT safe), so a machine with no NVIDIA GPU, no driver, or a failing `nvmlInit_v2` simply gets no
+GPU reader and the source publishes none of the `gpu*` fields at all -- rather than fields that
+are permanently missing a value. A layout that binds them must therefore have a sensible default
+on each bound property.
+
+**No CPU temperature.** There is no driverless, admin-free way to read core temperature on
+JOES-PC (the ACPI thermal zone is access denied and is not a core reading anyway), and running
+HWiNFO64 resident or shipping an MSR driver were both declined; GPU temperature from NVML is the
+only temperature published.
 
 ## `command`
 

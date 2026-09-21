@@ -160,7 +160,8 @@ public static class Verifier
     {
         var clock = SystemClock.Instance;
         var registry = new SourceRegistry();
-        foreach (var source in layout.Sources.Select(d => SourceFactory.Create(d, clock)))
+        var sources = layout.Sources.Select(d => SourceFactory.Create(d, clock)).ToList();
+        foreach (var source in sources)
         {
             var snap = registry.Get(source.Name);
             using var cts = new CancellationTokenSource(RefreshTimeout);
@@ -175,6 +176,7 @@ public static class Verifier
                 say($"source {source.Name} failed: {ex.GetType().Name}: {ex.Message}");
             }
         }
+        SourceFactory.DisposeAll(sources);   // one refresh each, then let go of any timer or library
         return LayoutResolver.Resolve(layout, registry.Tree());
     }
 

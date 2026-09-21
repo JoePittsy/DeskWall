@@ -7,6 +7,15 @@ using Xunit;
 
 file sealed class FixedClock(DateTimeOffset now) : IClock { public DateTimeOffset Now => now; }
 
+/// <summary>A source that holds a resource, the shape `hardware` now has (a timer and NVML).</summary>
+file sealed class DisposableSource() : PeriodicSource("d", TimeSpan.FromMinutes(1)), IDisposable
+{
+    public int Disposals;
+    public override ValueTask<DeskWall.Core.Values.RecordValue> RefreshAsync(CancellationToken ct)
+        => new(new DeskWall.Core.Values.RecordValue(new Dictionary<string, DeskWall.Core.Values.Value>()));
+    public void Dispose() => Disposals++;
+}
+
 public class LiveSourcesTests
 {
     private static Secrets NoSecrets() => new(Path.Combine(Path.GetTempPath(), "deskwall-tests", "home-designer", "no-such-secrets.json"));
@@ -81,5 +90,21 @@ public class LiveSourcesTests
         var snap = live.Snapshots.Single();
         Assert.Equal("bad-http", snap.Name);
         Assert.NotNull(snap.LastError);
+    }
+
+    /// <summary>The designer builds a new LiveSources on every edit to the Sources list, so a source
+    /// that holds a timer or a native library (a `hardware` source holds both) leaks one per edit
+    /// unless Dispose lets go of it.</summary>
+    [Fact]
+    public void Dispose_Disposes_Sources_That_Hold_Resources()
+    {
+        var fake = new DisposableSource();
+        var live = new LiveSources([new SourceDef { Name = "d", Type = "time" }], NoSecrets(),
+            new FixedClock(DateTimeOffset.UtcNow), _ => fake);
+
+        live.Dispose();
+        live.Dispose();   // idempotent
+
+        Assert.Equal(1, fake.Disposals);
     }
 }

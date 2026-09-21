@@ -3,8 +3,13 @@ using DeskWall.Core.Values;
 namespace DeskWall.Core.Sources;
 
 /// <summary>A provider that runs on its own schedule and publishes a RecordValue.
-/// Implementations must be safe to call from a background thread and must not hold
-/// resources between refreshes.</summary>
+/// Implementations must be safe to call from a background thread, and should not hold resources
+/// between refreshes.
+/// <para>A source that has to - <c>hardware</c> holds a sampling timer and, on an NVIDIA machine,
+/// an open NVML library - implements <see cref="IDisposable"/> as well, and its host lets go of it
+/// with <see cref="SourceFactory.DisposeAll"/> whenever the set of sources is replaced (a layout
+/// change, a display change, an edit in the designer) and at shutdown. Dispose must be idempotent:
+/// nothing guarantees it is called exactly once.</para></summary>
 public interface ISource
 {
     /// <summary>Instance name used as the root field in the value tree (from the layout).</summary>
