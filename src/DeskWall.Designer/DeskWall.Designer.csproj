@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
@@ -12,6 +12,9 @@
          The designer is a desktop editor, not the daemon, so it carries the globalization data. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- ThemeMode (the Fluent theme) is still marked experimental in .NET 10. It is the whole point
+         of this window's look, so the diagnostic is answered once, here. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.*" PrivateAssets="all" />
@@ -20,7 +23,7 @@
     <ProjectReference Include="..\DeskWall.Core\DeskWall.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\layouts\starter-*.json" Link="layouts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\widgets\*.json" Link="widgets\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\assets\weather\*.png;..\..\assets\weather\LICENSE" Link="assets\weather\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

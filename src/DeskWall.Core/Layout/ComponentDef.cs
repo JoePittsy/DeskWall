@@ -14,6 +14,13 @@ public abstract class ComponentDef
     public required string Id { get; set; }
     [JsonConverter(typeof(RectConverter))] public required Rect Rect { get; set; }
     public int Z { get; set; }
+
+    /// <summary>The designer's widget instance this component was stamped from, or null for a
+    /// component placed by hand. Resolve and render ignore it entirely; it exists so the designer
+    /// can select, move and remove a widget as one thing. Written only when set, so a layout
+    /// authored without the designer stays free of it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Widget { get; set; }
 }
 
 public sealed class TextDef : ComponentDef
