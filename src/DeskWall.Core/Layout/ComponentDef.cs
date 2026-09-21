@@ -30,7 +30,13 @@ public sealed class TextDef : ComponentDef
     public PropertyValue Color { get; set; } = PropertyValue.Literal("#EBFFFFFF");
     public PropertyValue Align { get; set; } = PropertyValue.Literal("left");
     public PropertyValue Effect { get; set; } = PropertyValue.Literal("shadow");
-    public PropertyValue EffectRadius { get; set; } = PropertyValue.Literal(6);
+    /// <summary>Blur radius for the effect, in pixels. "auto" (the default, and anything else that
+    /// is not a number) means a tenth of the font size, floored at 1 px
+    /// (<see cref="Render.TextStyle.DefaultRadius"/>): a flat 6 px is a drop shadow on a 64 px clock
+    /// and a dark crust on a 13 px label. Same sentinel convention as
+    /// <see cref="RepeaterDef.CellHeight"/>, and <c>LayoutScaler</c> already leaves a non-numeric
+    /// literal alone when it scales a layout to another display.</summary>
+    public PropertyValue EffectRadius { get; set; } = PropertyValue.Literal("auto");
     public PropertyValue EffectColor { get; set; } = PropertyValue.Literal("#A0000000");
 }
 
