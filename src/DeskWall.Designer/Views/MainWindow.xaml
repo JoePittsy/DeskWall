@@ -61,7 +61,19 @@
         <v:PreviewView x:Name="Preview" />
       </Border>
 
-      <v:KnobsPanel x:Name="Knobs" Grid.Column="2" />
+      <!-- Knobs above, pushed values below: both answer "what can this widget say", and a pushed
+           provider has to be visible somewhere for a user to know it is arriving at all. -->
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <v:KnobsPanel x:Name="Knobs" Grid.Row="0" />
+        <Border Grid.Row="1" BorderThickness="0,1,0,0" MaxHeight="260"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+          <v:ProvidersPanel x:Name="Providers" />
+        </Border>
+      </Grid>
     </Grid>
 
     <Border Grid.Row="2" Padding="16,6" BorderThickness="0,1,0,0"

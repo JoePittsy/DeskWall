@@ -112,6 +112,31 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   same slot; v1's starter layouts claim slot 8 upward so they never collide with the POC's
   0..3. See the POC section below for the commands to disable/re-enable the POC task when a live
   check genuinely needs it isolated.
+- **The single-instance lock is per runtime dir, not per session.** `Local\DeskWall.Daemon` for
+  the default home (so the installed daemon and a bare `deskwall run` behave exactly as before)
+  and `Local\DeskWall.Daemon.<hash>` for any `--home`. That is what lets a scratch daemon, and
+  the budget tests, run beside the owner's live one -- before this they silently collapsed into
+  "already running; asked it to refresh" and measured nothing.
+- **Two daemons can share one pipe name.** Windows lets a second process create another instance
+  of an existing named pipe when the ACL allows it, so two daemons on two homes both listen on
+  `DeskWall.Events` and a producer's connection lands on whichever is next. Only reachable with a
+  deliberate second `--home`, but do not assume a scratch daemon is the one that got your event.
+- **A named-pipe client can beat `ConnectNamedPipe` and its data is not lost, only unreadable.**
+  An instance is connectable the moment `CreateNamedPipe` returns; a producer that connects,
+  writes and disconnects before the server asks for a connection makes the connect fail with
+  ERROR_NO_DATA ("the pipe is being closed"). Measured: one or two lines lost in every 20
+  connect-write-disconnect sends. The bytes are still in the instance's buffer, and the way to
+  reach them is to wrap the handle in a second `NamedPipeServerStream` with `isConnected: true`
+  -- which is only legal on a **non-overlapped** handle, because an asynchronous one is already
+  bound to the completion port and binding it twice throws. That is why `EventPipeServer` is
+  synchronous with its own thread. Pre-arming more instances does not fix it; Windows will hand
+  a client to a listening-but-not-yet-connected instance.
+- **Providers cross into `SourceRegistry` on the tick thread only.** The registry is not
+  synchronised; `EventBus` is. `DaemonLoop.SyncProviders` is the one crossing point, called just
+  before the resolve. Never call `SetProvider` from the pipe thread or a bus callback.
+- **`deskwall run` always paints the real wallpaper** -- there is no `--no-apply` for it, only for
+  `tick`. A scratch `run` therefore takes the desktop over until the live daemon's next
+  content change (the clock, so within a minute). Budget-style checks restore it explicitly.
 
 ## Verifying a v1 change
 

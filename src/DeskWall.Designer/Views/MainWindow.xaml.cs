@@ -54,6 +54,8 @@ public partial class MainWindow : Window
     private DesignerModel _model = null!;
     private LiveSources? _live;
     private string _sourcesKey = "";
+    private string? _transient;
+    private DateTime _transientUntil;
     private bool _allowClose;
 
     public MainWindow(LayoutStore store, Settings settings, DisplaySignature signature, LayoutResolution? resolution)
@@ -70,6 +72,11 @@ public partial class MainWindow : Window
         Gallery.DuplicateRequested += DuplicateTemplate;
         Gallery.DeleteRequested += DeleteTemplate;
         Knobs.RemoveRequested += Remove;
+        Providers.Status += SetStatus;
+        // The records go into LiveSources, not into a second tree of their own: the binding
+        // picker, the preview and the value trees all read that one, so a provider that is not in
+        // it is one the user cannot bind.
+        Providers.ProvidersChanged += records => _live?.SetProviders(records);
 
         RestorePlacement();
         Open(signature, resolution);
@@ -172,6 +179,9 @@ public partial class MainWindow : Window
         _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
         _live.Updated += OnLiveUpdated;
         Knobs.Live = _live;
+        // A rebuilt set starts with no providers, so the ones already on screen have to be put
+        // back or a bound component would fall back to its default on the next source edit.
+        _live.SetProviders(Providers.Records);
         previous?.Dispose();
         _renderer.Request(_model);
     }
@@ -370,8 +380,24 @@ public partial class MainWindow : Window
     /// <summary>Two facts, read from the machine, never from a channel of our own: when this layout
     /// last reached disk, and whether the process that paints it is running. The daemon's own last
     /// error, when it has one, replaces both - it is the only thing worth reading then.</summary>
+    /// <summary>A panel said something. It holds the status line for a few seconds and then the
+    /// periodic "applied / daemon" line takes it back: this bar is refreshed on a timer, so a
+    /// message written straight into it would vanish inside a second.</summary>
+    private void SetStatus(string message)
+    {
+        _transient = string.IsNullOrEmpty(message) ? null : message;
+        _transientUntil = DateTime.UtcNow.AddSeconds(8);
+        RefreshStatus();
+    }
+
     private void RefreshStatus()
     {
+        if (_transient is { } note && DateTime.UtcNow < _transientUntil)
+        {
+            StatusText.Text = note;
+            return;
+        }
+        _transient = null;
         var applied = _appliedAt is { } at ? $"Applied {at:HH:mm}"
             : _model.Path is { } p && File.Exists(p) ? $"Applied {File.GetLastWriteTime(p):HH:mm}"
             : "Not applied yet";

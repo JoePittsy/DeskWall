@@ -101,7 +101,7 @@ internal static class Program
     /// DaemonSettings (the designer's settings.json) at start.</para></summary>
     private static int Run(List<string> opts)
     {
-        using var single = new Mutex(initiallyOwned: true, @"Local\DeskWall.Daemon", out var mine);
+        using var single = new Mutex(initiallyOwned: true, SingleInstanceName(), out var mine);
         if (!mine)
         {
             // The winner may still be between `new Mutex` and CreateWindowEx, so give the window a
@@ -123,6 +123,25 @@ internal static class Program
         var store = LayoutStore.Default(m => log.Error(m));
         return new DaemonLoop(log, store, SystemClock.Instance, tray: !opts.Contains("--no-tray"))
         { Shortcuts = !opts.Contains("--no-shortcuts") }.Run();
+    }
+
+    /// <summary>One daemon per runtime directory. What the single-instance lock actually protects is
+    /// the runtime dir - two daemons on one home race on frame.raw and restore.json - and two on
+    /// different homes do not share any of it. The default home keeps the old name byte for byte,
+    /// so an installed daemon is unaffected and a bare `deskwall run` still means "refresh the one
+    /// that is running"; only a scratch `deskwall --home &lt;dir&gt; run` gets a lock of its own, which
+    /// is what makes a live check of a development build possible without stopping the user's
+    /// daemon. Two daemons on two homes both paint the wallpaper, and the second `run` on a home
+    /// that is already taken finds the host window by class name, so with two up it may hand the
+    /// refresh to either; both are the price of asking for a second home explicitly.</summary>
+    private static string SingleInstanceName()
+    {
+        var home = Path.GetFullPath(Paths.RuntimeDir).TrimEnd('\\');
+        var standard = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeskWall")).TrimEnd('\\');
+        if (string.Equals(home, standard, StringComparison.OrdinalIgnoreCase)) return @"Local\DeskWall.Daemon";
+        // A path cannot be a kernel object name: the backslash is the namespace separator. Hash it.
+        var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.Unicode.GetBytes(home.ToUpperInvariant()));
+        return @"Local\DeskWall.Daemon." + Convert.ToHexString(digest, 0, 8);
     }
 
     /// <summary>deskwall install: HKCU Run entry, a restore point for the wallpaper we are about to

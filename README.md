@@ -78,6 +78,25 @@ deskwall layouts list                                                # what is r
 deskwall shortcuts                                                   # read-only: planned vs actual desktop-icon positions
 ```
 
+## Pushing a value in
+
+Everything above is pulled on a schedule. Anything running as you can also push: write one JSON
+line to `\\.\pipe\DeskWall.Events` and it lands in the value tree under a name nothing had to
+declare.
+
+```powershell
+$p = New-Object IO.Pipes.NamedPipeClientStream '.', 'DeskWall.Events', 'Out'
+$p.Connect(2000); $w = New-Object IO.StreamWriter $p; $w.AutoFlush = $true
+$w.WriteLine('{"source":"build","data":{"status":"green"}}')
+$p.Dispose()
+```
+
+Bind a component to `build.data.status` and the wallpaper repaints within about half a second.
+The last record of every provider is remembered across a restart, the designer's providers panel
+lists what each one publishes, and the pipe is restricted to your own account -- which also means
+a layout that binds a `shortcut` target to a pushed value will launch whatever that value says.
+The whole thing is `docs/sources.md`, "Pushed values: events".
+
 ## Architecture, in short
 
 Three things: the resident daemon (`deskwall.exe`, hidden window, no polling, one waitable
