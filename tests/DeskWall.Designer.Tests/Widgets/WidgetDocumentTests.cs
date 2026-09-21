@@ -218,7 +218,7 @@ public class WidgetDocumentTests
 
     [Theory]
     [InlineData("My dial", "my-dial")]
-    [InlineData("GPU °C", "gpu-c")]
+    [InlineData("GPU \u00b0C", "gpu-c")]
     [InlineData("  spaced  out  ", "spaced-out")]
     [InlineData("Weather copy", "weather-copy")]
     [InlineData("", "widget")]

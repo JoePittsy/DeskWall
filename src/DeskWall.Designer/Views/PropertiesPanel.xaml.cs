@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -8,6 +9,7 @@ using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
+using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Views;
 
@@ -48,6 +50,15 @@ public partial class PropertiesPanel : UserControl
             RefreshPreviews();
         }
     }
+
+    /// <summary>Whether this property is already one of the widget's knobs. Set only by the widget
+    /// editor, together with <see cref="ToggleAdjustable"/>: when both are null - which is every
+    /// other host, including the layout window - no toggle is drawn and this panel is unchanged.</summary>
+    public Func<string, string, bool>? IsAdjustable { get; set; }
+
+    /// <summary>Expose or unexpose (component id, property name) as a knob. See
+    /// <see cref="IsAdjustable"/>.</summary>
+    public Action<string, string>? ToggleAdjustable { get; set; }
 
     /// <summary>Called by LayersPanel when a repeater's template child is activated. Template
     /// children are not reachable through DesignerModel.Find, so this panel tracks the pair of ids
@@ -172,10 +183,15 @@ public partial class PropertiesPanel : UserControl
         DockPanel.SetDock(label, Dock.Left);
         row.Children.Add(label);
 
+        var value = prop.Get(def) ?? PropertyValue.Literal("");
+        if (BuildAdjustableToggle(def, prop) is { } toggle)
+        {
+            DockPanel.SetDock(toggle, Dock.Right);
+            row.Children.Add(toggle);
+        }
+
         var body = new StackPanel();
         row.Children.Add(body);
-
-        var value = prop.Get(def) ?? PropertyValue.Literal("");
 
         // A bound Binding-editor property edits through its own text: there is no literal editor to
         // offer it, and so no Bind toggle either.
@@ -197,6 +213,35 @@ public partial class PropertiesPanel : UserControl
         }
         else body.Children.Add(BuildLiteralEditor(prop, value));
         return row;
+    }
+
+    /// <summary>The "expose this as a knob" toggle, in the widget editor only. Drawn at the row's
+    /// right edge rather than under the value, so a column of them reads as one list of what the
+    /// widget lets its user change. Hidden for a property no knob can write (a binding, or a value
+    /// that is currently bound), because a toggle that refuses to move is worse than no toggle.</summary>
+    private ToggleButton? BuildAdjustableToggle(ComponentDef def, PropertySchema.Prop prop)
+    {
+        if (IsAdjustable is null || ToggleAdjustable is null) return null;
+        if (!Adjustable.CanAdjust(def, prop)) return null;
+        var id = def.Id;
+        var toggle = new ToggleButton
+        {
+            Content = "Knob",
+            FontSize = 11,
+            Padding = new Thickness(6, 1, 6, 1),
+            Margin = new Thickness(6, 2, 0, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+            IsChecked = IsAdjustable(id, prop.Name),
+            ToolTip = "Let whoever places this widget change it",
+        };
+        toggle.Click += (_, _) => toggle.IsChecked = Toggled(id, prop.Name);
+        return toggle;
+    }
+
+    private bool Toggled(string id, string property)
+    {
+        ToggleAdjustable!(id, property);
+        return IsAdjustable!(id, property);
     }
 
     /// <summary>The Bind toggle. Checking it opens the picker, and cancelling has to put the box

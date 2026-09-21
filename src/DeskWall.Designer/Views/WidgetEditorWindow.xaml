@@ -1,0 +1,119 @@
+﻿<Window x:Class="DeskWall.Designer.Views.WidgetEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:DeskWall.Designer.Views"
+        Title="Widget editor"
+        Width="1320" Height="840" MinWidth="1040" MinHeight="640"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- What the gallery will show, how big the arranger has to make room for it, and Save. The
+         two text boxes are the card; the two numbers are the reservation. Nothing else belongs up
+         here: the parts, the data and the properties all have a column of their own. -->
+    <Border Grid.Row="0" Padding="16,10" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Column="0" Text="Name" Style="{StaticResource Caption}"
+                   VerticalAlignment="Center" Margin="0,0,8,0" />
+        <TextBox x:Name="NameBox" Grid.Column="1" Width="170" Height="30"
+                 VerticalContentAlignment="Center"
+                 AutomationProperties.Name="Widget name" />
+
+        <TextBlock Grid.Column="2" Text="Description" Style="{StaticResource Caption}"
+                   VerticalAlignment="Center" Margin="16,0,8,0" />
+        <TextBox x:Name="DescriptionBox" Grid.Column="3" MinWidth="180" Height="30"
+                 VerticalContentAlignment="Center"
+                 AutomationProperties.Name="Widget description" />
+
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="16,0,0,0">
+          <TextBlock Text="Size" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <TextBox x:Name="WidthBox" Width="54" Height="30" TextAlignment="Right"
+                   VerticalContentAlignment="Center" AutomationProperties.Name="Width" />
+          <TextBlock Text="x" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="6,0,6,0" />
+          <TextBox x:Name="HeightBox" Width="54" Height="30" TextAlignment="Right"
+                   VerticalContentAlignment="Center" AutomationProperties.Name="Height" />
+          <Button x:Name="FitButton" Content="Fit to parts" Click="Fit_Click"
+                  Height="30" Padding="10,0" Margin="8,0,0,0"
+                  ToolTip="Shrink the widget to what is on it" />
+          <ComboBox x:Name="AnchorBox" Width="96" Height="30" Margin="8,0,0,0"
+                    AutomationProperties.Name="Anchor"
+                    ToolTip="Which end of a column this stacks from" />
+        </StackPanel>
+
+        <Button x:Name="SaveButton" Grid.Column="5" Content="Save" Click="Save_Click"
+                Style="{DynamicResource AccentButtonStyle}" ToolTip="Ctrl+S"
+                MinWidth="88" Height="30" Margin="16,0,0,0" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="296" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="330" />
+      </Grid.ColumnDefinitions>
+
+      <DockPanel Grid.Column="0" Margin="16,16,16,16">
+        <TextBlock DockPanel.Dock="Top" Text="Parts" Style="{StaticResource SectionHeader}"
+                   Margin="0,0,0,8" />
+        <UniformGrid DockPanel.Dock="Top" Columns="2" Rows="2" Margin="0,0,0,20">
+          <Button Content="Text" Tag="Text" Click="Part_Click" Height="34" Margin="0,0,4,4" />
+          <Button Content="Image" Tag="Image" Click="Part_Click" Height="34" Margin="4,0,0,4" />
+          <Button Content="Bar" Tag="Bar" Click="Part_Click" Height="34" Margin="0,4,4,0" />
+          <Button Content="Dial" Tag="Dial" Click="Part_Click" Height="34" Margin="4,4,0,0" />
+        </UniformGrid>
+        <v:SourcesPanel x:Name="Sources" />
+      </DockPanel>
+
+      <Border Grid.Column="1" BorderThickness="1,0"
+              BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+              Background="{DynamicResource SolidBackgroundFillColorSecondaryBrush}">
+        <v:PreviewView x:Name="Preview" />
+      </Border>
+
+      <Grid Grid.Column="2" Margin="16,16,16,16">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+          <TextBlock DockPanel.Dock="Top" Text="Selected part" Style="{StaticResource SectionHeader}"
+                     Margin="0,0,0,8" />
+          <!-- Its own light background, as in the layout window's Details: the panel styles its notes
+               with the system grey-text colour, which needs a system window behind it. -->
+          <v:PropertiesPanel x:Name="Properties" />
+        </DockPanel>
+
+        <DockPanel Grid.Row="1" Margin="0,16,0,0">
+          <TextBlock DockPanel.Dock="Top" Text="Adjustable" Style="{StaticResource SectionHeader}"
+                     Margin="0,0,0,8" />
+          <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="Knobs" />
+          </ScrollViewer>
+        </DockPanel>
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2" Padding="16,6" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+      <TextBlock x:Name="StatusText" FontSize="12" TextTrimming="CharacterEllipsis"
+                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Border>
+  </Grid>
+</Window>
