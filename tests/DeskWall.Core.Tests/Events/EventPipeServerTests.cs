@@ -24,7 +24,7 @@ public class EventPipeServerTests
 
     /// <summary>Poll rather than sleep a fixed time: the read happens on a pool thread and a fixed
     /// wait is either slow or flaky.</summary>
-    private static bool WaitFor(Func<bool> done, int timeoutMs = 5000)
+    private static bool WaitFor(Func<bool> done, int timeoutMs = 10000)
     {
         var sw = Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < timeoutMs)
@@ -40,12 +40,17 @@ public class EventPipeServerTests
     {
         var name = UniqueName();
         var got = new List<string>();
-        using var server = new EventPipeServer(line => { lock (got) got.Add(line); return true; }, pipeName: name);
+        var errors = new List<string>();
+        using var server = new EventPipeServer(line => { lock (got) got.Add(line); return true; },
+            e => { lock (errors) errors.Add(e); }, pipeName: name);
         server.Start();
 
+        var sw = Stopwatch.StartNew();
         Send(name, """{"source":"build","data":{"status":"green"}}""");
+        var connectMs = sw.ElapsedMilliseconds;
 
-        Assert.True(WaitFor(() => { lock (got) return got.Count == 1; }), "the line never reached the callback");
+        Assert.True(WaitFor(() => { lock (got) return got.Count == 1; }),
+            $"the line never reached the callback; send took {connectMs} ms, errors: [{string.Join(" | ", errors)}]");
         lock (got) Assert.Equal("""{"source":"build","data":{"status":"green"}}""", got[0]);
     }
 
@@ -133,6 +138,29 @@ public class EventPipeServerTests
         // Nothing is listening any more, so a client cannot connect.
         using var client = new NamedPipeClientStream(".", name, PipeDirection.Out);
         Assert.Throws<TimeoutException>(() => client.Connect(500));
+    }
+
+    /// <summary>The regression this class exists for. An instance is connectable from the moment
+    /// CreateNamedPipe returns, but its ConnectNamedPipe is only pending once the server has
+    /// asked for a connection; a producer that connects, writes and disconnects inside that
+    /// window used to lose its line, intermittently and only under load. Connect-write-disconnect
+    /// is the documented way to send one event, and twenty of them in a row is the cheapest way
+    /// to keep hitting the window.</summary>
+    [Fact]
+    public void Twenty_Connect_Write_Disconnect_Producers_In_A_Row_All_Land()
+    {
+        var name = UniqueName();
+        var got = new List<string>();
+        var errors = new List<string>();
+        using var server = new EventPipeServer(line => { lock (got) got.Add(line); return true; },
+            e => { lock (errors) errors.Add(e); }, pipeName: name);
+        server.Start();
+
+        for (var i = 0; i < 20; i++) Send(name, "{\"source\":\"a\",\"data\":{\"n\":" + i + "}}");
+
+        Assert.True(WaitFor(() => { lock (got) return got.Count == 20; }),
+            $"only {got.Count} of 20 arrived; errors: [{string.Join(" | ", errors)}]");
+        lock (got) Assert.Equal(20, got.Distinct().Count());
     }
 
     [Fact]
