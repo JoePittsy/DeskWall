@@ -56,6 +56,25 @@ public class WidgetInstanceTests
         Knobs = [new Knob("town", "Town", KnobType.Town, "Leeds||53.8008||-1.5491", ["sources.weather.settings.url:{lat}", "sources.weather.settings.url:{lon}"], null, null, null)],
     };
 
+    /// <summary>A drive widget: one knob substituting "{drive}" into two component <em>bindings</em>
+    /// rather than into two literals. Nothing shipped is shaped like this yet; the editor's Drive
+    /// knob writes exactly this.</summary>
+    private static WidgetTemplate DriveTemplate() => new()
+    {
+        Name = "Drive",
+        Key = "drive",
+        Description = "d",
+        Width = 172,
+        Height = 40,
+        Sources = [new SourceDef { Name = "disks", Type = "disks" }],
+        Components =
+        [
+            new BarDef { Id = "bar", Rect = new Rect(0, 0, 172, 6), Fraction = PropertyValue.Bound(DeskWall.Core.Bindings.Binding.Parse("disks.drives[{drive}].usedFraction")) },
+            new TextDef { Id = "free", Rect = new Rect(0, 10, 172, 20), Text = PropertyValue.Bound(DeskWall.Core.Bindings.Binding.Parse("disks.drives[{drive}].freeGB | \"{0:N0} GB\"")) },
+        ],
+        Knobs = [new Knob("drive", "Drive", KnobType.Drive, "C", ["components.bar.fraction:{drive}", "components.free.text:{drive}"], null, null, null)],
+    };
+
     // ---- Add: prefixing, offset, source add, instance id -----------------------------------
 
     [Fact]
@@ -273,6 +292,46 @@ public class WidgetInstanceTests
         Assert.Equal("hardware.gpuPct | \"{0}%\"", value.Text.Binding!.ToString());
         Assert.False(label.Text.IsBound);
         Assert.Equal("gpu", label.Text.LiteralText);
+    }
+
+    /// <summary>A ":{token}" knob whose target is a <em>binding</em>, not a literal. Before this
+    /// worked, ApplyTokenGroup read the template's LiteralText -- null for a bound property -- and
+    /// wrote an empty literal over the binding, so a drive-keyed widget lost both its bindings the
+    /// moment its knob was applied, which Add does for every knob's default.</summary>
+    [Fact]
+    public void SetKnob_Substitutes_Into_A_Bound_Property_And_Leaves_It_Bound()
+    {
+        var layout = NewLayout();
+        var template = DriveTemplate();
+        var id = WidgetInstance.Add(layout, template, new Rect(0, 0, 0, 0));
+
+        WidgetInstance.SetKnob(layout, template, id, "drive", "D");
+
+        var bar = (BarDef)layout.Components.Single(c => c.Id == $"{id}.bar");
+        var free = (TextDef)layout.Components.Single(c => c.Id == $"{id}.free");
+        Assert.True(bar.Fraction.IsBound);
+        Assert.Equal("disks.drives[D].usedFraction", bar.Fraction.Binding!.ToString());
+        Assert.True(free.Text.IsBound);
+        Assert.Equal("disks.drives[D].freeGB | \"{0:N0} GB\"", free.Text.Binding!.ToString());
+    }
+
+    /// <summary>And again: the substitution comes from the template, so a second edit still finds
+    /// a placeholder even though the instance no longer has one.</summary>
+    [Fact]
+    public void SetKnob_Re_Edited_Drive_Repoints_Both_Bindings()
+    {
+        var layout = NewLayout();
+        var template = DriveTemplate();
+        var id = WidgetInstance.Add(layout, template, new Rect(0, 0, 0, 0));
+
+        WidgetInstance.SetKnob(layout, template, id, "drive", "D");
+        WidgetInstance.SetKnob(layout, template, id, "drive", "E");
+
+        var bar = (BarDef)layout.Components.Single(c => c.Id == $"{id}.bar");
+        var free = (TextDef)layout.Components.Single(c => c.Id == $"{id}.free");
+        Assert.Equal("disks.drives[E].usedFraction", bar.Fraction.Binding!.ToString());
+        Assert.Equal("disks.drives[E].freeGB | \"{0:N0} GB\"", free.Text.Binding!.ToString());
+        Assert.Equal("E", layout.Widgets![id].Knobs["drive"]);
     }
 
     // ---- The shipped templates' own knobs -----------------------------------------------------

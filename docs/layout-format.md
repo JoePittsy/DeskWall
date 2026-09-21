@@ -312,6 +312,14 @@ A knob's `sets` list names the paths a value change writes to, in order:
 | `sources.<name>.every` | Overwrites the named source's refresh interval, in seconds. Not a setting: `every` is `SourceDef`'s own field and a value under `settings` is ignored by every source factory. A value that is not a positive whole number leaves the interval alone. |
 | any of the above, with a trailing `:{token}` | Instead of overwriting, **substitutes** the literal substring `{token}` inside the target's *current* string (its own currently-authored placeholder, e.g. the weather URL's `{lat}`) with the resolved value, leaving the rest of the string as it was. |
 
+The `:{token}` form works on a **bound** property as well as a literal one: when the template's
+property is a binding, the token is substituted into the binding's own text and the property is
+written back as a binding, so it goes on drawing live data. That is what a `drive` knob is made
+of -- `components.bar.fraction:{drive}` against a template binding of
+`disks.drives[{drive}].usedFraction` repoints the bar at another drive without touching anything
+else in the path or its format. (Before this, a token knob on a bound property overwrote it with
+an empty literal.)
+
 A knob's stored value (`Knob.Default`, what a caller passes to `SetKnob`, and what
 `WidgetRecord.Knobs[knobId]` keeps for showing a knob back and re-applying it) may be a **plain
 string** or a **composite** of parts joined by `||` (two pipes, chosen because a binding's own
