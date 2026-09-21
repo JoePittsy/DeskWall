@@ -91,6 +91,7 @@ public partial class FirstRun : Window
             var dest = ShellState.LayoutPathFor(_signature);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             scaled.Save(dest);
+            ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
             _store.Set(_signature, dest);
             ChosenPath = dest;
             DialogResult = true;

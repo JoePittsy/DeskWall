@@ -76,6 +76,7 @@ public partial class LayersPanel : UserControl
         TextDef => "text",
         ImageDef => "image",
         BarDef => "bar",
+        DialDef => "dial",
         ShortcutDef => "shortcut",
         RepeaterDef => "repeater",
         _ => "?",

@@ -23,6 +23,7 @@ public static class PropertySchema
         TextDef => TextProps,
         ImageDef => ImageProps,
         BarDef => BarProps,
+        DialDef => DialProps,
         ShortcutDef => ShortcutProps,
         RepeaterDef => RepeaterProps,
         _ => throw new NotSupportedException($"no property schema for {def.GetType().Name}"),
@@ -72,6 +73,18 @@ public static class PropertySchema
         new("Threshold", Editor.Number, null, c => ((BarDef)c).Threshold, (c, v) => ((BarDef)c).Threshold = v),
         new("ThresholdFill", Editor.Color, null, c => ((BarDef)c).ThresholdFill, (c, v) => ((BarDef)c).ThresholdFill = v),
         new("Direction", Editor.Enum, AxisChoices, c => ((BarDef)c).Direction, (c, v) => ((BarDef)c).Direction = v),
+    ];
+
+    private static readonly Prop[] DialProps =
+    [
+        new("Fraction", Editor.Number, null, c => ((DialDef)c).Fraction, (c, v) => ((DialDef)c).Fraction = v),
+        new("Track", Editor.Color, null, c => ((DialDef)c).Track, (c, v) => ((DialDef)c).Track = v),
+        new("Fill", Editor.Color, null, c => ((DialDef)c).Fill, (c, v) => ((DialDef)c).Fill = v),
+        new("Threshold", Editor.Number, null, c => ((DialDef)c).Threshold, (c, v) => ((DialDef)c).Threshold = v),
+        new("ThresholdFill", Editor.Color, null, c => ((DialDef)c).ThresholdFill, (c, v) => ((DialDef)c).ThresholdFill = v),
+        new("Thickness", Editor.Number, null, c => ((DialDef)c).Thickness, (c, v) => ((DialDef)c).Thickness = v),
+        new("StartAngle", Editor.Number, null, c => ((DialDef)c).StartAngle, (c, v) => ((DialDef)c).StartAngle = v),
+        new("Sweep", Editor.Number, null, c => ((DialDef)c).Sweep, (c, v) => ((DialDef)c).Sweep = v),
     ];
 
     private static readonly Prop[] ShortcutProps =
