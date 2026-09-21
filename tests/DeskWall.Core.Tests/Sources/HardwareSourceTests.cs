@@ -255,4 +255,20 @@ public class HardwareSourceTests
         await Task.Delay(200);
         Assert.Equal(0, r.Calls);
     }
+
+    /// <summary>Live finding, 2026-09-21 09:29:30: PeriodicSource anchors NextDue at lastRefresh + every,
+    /// so a source first refreshed at :30 kept waking the daemon at :30 as well as the clock's :00 and
+    /// the wallpaper was repainted twice a minute. The owner's ruling is "paint on the minute": the
+    /// source is due on the next multiple of `every` from midnight, exactly as TimeSource is.</summary>
+    [Fact]
+    public void NextDue_Is_The_Next_Whole_Multiple_Of_Every_Not_LastRefresh_Plus_Every()
+    {
+        var s = Make(new FakeReader());   // every = 60 s
+        var last = new DateTimeOffset(2026, 9, 21, 9, 28, 30, 258, TimeSpan.FromHours(1));
+        Assert.Equal(new DateTimeOffset(2026, 9, 21, 9, 29, 0, TimeSpan.FromHours(1)), s.NextDue(last, last));
+        Assert.Equal(last, s.NextDue(null, last));   // never refreshed: due now
+
+        var fiveMin = new HardwareSource("hw", TimeSpan.FromSeconds(300), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(300), new FakeReader(), autoStart: false);
+        Assert.Equal(new DateTimeOffset(2026, 9, 21, 9, 30, 0, TimeSpan.FromHours(1)), fiveMin.NextDue(last, last));
+    }
 }

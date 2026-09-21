@@ -126,6 +126,22 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
         }
     }
 
+    /// <summary>Due on the next whole multiple of `every` from midnight, like <see cref="TimeSource"/>,
+    /// not at lastRefresh + every. PeriodicSource's default anchored the schedule at whatever second
+    /// the first refresh happened to run (09:28:30 on the day this shipped), so the daemon woke and
+    /// repainted at :30 as well as the clock's :00 - two repaints a minute, against the owner's
+    /// "sample every 10 s, paint on the minute" ruling. With `every` 60 s this is the clock's own
+    /// boundary and the two sources share one wake.</summary>
+    public override DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
+    {
+        if (lastRefresh is null) return now;
+        var l = lastRefresh.Value;
+        var dayStart = new DateTimeOffset(l.Year, l.Month, l.Day, 0, 0, 0, l.Offset);
+        var sinceMidnight = (l - dayStart).Ticks;
+        var floored = sinceMidnight - sinceMidnight % Every.Ticks;
+        return dayStart.AddTicks(floored) + Every;
+    }
+
     /// <summary>Stops the sampler and lets go of whatever the reader holds (NVML, on this machine).
     /// Idempotent: the host may dispose a source it has already replaced, and shutting NVML down
     /// twice or freeing its module twice is not safe.</summary>
