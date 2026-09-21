@@ -91,11 +91,17 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     {
         lock (_lock)
         {
-            // Due time zero, not _sample: the first reading is taken as the sampler starts, so the
-            // next refresh has numbers. It waited a whole `sample` before, and the editor showed an
-            // empty value tree for that long. The callback takes _lock, so it queues behind this
-            // refresh rather than racing it.
-            if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, TimeSpan.Zero, _sample);
+            // The first reading is taken here, inline, not left to the sampler: the timer callback
+            // takes _lock, so it can only land after this refresh has built its record, and the
+            // first refresh would publish nothing at all. The editor showed an empty value tree for
+            // a whole `sample` because of it, and a one-shot `deskwall tick` - which has no second
+            // refresh to make up for it - drew a layout with its hardware lines blank. Monitor is
+            // reentrant, so this nests in the lock already held; it costs about 5 ms, once.
+            if (_autoStart && !HasAnyReading()) SampleOnce();
+            // The timer then carries on from a whole `sample` away. Due time zero here would only
+            // duplicate the reading just taken, which skews the average and measures a CPU delta
+            // across no time at all.
+            if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
             _refreshes++;
             var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase)
             {

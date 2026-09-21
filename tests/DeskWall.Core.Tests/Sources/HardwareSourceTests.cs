@@ -171,6 +171,35 @@ public class HardwareSourceTests
         Assert.True(N(rec, "samples") >= 2, $"samples was {N(rec, "samples")}");
     }
 
+    /// <summary>Found rendering a verification layout with `deskwall tick`: the very first refresh
+    /// published `samples: 0` and no ram, so a one-shot tick drew nothing where the hardware values
+    /// should be. The sampler timer fires at once now, but its callback takes the same lock this
+    /// refresh already holds, so it can only land after the record has been built. A one-shot tick
+    /// never gets a second chance. The first refresh therefore takes its own reading inline.</summary>
+    [Fact]
+    public async Task The_Very_First_Refresh_Already_Has_Numbers()
+    {
+        var r = new FakeReader { HasGpu = false };
+        for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
+        using var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: true);
+
+        var rec = await s.RefreshAsync(default);     // the FIRST one, with no delay and no second tick
+        Assert.Equal(0.25, N(rec, "ram"));
+        Assert.Equal(25, N(rec, "ramPct"));
+        Assert.True(N(rec, "samples") >= 1, $"samples was {N(rec, "samples")}");
+    }
+
+    /// <summary>The inline reading belongs to the sampler, so a source whose sampler the caller
+    /// drives by hand (every other test here, and the designer's own probe) is not changed by it.</summary>
+    [Fact]
+    public async Task A_Hand_Driven_Source_Still_Samples_Only_When_Told()
+    {
+        var r = new FakeReader { HasGpu = false };
+        r.Mem.Enqueue(new MemoryReading(1, 4));
+        var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: false);
+        Assert.Equal(0, N(await s.RefreshAsync(default), "samples"));
+    }
+
     [Fact]
     public void Dispose_Disposes_A_Reader_That_Holds_Resources()
     {
@@ -337,15 +366,16 @@ public class HardwareSourceTests
         Assert.Equal(new DateTimeOffset(2026, 9, 21, 9, 29, 0, TimeSpan.FromHours(1)), s.NextDue(last, last));
     }
 
-    /// <summary>The sampler's first reading is taken when it starts, not one `sample` later, so the
-    /// second refresh has something to publish however long `sample` is.</summary>
+    /// <summary>The first reading exists as soon as the source has been refreshed once, however
+    /// long `sample` is; the refresh takes it inline. The sampler must not also take one of its own
+    /// at the same moment, so the count is still exactly 1 half a second later.</summary>
     [Fact]
-    public async Task The_Sampler_Takes_Its_First_Reading_Straight_Away()
+    public async Task The_First_Reading_Is_Taken_Straight_Away_And_Only_Once()
     {
         var r = new FakeReader();
         for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
         using var s = Make2(r, TimeSpan.FromSeconds(30), autoStart: true);   // far longer than the wait
-        await s.RefreshAsync(default);                                       // starts the timer
+        Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));
         await Task.Delay(500);
         Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));
     }
