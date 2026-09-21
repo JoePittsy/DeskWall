@@ -1,4 +1,4 @@
-# Sources
+﻿# Sources
 
 A source is declared in a layout file's `sources` array:
 
@@ -39,7 +39,17 @@ each source reads its own `settings` keys and defaults) and `SourceFactory.cs`.
 No settings. Always due on the next whole minute (`NextDue` rounds up to `:00`).
 
 Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`TextValue`, e.g.
-`Saturday`).
+`Saturday`), and how far through the day, week and year local time is:
+
+| Field | Meaning |
+|---|---|
+| `dayFraction`, `weekFraction`, `yearFraction` | 0..1, rounded to 4 decimals |
+| `dayPercent`, `weekPercent`, `yearPercent` | the same, 0..100, rounded to a whole number |
+
+Both forms exist because a `bar`'s `fraction` wants 0..1 and a `text` wants the percent, and a
+format string cannot multiply by 100. The **week starts on Monday** (`((int)DayOfWeek + 6) % 7`),
+not on Sunday. The year divides by 366 in a leap year and 365 otherwise. All three are derived
+from the same local `now` the clock publishes, so a "day progress" widget needs no script.
 
 ## `disks`
 
