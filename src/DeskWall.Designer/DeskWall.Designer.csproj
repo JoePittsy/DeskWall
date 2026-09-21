@@ -21,5 +21,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\layouts\starter-*.json" Link="layouts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\weather\*.png;..\..\assets\weather\LICENSE" Link="assets\weather\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

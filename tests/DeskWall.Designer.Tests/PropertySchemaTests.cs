@@ -15,6 +15,7 @@ public class PropertySchemaTests
         yield return [new BarDef { Id = "b", Rect = R, Fraction = PropertyValue.Literal(0.5) }, "Fraction"];
         yield return [new ShortcutDef { Id = "s", Rect = R, Target = PropertyValue.Literal("a.exe") }, "Target"];
         yield return [new RepeaterDef { Id = "r", Rect = R, Items = PropertyValue.Literal(""), Template = new List<ComponentDef>() }, "Items"];
+        yield return [new DialDef { Id = "d", Rect = R, Fraction = PropertyValue.Literal(0.5) }, "Fraction"];
     }
 
     [Theory]

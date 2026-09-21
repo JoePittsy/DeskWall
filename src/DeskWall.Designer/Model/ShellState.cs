@@ -75,4 +75,20 @@ public static class ShellState
             if (left < b.Right && left + width > b.X && top < b.Bottom && top + height > b.Y) return true;
         return false;
     }
+
+    /// <summary>Starters reference weather icons as runtime:assets/weather/&lt;code&gt;.png. Copy the
+    /// set that ships beside the exe into the runtime dir once; never overwrite a file that is
+    /// already there. A missing source directory (e.g. a build that has not linked the assets) is a
+    /// no-op, not an error.</summary>
+    public static void CopyAssets(string fromDir)
+    {
+        if (!Directory.Exists(fromDir)) return;
+        var dst = Paths.InRuntime("assets", "weather");
+        Directory.CreateDirectory(dst);
+        foreach (var f in Directory.EnumerateFiles(fromDir))
+        {
+            var target = Path.Combine(dst, Path.GetFileName(f));
+            if (!File.Exists(target)) File.Copy(f, target);
+        }
+    }
 }

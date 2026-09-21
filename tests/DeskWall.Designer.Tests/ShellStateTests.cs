@@ -90,4 +90,53 @@ public class ShellStateTests
         Assert.False(ShellState.OnScreen(100, 100, 1500, 950, Array.Empty<Rect>()));
         Assert.False(ShellState.OnScreen(100, 100, 0, 950, screens));
     }
+
+    [Fact]
+    public void CopyAssets_Copies_Files_Into_The_Runtime_Weather_Folder()
+    {
+        var src = Path.Combine(Path.GetTempPath(), "deskwall-tests", "copyassets-src-" + Guid.NewGuid());
+        Directory.CreateDirectory(src);
+        try
+        {
+            File.WriteAllText(Path.Combine(src, "0.png"), "fake-png");
+            File.WriteAllText(Path.Combine(src, "LICENSE"), "mit");
+
+            ShellState.CopyAssets(src);
+
+            var dst = Paths.InRuntime("assets", "weather");
+            Assert.True(File.Exists(Path.Combine(dst, "0.png")));
+            Assert.True(File.Exists(Path.Combine(dst, "LICENSE")));
+        }
+        finally { Directory.Delete(src, recursive: true); }
+    }
+
+    [Fact]
+    public void CopyAssets_Never_Overwrites_A_File_Already_There()
+    {
+        var src = Path.Combine(Path.GetTempPath(), "deskwall-tests", "copyassets-src-" + Guid.NewGuid());
+        Directory.CreateDirectory(src);
+        try
+        {
+            File.WriteAllText(Path.Combine(src, "0.png"), "fake-png");
+            ShellState.CopyAssets(src);
+
+            var dst = Paths.InRuntime("assets", "weather");
+            var target = Path.Combine(dst, "0.png");
+            File.WriteAllText(target, "already-there");
+
+            ShellState.CopyAssets(src);
+
+            Assert.Equal("already-there", File.ReadAllText(target));
+        }
+        finally { Directory.Delete(src, recursive: true); }
+    }
+
+    [Fact]
+    public void CopyAssets_Is_A_NoOp_When_The_Source_Directory_Is_Missing()
+    {
+        var src = Path.Combine(Path.GetTempPath(), "deskwall-tests", "copyassets-missing-" + Guid.NewGuid());
+        Assert.False(Directory.Exists(src));
+
+        ShellState.CopyAssets(src);   // must not throw
+    }
 }
