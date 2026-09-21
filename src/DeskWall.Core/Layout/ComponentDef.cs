@@ -14,6 +14,11 @@ public abstract class ComponentDef
     public required string Id { get; set; }
     [JsonConverter(typeof(RectConverter))] public required Rect Rect { get; set; }
     public int Z { get; set; }
+    /// <summary>The widget instance id that owns this component ("&lt;templateKey&gt;-&lt;n&gt;"),
+    /// or null for a component placed by hand. Ignored by resolve and render; the designer's
+    /// widget model uses it to find, move and remove a widget's components as a unit
+    /// (<c>WidgetInstance</c>, <c>docs/layout-format.md</c> "Widgets").</summary>
+    public string? Widget { get; set; }
 }
 
 public sealed class TextDef : ComponentDef
