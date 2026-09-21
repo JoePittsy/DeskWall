@@ -309,6 +309,7 @@ A knob's `sets` list names the paths a value change writes to, in order:
 | `components.<id>.<property>` | Overwrites the component property (found by `<instanceId>.<id>`, matched against `PropertySchema.For` by name) with a **literal**. |
 | `components.<id>.<property>=bind:<text>` | Overwrites the property with a **binding**, parsed from the resolved value (below), not from `<text>` -- `<text>` documents the default choice's shape for a human reading the template but is never parsed. |
 | `sources.<name>.settings.<key>` | Overwrites the named source's setting with a literal. |
+| `sources.<name>.every` | Overwrites the named source's refresh interval, in seconds. Not a setting: `every` is `SourceDef`'s own field and a value under `settings` is ignored by every source factory. A value that is not a positive whole number leaves the interval alone. |
 | any of the above, with a trailing `:{token}` | Instead of overwriting, **substitutes** the literal substring `{token}` inside the target's *current* string (its own currently-authored placeholder, e.g. the weather URL's `{lat}`) with the resolved value, leaving the rest of the string as it was. |
 
 A knob's stored value (`Knob.Default`, what a caller passes to `SetKnob`, and what
@@ -360,6 +361,29 @@ fight: adding the second applies its own defaults over the first's settings, and
 one's knob afterwards changes what both draw. Two different commands, or two different feeds, need
 the second instance's source renamed by hand in the layout file (and its component's binding with
 it).
+
+### Your own templates, and the widget editor
+
+Templates in `%LOCALAPPDATA%\DeskWall\widgets\` are the owner's own and sit in the same gallery
+as the shipped ones, overriding a shipped template of the same key. They are written by the
+designer's **widget editor** (`WidgetEditorWindow`, `docs/superpowers/specs/2026-09-21-widget-editor-design.md`),
+reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** and
+**Delete** for the owner's own, **Duplicate to mine** for any of them. The editor is the layout
+canvas over a document the size of the widget, plus a parts palette (`text`, `image`, `bar`,
+`dial` only), the source list and its live values, and a "Knob" toggle on each property and each
+source setting that exposes it as a knob. It writes only the simple knob forms; a composite, a
+`{token}` splice or a `=bind:` write in a duplicated template is shown read-only and written back
+exactly as it was read, so nothing is lost by opening one.
+
+A knob the editor made has no stored default: the default written to the file is whatever the
+target holds on the canvas at the moment of saving, so changing the value after exposing it moves
+the default with it.
+
+**A placed instance is a stamped copy.** `WidgetInstance.Add` copies the template's components and
+sources into the layout, and nothing afterwards links the two. Saving a template therefore changes
+the gallery card and every *future* placement, and changes nothing already on a wallpaper. Deleting
+a template leaves its placed instances exactly as they are, minus the knobs panel (which needs the
+template to know what the knobs are; the Details expander still edits the components).
 
 ### Arranger
 

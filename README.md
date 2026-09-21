@@ -51,7 +51,10 @@ concept's model -- see "The proof of concept" below for why that changed.
 daemon uses, with source and property panels and a binding picker. It is a separate process that
 runs only while its window is open and never talks to the daemon directly -- it edits the same
 files (`layouts.json`, layout files, `secrets.json`, `settings.json`) that the daemon watches and
-hot-reloads. **The designer's main window (`MainWindow.xaml`, Phase 5 Task 8) is still being
+hot-reloads. Its widget editor builds a reusable widget out of parts and saves it into
+`%LOCALAPPDATA%\DeskWall\widgets\`, where it joins the gallery beside the shipped ones
+(`docs/layout-format.md` "Your own templates, and the widget editor").
+**The designer's main window (`MainWindow.xaml`, Phase 5 Task 8) is still being
 built** at the time of writing; the panels and canvas it will host already exist and have their
 own model tests (`tests/DeskWall.Designer.Tests`), but there is no way yet to open the whole
 shell as a user would. Full plan: `docs/superpowers/plans/2026-09-20-deskwall-v1-phase5-designer.md`.

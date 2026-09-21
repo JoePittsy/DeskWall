@@ -47,9 +47,10 @@ public partial class MainWindow : Window
     private readonly LayoutStore _store;
     private readonly PreviewRenderer _renderer;
     private readonly DispatcherTimer _status = new() { Interval = TimeSpan.FromSeconds(5) };
-    private readonly IReadOnlyList<WidgetTemplate> _catalog;
 
     private Settings _settings;
+    private IReadOnlyList<WidgetTemplate> _catalog;
+    private WidgetEditorWindow? _editor;
     private DesignerModel _model = null!;
     private LiveSources? _live;
     private string _sourcesKey = "";
@@ -64,6 +65,10 @@ public partial class MainWindow : Window
         _renderer = new PreviewRenderer(() => _live?.Tree() ?? ValueTree.Empty);
 
         Gallery.AddRequested += Add;
+        Gallery.NewRequested += () => OpenWidgetEditor(WidgetDocument.New());
+        Gallery.EditRequested += t => OpenWidgetEditor(WidgetDocument.FromTemplate(t, t.Path));
+        Gallery.DuplicateRequested += DuplicateTemplate;
+        Gallery.DeleteRequested += DeleteTemplate;
         Knobs.RemoveRequested += Remove;
 
         RestorePlacement();
@@ -263,6 +268,64 @@ public partial class MainWindow : Window
         Remember(s => { s.LastSignatureKey = _model.Signature.Key; s.LastLayoutPath = _model.Path; });
         RefreshChrome();
         return true;
+    }
+
+    // ---- the widget editor -------------------------------------------------------------------
+
+    /// <summary>One editor at a time. A second request asks the open one whether to keep what is
+    /// in it first: two windows editing two templates that may share a key is a race to the same
+    /// file, and the gallery behind them can only show one answer.</summary>
+    private void OpenWidgetEditor(WidgetDocument document)
+    {
+        if (_editor is not null)
+        {
+            if (!_editor.ConfirmDiscard()) { _editor.Activate(); return; }
+            _editor.ForceClose();
+        }
+        var editor = new WidgetEditorWindow(document) { Owner = this };
+        _editor = editor;
+        editor.Saved += ReloadCatalog;
+        editor.Closed += (_, _) => { if (ReferenceEquals(_editor, editor)) _editor = null; };
+        editor.Show();
+    }
+
+    /// <summary>"Duplicate to mine": a copy, named apart from the original and not yet on disk, so
+    /// the first Save cannot land on the shipped key it came from.</summary>
+    private void DuplicateTemplate(WidgetTemplate template)
+    {
+        var document = WidgetDocument.FromTemplate(template, null);
+        document.Name = template.Name + " copy";
+        OpenWidgetEditor(document);
+    }
+
+    private void DeleteTemplate(WidgetTemplate template)
+    {
+        if (template.Path is null) return;
+        var answer = MessageBox.Show(this,
+            $"Delete the widget '{template.Name}'? Copies already on a wallpaper stay exactly as they are.",
+            "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes) return;
+        try { File.Delete(template.Path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Could not delete {template.Path}: {ex.Message}", "DeskWall",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+        ReloadCatalog();
+    }
+
+    /// <summary>A template file changed on disk. Everything that reads the catalog is rebuilt from
+    /// it: the gallery's cards, the knobs panel (an instance of the edited template shows its new
+    /// knobs at once) and the running sources, which include one of each catalog source.</summary>
+    private void ReloadCatalog()
+    {
+        _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
+        Gallery.Load(_catalog);
+        Knobs.Attach(_model, _catalog);
+        _sourcesKey = "";
+        RebuildLiveSources();
+        RefreshChrome();
     }
 
     private void Settings_Click(object sender, RoutedEventArgs e)

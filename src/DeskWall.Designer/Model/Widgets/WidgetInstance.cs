@@ -225,6 +225,16 @@ public static class WidgetInstance
         {
             FindSource(layout, segments[1], setPath).Settings[segments[3]] = part;
         }
+        else if (segments.Length == 3 && segments[0] == "sources" && segments[2] == "every")
+        {
+            // Not a setting: the refresh interval is SourceDef's own field, and every source
+            // factory reads it from there. A knob that wrote settings["every"] would set nothing.
+            // An unparseable value leaves the interval alone rather than reverting it to the
+            // type's default, which is what null would mean.
+            var source = FindSource(layout, segments[1], setPath);
+            if (int.TryParse(part, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds > 0)
+                source.EverySeconds = seconds;
+        }
         else
         {
             throw new InvalidOperationException($"bad sets path \"{setPath}\"");

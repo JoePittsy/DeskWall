@@ -10,8 +10,15 @@ namespace DeskWall.Designer.Model;
 public sealed class DesignerModel
 {
     private const int UndoCap = 100;
-    private readonly List<string> _undo = new();
-    private readonly Stack<string> _redo = new();
+
+    /// <summary>What an undo entry holds. The canvas size is in here and not in a parallel stack
+    /// because the widget editor's <c>Fit to parts</c> moves the components AND changes the size in
+    /// one <see cref="Edit"/>: two stacks would let a single Ctrl+Z put back one and not the
+    /// other.</summary>
+    private readonly record struct Snapshot(string Json, DisplaySignature Signature);
+
+    private readonly List<Snapshot> _undo = new();
+    private readonly Stack<Snapshot> _redo = new();
     private readonly List<string> _selection = new();
     private string _savedJson;
 
@@ -24,7 +31,10 @@ public sealed class DesignerModel
     }
 
     public LayoutFile Layout { get; private set; }
-    public DisplaySignature Signature { get; }
+
+    /// <summary>The canvas this document is authored on. A layout's is the display's and never
+    /// changes; a widget document's is the widget's own size, which <see cref="ResizeCanvas"/> edits.</summary>
+    public DisplaySignature Signature { get; private set; }
     public string? Path { get; set; }
     public bool Dirty => Layout.ToJson() != _savedJson;
     public bool CanUndo => _undo.Count > 0;
@@ -50,7 +60,7 @@ public sealed class DesignerModel
     /// <summary>Snapshot, mutate the live LayoutFile, notify.</summary>
     public void Edit(string label, Action<LayoutFile> mutate)
     {
-        _undo.Add(Layout.ToJson());
+        _undo.Add(Capture());
         if (_undo.Count > UndoCap) _undo.RemoveAt(0);
         _redo.Clear();
         mutate(Layout);
@@ -60,11 +70,28 @@ public sealed class DesignerModel
 
     public string? LastEditLabel { get; private set; }
 
+    /// <summary>Change the canvas the document is authored on, undoably. Only the widget editor
+    /// calls this: a layout's canvas is the display's, and the store scales between displays.
+    /// <para>Not named Resize, for the same reason <see cref="SetRect"/> is not: the canvas's own
+    /// <see cref="Model.Resize"/> maths has to stay reachable by name from in here.</para></summary>
+    public void ResizeCanvas(int width, int height)
+    {
+        var w = Math.Max(1, width);
+        var h = Math.Max(1, height);
+        if (Signature.Width == w && Signature.Height == h) return;
+        Edit("Resize canvas", _ => SetSignatureSize(w, h));
+    }
+
+    /// <summary>The size change on its own, with no undo entry of its own, for a caller already
+    /// inside an <see cref="Edit"/> that moves the components at the same time (Fit to parts).</summary>
+    internal void SetSignatureSize(int width, int height)
+        => Signature = Signature with { Width = Math.Max(1, width), Height = Math.Max(1, height) };
+
     public void Undo()
     {
         if (!CanUndo) return;
-        _redo.Push(Layout.ToJson());
-        Layout = LayoutFile.Parse(_undo[^1]);
+        _redo.Push(Capture());
+        Restore(_undo[^1]);
         _undo.RemoveAt(_undo.Count - 1);
         PruneSelection();
         Changed?.Invoke();
@@ -73,10 +100,18 @@ public sealed class DesignerModel
     public void Redo()
     {
         if (!CanRedo) return;
-        _undo.Add(Layout.ToJson());
-        Layout = LayoutFile.Parse(_redo.Pop());
+        _undo.Add(Capture());
+        Restore(_redo.Pop());
         PruneSelection();
         Changed?.Invoke();
+    }
+
+    private Snapshot Capture() => new(Layout.ToJson(), Signature);
+
+    private void Restore(Snapshot snapshot)
+    {
+        Layout = LayoutFile.Parse(snapshot.Json);
+        Signature = snapshot.Signature;
     }
 
     public ComponentDef? Find(string id) => Layout.Components.FirstOrDefault(c => c.Id == id);

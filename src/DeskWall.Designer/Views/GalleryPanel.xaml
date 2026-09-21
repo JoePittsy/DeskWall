@@ -46,6 +46,15 @@
               ToolTip="{Binding Description}"
               AutomationProperties.Name="{Binding Name}"
               AutomationProperties.HelpText="{Binding Description}">
+        <!-- Right-click, not a row of buttons on the card: the card's one job is "add this", and
+             editing your own widgets is a rarer thing you go looking for. -->
+        <Button.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Edit" Click="Edit_Click" Visibility="{Binding MineVisibility}" />
+            <MenuItem Header="Duplicate to mine" Click="Duplicate_Click" />
+            <MenuItem Header="Delete" Click="Delete_Click" Visibility="{Binding MineVisibility}" />
+          </ContextMenu>
+        </Button.ContextMenu>
         <Grid Margin="12,10,12,11">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -83,7 +92,14 @@
                Visibility="Collapsed"
                Text="No widget templates found. They ship beside the designer in widgets\, and you can add your own under the DeskWall folder." />
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,0,16,16">
-      <ItemsControl x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}" />
+      <StackPanel>
+        <ItemsControl x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}" />
+        <!-- At the foot, not the head: the list is for picking one of the fourteen that already
+             exist, and building your own is what you do once you have found none of them fits. -->
+        <Button x:Name="NewButton" Content="+ New widget" Click="New_Click"
+                HorizontalAlignment="Left" Padding="12,5" Margin="0,4,0,0"
+                ToolTip="Build one out of parts" />
+      </StackPanel>
     </ScrollViewer>
   </DockPanel>
 </UserControl>
