@@ -33,6 +33,7 @@ public partial class KnobsPanel : UserControl
     private LiveSources? _live;
     private PropertiesPanel? _details;
     private string _renderedKey = "";
+    private bool _detailsOpen;
 
     public KnobsPanel() => InitializeComponent();
 
@@ -71,16 +72,19 @@ public partial class KnobsPanel : UserControl
         }
     }
 
-    private void OnLiveUpdated() => Dispatcher.BeginInvoke(new Action(() => { if (SelectedInstance() is null) { _renderedKey = ""; Render(); } }));
+    private void OnLiveUpdated() => Dispatcher.BeginInvoke(new Action(() => { if (Selected() is (null, null)) { _renderedKey = ""; Render(); } }));
 
     private void OnChanged() => Render();
 
     // ---- what is selected -----------------------------------------------------------------------
 
-    private string? SelectedInstance()
+    /// <summary>The three states this panel has, as one answer: a widget instance, a loose component
+    /// (one belonging to no widget, from a layout written before widgets existed), or neither.</summary>
+    private (string? Instance, string? Loose) Selected()
     {
-        if (_model is not { Selection.Count: > 0 }) return null;
-        return _model.Find(_model.Selection[0])?.Widget;
+        if (_model is not { Selection.Count: > 0 }) return (null, null);
+        if (_model.Find(_model.Selection[0]) is not { } c) return (null, null);
+        return string.IsNullOrEmpty(c.Widget) ? (null, c.Id) : (c.Widget, null);
     }
 
     private WidgetRecord? Record(string instanceId)
@@ -94,19 +98,22 @@ public partial class KnobsPanel : UserControl
     /// out of the box being typed into.</summary>
     private void Render()
     {
-        var instance = SelectedInstance();
-        var key = instance is null
-            ? "none|" + (_model?.Layout.BaseImage ?? "") + "|" + (_model?.Layout.JpegQuality ?? 0) + "|" + SourcesKey()
-            : instance + "|" + string.Join(",", Record(instance)?.Knobs.Select(kv => kv.Key + "=" + kv.Value) ?? [])
-                       + "|" + (Record(instance)?.Unlocked == true);
+        var (instance, loose) = Selected();
+        var key = instance is not null
+            ? instance + "|" + string.Join(",", Record(instance)?.Knobs.Select(kv => kv.Key + "=" + kv.Value) ?? [])
+                       + "|" + (Record(instance)?.Unlocked == true)
+            : loose is not null
+            ? "loose|" + loose
+            : "none|" + (_model?.Layout.BaseImage ?? "") + "|" + (_model?.Layout.JpegQuality ?? 0) + "|" + SourcesKey();
         if (key == _renderedKey) return;
         _renderedKey = key;
 
         Root.Children.Clear();
         _details = null;
         if (_model is null) return;
-        if (instance is null) BuildLayoutPanel();
-        else BuildWidgetPanel(instance);
+        if (instance is not null) BuildWidgetPanel(instance);
+        else if (loose is not null) BuildLoosePanel(loose);
+        else BuildLayoutPanel();
     }
 
     private string SourcesKey()
@@ -143,8 +150,39 @@ public partial class KnobsPanel : UserControl
         remove.Click += (_, _) => RemoveRequested?.Invoke(instanceId);
         Root.Children.Add(remove);
 
-        Root.Children.Add(BuildDetails(instanceId));
+        Root.Children.Add(BuildDetails(instanceId, WidgetInstance.Components(_model!.Layout, instanceId)));
     }
+
+    // ---- a loose component ------------------------------------------------------------------------
+
+    /// <summary>A component belonging to no widget: everything in a layout written before widgets
+    /// existed, and anything the owner added by hand since. It has no template, so it has no knobs -
+    /// but it is still his layout, and refusing to edit it is how the designer used to strand every
+    /// layout that predates the picker. Details is the whole panel here.</summary>
+    private void BuildLoosePanel(string componentId)
+    {
+        if (_model is null) return;
+        var component = _model.Find(componentId);
+        Root.Children.Add(Header(TypeName(component)));
+        Root.Children.Add(Hint("Placed by hand, so it belongs to no widget: it has no knobs, and the column leaves it where it is. Details has everything it does have."));
+        Root.Children.Add(BuildDetails(null, LooseComponents()));
+    }
+
+    private IReadOnlyList<ComponentDef> LooseComponents()
+        => _model is null ? [] : _model.Layout.Components.Where(c => string.IsNullOrEmpty(c.Widget)).ToList();
+
+    /// <summary>What kind of thing this is, in the owner's words. The id would be more precise and is
+    /// exactly what the default view is not allowed to show (spec 2); Details lists the ids.</summary>
+    private static string TypeName(ComponentDef? c) => c switch
+    {
+        TextDef => "Text",
+        ImageDef => "Picture",
+        BarDef => "Bar",
+        DialDef => "Dial",
+        ShortcutDef => "Shortcut",
+        RepeaterDef => "Repeated group",
+        _ => "Component",
+    };
 
     private FrameworkElement BuildKnob(string instanceId, WidgetTemplate template, Knob knob)
     {
@@ -285,27 +323,34 @@ public partial class KnobsPanel : UserControl
     // ---- details --------------------------------------------------------------------------------
 
     /// <summary>The one place in the application that shows an id, a rect or a binding, and it is
-    /// shut. Inside: which component of this widget to edit, the Phase 5 properties panel for it,
-    /// and the switch that takes this widget out of the arranger's hands.</summary>
-    private FrameworkElement BuildDetails(string instanceId)
+    /// shut. Inside: which component to edit, the Phase 5 properties panel for it, and - for a
+    /// widget - the switch that takes it out of the arranger's hands.</summary>
+    /// <param name="instanceId">the widget being edited, or null for a loose component, which has no
+    /// arranger to be unlocked from.</param>
+    /// <param name="components">what the picker lists: a widget's own components, or every loose one.</param>
+    private FrameworkElement BuildDetails(string? instanceId, IReadOnlyList<ComponentDef> components)
     {
         var body = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
 
-        var unlock = new CheckBox
+        if (instanceId is not null)
         {
-            Content = "Unlock position (the column stops arranging this one)",
-            IsChecked = Record(instanceId)?.Unlocked == true,
-            Margin = new Thickness(0, 0, 0, 12),
-        };
-        unlock.Checked += (_, _) => SetUnlocked(instanceId, true);
-        unlock.Unchecked += (_, _) => SetUnlocked(instanceId, false);
-        body.Children.Add(unlock);
+            var unlock = new CheckBox
+            {
+                Content = "Unlock position (the column stops arranging this one)",
+                IsChecked = Record(instanceId)?.Unlocked == true,
+                Margin = new Thickness(0, 0, 0, 12),
+            };
+            unlock.Checked += (_, _) => SetUnlocked(instanceId, true);
+            unlock.Unchecked += (_, _) => SetUnlocked(instanceId, false);
+            body.Children.Add(unlock);
+        }
 
-        var components = _model is null ? new List<ComponentDef>() : WidgetInstance.Components(_model.Layout, instanceId).ToList();
+        var ids = components.Select(c => c.Id).ToList();
         var combo = new ComboBox
         {
-            ItemsSource = components.Select(c => c.Id).ToList(),
-            SelectedItem = _model is { Selection.Count: 1 } ? _model.Selection[0] : components.FirstOrDefault()?.Id,
+            ItemsSource = ids,
+            SelectedItem = _model is { Selection.Count: 1 } && ids.Contains(_model.Selection[0], StringComparer.Ordinal)
+                ? _model.Selection[0] : ids.FirstOrDefault(),
             Margin = new Thickness(0, 0, 0, 12),
         };
         combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string id) _model?.Select([id]); };
@@ -315,15 +360,26 @@ public partial class KnobsPanel : UserControl
         if (_model is not null) _details.Attach(_model);
         body.Children.Add(_details);
 
-        var expander = new Expander { Header = "Details", Margin = new Thickness(0, 20, 0, 0), Content = body };
+        // Open if it was open before this rebuild: selecting the next loose component rebuilds the
+        // whole panel, and an expander that shut every time would make a two-component layout
+        // uneditable in practice.
+        var expander = new Expander { Header = "Details", Margin = new Thickness(0, 20, 0, 0), Content = body, IsExpanded = _detailsOpen };
         // Opening Details narrows the selection to one component so the properties panel has
         // something to show; closing it puts the whole widget back.
-        expander.Expanded += (_, _) => { if (combo.SelectedItem is string id) _model?.Select([id]); };
+        expander.Expanded += (_, _) => { _detailsOpen = true; if (combo.SelectedItem is string id) _model?.Select([id]); };
         expander.Collapsed += (_, _) =>
         {
-            if (_model is null) return;
+            _detailsOpen = false;
+            if (_model is null || instanceId is null) return;
             _model.Select(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList());
         };
+        // IsExpanded was set before those handlers existed, so a panel rebuilt with Details already
+        // open has to do the Expanded handler's job itself, or the properties panel says "No
+        // selection" over a widget whose three components are all selected. Deferred rather than
+        // done here: Select raises SelectionChanged, and re-entering Render while it is still
+        // filling Root would clear the panel being built.
+        if (_detailsOpen && combo.SelectedItem is string open)
+            Dispatcher.BeginInvoke(new Action(() => _model?.Select([open])));
         return expander;
     }
 

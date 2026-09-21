@@ -55,8 +55,8 @@ public partial class PreviewView : UserControl
     /// arranger, so the view only says "this one, at this index".</summary>
     public event Action<string, int>? Reordered;
 
-    /// <summary>Raised when an unlocked widget - one the arranger has been told to leave alone - is
-    /// dragged. The shell turns it into one undo entry.</summary>
+    /// <summary>Raised when something the arranger does not place is dragged: an unlocked widget, or
+    /// a loose component. The shell turns it into one undo entry.</summary>
     public event Action<string, int, int>? Moved;
 
     /// <summary>Which instances the arranger is not allowed to move, so a drag on one of them is a
@@ -160,26 +160,61 @@ public partial class PreviewView : UserControl
             .ToList();
     }
 
-    private string? SelectedInstance()
+    /// <summary>Everything a click can land on: the widget instances, and the components of a layout
+    /// written before widgets existed, which belong to no instance and would otherwise be invisible
+    /// to this view - the owner could see them on the preview and not select them. They are not part
+    /// of the stack the arranger owns, so <see cref="IsWidget"/> tells a reorder from a free move.
+    /// </summary>
+    private IReadOnlyList<(string Id, CRect Bounds)> Targets()
+    {
+        if (_model is null) return Array.Empty<(string, CRect)>();
+        return Stack()
+            .Concat(Loose())
+            .Where(e => e.Item2.W > 0 && e.Item2.H > 0)
+            .OrderBy(e => e.Item2.Y)
+            .ToList();
+    }
+
+    private IEnumerable<(string Id, CRect Bounds)> Loose()
+        => _model is null
+            ? []
+            : _model.Layout.Components.Where(c => string.IsNullOrEmpty(c.Widget)).Select(c => (c.Id, c.Rect));
+
+    /// <summary>Whether a picked id names a widget instance (reorderable) or a loose component.</summary>
+    private bool IsWidget(string id) => _model?.Layout.Widgets?.ContainsKey(id) == true;
+
+    /// <summary>What is selected, as something <see cref="Pick"/> could have returned: the instance
+    /// a selected component belongs to, or the component itself when it belongs to none.</summary>
+    private string? SelectedTarget()
     {
         if (_model is not { Selection.Count: > 0 }) return null;
-        return _model.Find(_model.Selection[0])?.Widget;
+        if (_model.Find(_model.Selection[0]) is not { } c) return null;
+        return string.IsNullOrEmpty(c.Widget) ? c.Id : c.Widget;
+    }
+
+    private CRect? BoundsOf(string id)
+    {
+        if (_model is null) return null;
+        if (IsWidget(id)) return WidgetInstance.Bounds(_model.Layout, id);
+        return _model.Find(id)?.Rect;
     }
 
     private string? Pick(Point screen)
     {
         var p = _surface.ToCanvas(screen);
         string? best = null;
-        foreach (var (id, b) in Stack())
+        foreach (var (id, b) in Targets())
             if (p.X >= b.X && p.X < b.Right && p.Y >= b.Y && p.Y < b.Bottom) best = id;   // later wins
         return best;
     }
 
-    private void SelectInstance(string? id)
+    private void SelectTarget(string? id)
     {
         if (_model is null) return;
         if (id is null) { _model.ClearSelection(); return; }
-        _model.Select(WidgetInstance.Components(_model.Layout, id).Select(c => c.Id).ToList());
+        _model.Select(IsWidget(id)
+            ? WidgetInstance.Components(_model.Layout, id).Select(c => c.Id).ToList()
+            : [id]);
     }
 
     // ---- pointer -------------------------------------------------------------------------------
@@ -192,10 +227,10 @@ public partial class PreviewView : UserControl
         _downScreen = e.GetPosition(_surface);
         _pressed = Pick(_downScreen);
         _dragging = false;
-        SelectInstance(_pressed);
-        if (_pressed is not null)
+        SelectTarget(_pressed);
+        if (_pressed is not null && BoundsOf(_pressed) is { } bounds)
         {
-            _downBounds = WidgetInstance.Bounds(_model.Layout, _pressed);
+            _downBounds = bounds;
             CaptureMouse();
         }
         e.Handled = true;
@@ -217,7 +252,7 @@ public partial class PreviewView : UserControl
         if (!_dragging && Math.Abs(p.Y - _downScreen.Y) < DragSlop && Math.Abs(p.X - _downScreen.X) < DragSlop) return;
         _dragging = true;
 
-        if (IsUnlocked(_pressed))
+        if (FreeMove(_pressed))
         {
             _surface.Ghost = _downBounds.Offset(
                 (int)Math.Round((p.X - _downScreen.X) / _surface.Zoom),
@@ -243,7 +278,7 @@ public partial class PreviewView : UserControl
 
         if (_dragging)
         {
-            if (IsUnlocked(_pressed))
+            if (FreeMove(_pressed))
             {
                 var dx = (int)Math.Round((p.X - _downScreen.X) / _surface.Zoom);
                 var dy = (int)Math.Round((p.Y - _downScreen.Y) / _surface.Zoom);
@@ -258,6 +293,10 @@ public partial class PreviewView : UserControl
         }
         Reset();
     }
+
+    /// <summary>Dragging this one moves it rather than reordering the column: a widget whose position
+    /// the owner unlocked, or a loose component, which was never in the stack to reorder.</summary>
+    private bool FreeMove(string id) => !IsWidget(id) || IsUnlocked(id);
 
     private void Reset()
     {
@@ -283,10 +322,12 @@ public partial class PreviewView : UserControl
         _surface.CanvasW = _model?.Signature.Width ?? 0;
         _surface.CanvasH = _model?.Signature.Height ?? 0;
         _surface.Column = _model is null ? default : Arranger.Column(_model.Signature.Width, _model.Signature.Height);
-        _surface.Empty = _model is not null && Stack().Count == 0;
-        var selected = SelectedInstance();
-        _surface.Selected = selected is null || _model is null ? null : WidgetInstance.Bounds(_model.Layout, selected);
-        _surface.Hover = _hover is null || _model is null || _hover == selected ? null : WidgetInstance.Bounds(_model.Layout, _hover);
+        // Empty counts loose components too: a layout carried over from before widgets has plenty on
+        // it, and telling its owner to "add a widget to start" over the top of it would be a lie.
+        _surface.Empty = _model is not null && Targets().Count == 0;
+        var selected = SelectedTarget();
+        _surface.Selected = selected is null ? null : BoundsOf(selected);
+        _surface.Hover = _hover is null || _hover == selected ? null : BoundsOf(_hover);
         _surface.InvalidateVisual();
     }
 

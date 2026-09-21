@@ -1,6 +1,10 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using DeskWall.Core;
 using DeskWall.Core.Display;
+using DeskWall.Core.Layout;
 using DeskWall.Designer.Model;
 using Xunit;
 
@@ -68,6 +72,109 @@ public class ShellStateTests
     [InlineData(@"C:\x\layouts\clock-disks.json", true, "clock-disks.json *")]
     public void File_Label_Names_The_File_And_Marks_Unsaved_Edits(string? path, bool dirty, string expected)
         => Assert.Equal(expected, ShellState.FileLabel(path, dirty));
+
+    // ---- what the window opens ------------------------------------------------------------------
+    //
+    // Owner feedback 2026-09-21: "it's not letting me edit the existing ones". The designer resolved
+    // the layout for the current display by exact signature and found nothing over RDP, where this
+    // display is 1692x1031 and the store's entries are keyed at 3440x1440, so it opened "New layout"
+    // over the top of a desktop the daemon was happily painting from a file on disk.
+
+    private static readonly DisplaySignature Rdp = new("Default_Monitor", 1692, 1031, 100);
+    private static readonly DisplaySignature Console = DisplaySignature.Parse(Ultrawide);
+    private const string DefaultBase = @"C:\Windows\base.jpg";
+
+    private static LayoutFile Authored() => LayoutFile.Parse("""
+        { "version": 1, "baseImage": "C:\\x.jpg", "sources": [],
+          "components": [ { "type": "text", "id": "clock", "rect": [3220, 40, 172, 60], "text": "12:34" } ] }
+        """);
+
+    [Fact]
+    public void Nothing_Registered_Anywhere_Opens_A_New_Layout_For_This_Display()
+    {
+        var target = ShellState.OpenFrom(null, Rdp, _ => throw new InvalidOperationException("must not read a file"), DefaultBase);
+
+        Assert.Null(target.Path);
+        Assert.Equal(Rdp, target.Signature);
+        Assert.Equal(DefaultBase, target.Layout.BaseImage);
+        Assert.Empty(target.Layout.Components);
+    }
+
+    [Fact]
+    public void An_Exact_Match_Opens_Its_Own_File_Unchanged()
+    {
+        var layout = Authored();
+        var resolution = new LayoutResolution(layout, @"C:\x\layouts\ultrawide.json", Console, Scaled: false);
+
+        var target = ShellState.OpenFrom(resolution, Console, _ => throw new InvalidOperationException("already loaded"), DefaultBase);
+
+        Assert.Same(layout, target.Layout);
+        Assert.Equal(@"C:\x\layouts\ultrawide.json", target.Path);
+        Assert.Equal(Console, target.Signature);
+    }
+
+    /// <summary>The RDP case, and the whole point: the store matched a layout authored at 3440x1440
+    /// and handed back a copy scaled to this session. Editing that copy would let the owner drag
+    /// shrunken rects around and then write them over the authored file. Open the file instead, on
+    /// the canvas it was authored on, at the path both signatures already resolve to.</summary>
+    [Fact]
+    public void A_Closest_Match_Opens_The_Authored_File_On_The_Authored_Canvas()
+    {
+        var scaled = LayoutScaler.Scale(Authored(), Console, Rdp);
+        var resolution = new LayoutResolution(scaled, @"C:\x\layouts\ultrawide.json", Console, Scaled: true);
+        var reads = new List<string>();
+
+        var target = ShellState.OpenFrom(resolution, Rdp, p => { reads.Add(p); return Authored(); }, DefaultBase);
+
+        Assert.Equal([@"C:\x\layouts\ultrawide.json"], reads);
+        Assert.Equal(@"C:\x\layouts\ultrawide.json", target.Path);
+        Assert.Equal(Console, target.Signature);                       // 3440x1440, not this session's
+        Assert.Equal(new Rect(3220, 40, 172, 60), target.Layout.Components.Single().Rect);
+        Assert.NotEqual(scaled.Components.Single().Rect, target.Layout.Components.Single().Rect);
+    }
+
+    /// <summary>The authored file going unreadable between the store reading it and the window
+    /// opening it is a race that should cost nothing but the path: opening the scaled copy is fine,
+    /// saving it over the authored file is not.</summary>
+    [Fact]
+    public void An_Unreadable_Authored_File_Never_Becomes_A_Path_To_Save_Over()
+    {
+        var scaled = LayoutScaler.Scale(Authored(), Console, Rdp);
+        var resolution = new LayoutResolution(scaled, @"C:\x\layouts\ultrawide.json", Console, Scaled: true);
+
+        var target = ShellState.OpenFrom(resolution, Rdp, _ => null, DefaultBase);
+
+        Assert.Null(target.Path);
+        Assert.Equal(Rdp, target.Signature);
+        Assert.Same(scaled, target.Layout);
+    }
+
+    /// <summary>End to end through a real store: one entry, keyed for the ultrawide, opened from a
+    /// display that has no entry of its own. This is the shape of the runtime dir on JOES-PC.</summary>
+    [Fact]
+    public void A_Store_Keyed_For_Another_Display_Still_Opens_That_Displays_File()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "openfrom-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "column-system.json");
+            Authored().Save(file);
+            var store = new LayoutStore(Path.Combine(dir, "layouts.json"));
+            store.Set(Console, file);
+
+            var resolution = store.Resolve(Rdp);
+            Assert.NotNull(resolution);
+            Assert.True(resolution!.Scaled);                           // closest match, not exact
+
+            var target = ShellState.OpenFrom(resolution, Rdp, p => LayoutFile.Load(p), DefaultBase);
+
+            Assert.Equal(file, target.Path);
+            Assert.Equal(Console, target.Signature);
+            Assert.Equal(new Rect(3220, 40, 172, 60), target.Layout.Components.Single().Rect);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 
     [Fact]
     public void Banner_Names_The_Signature_It_Was_Scaled_From()
