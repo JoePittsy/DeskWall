@@ -101,6 +101,10 @@ public sealed class WidgetDocument
         foreach (var knob in template.Knobs)
         {
             var target = Adjustable.FromKnob(knob, layout.Components);
+            // A saved Drive knob's bindings key "{drive}", which resolves to nothing: put the
+            // knob's own default letter back so the canvas draws this machine's real data. The
+            // token goes back in at ToTemplate, so a save that follows writes the same file.
+            if (target is { IsDrive: true }) Adjustable.SetDriveKey(layout.Components, target, knob.Default);
             doc._knobs.Add(new Slot(target, target is null ? knob : null));
         }
         return doc;
@@ -215,10 +219,30 @@ public sealed class WidgetDocument
     public bool ToggleAdjustable(string componentId, string property)
     {
         var existing = _knobs.FirstOrDefault(k => k.Target?.Targets(componentId, property) == true);
-        if (existing is not null) { _knobs.Remove(existing); return false; }
+        if (existing is not null)
+        {
+            // A Drive knob holds several targets; taking one off leaves the knob for the rest.
+            if (existing.Target is { IsDrive: true } drive && drive.DriveTargets.Count > 1) drive.RemoveDriveTarget(componentId, property);
+            else _knobs.Remove(existing);
+            return false;
+        }
         if (Model.Find(componentId) is not { } def) return false;
         var prop = PropertySchema.For(def).FirstOrDefault(p => string.Equals(p.Name, property, StringComparison.OrdinalIgnoreCase));
-        if (prop is null || !Adjustable.CanAdjust(def, prop)) return false;
+        if (prop is null) return false;
+        // One picker for the whole widget: a drive-keyed binding joins the Drive knob already
+        // here rather than making a second one, so the bar and its caption cannot disagree.
+        if (Adjustable.CanAdjustAsDrive(def, prop))
+        {
+            if (_knobs.Select(k => k.Target).OfType<AdjustableTarget>().FirstOrDefault(t => t.IsDrive) is { } existingDrive)
+            {
+                existingDrive.AddDriveTarget(componentId, prop.Name);
+                return true;
+            }
+            var driveLabel = UniqueLabel("Drive", componentId);
+            _knobs.Add(new Slot(AdjustableTarget.ForDrive(componentId, prop.Name, driveLabel, UniqueId(Slug(driveLabel))), null));
+            return true;
+        }
+        if (!Adjustable.CanAdjust(def, prop)) return false;
         var label = UniqueLabel(prop.Name, componentId);
         _knobs.Add(new Slot(AdjustableTarget.ForComponent(componentId, prop.Name, label, UniqueId(Slug(label))), null));
         return true;
@@ -256,26 +280,45 @@ public sealed class WidgetDocument
     /// <summary>Drop any knob whose target has gone or has become a binding. Runs on every model
     /// change, because a part can be deleted from the canvas with the Delete key, which knows
     /// nothing about knobs.</summary>
-    private void Prune() => _knobs.RemoveAll(k => k.Target is not null && Adjustable.ToKnob(this, k.Target) is null);
+    private void Prune()
+    {
+        // A Drive knob loses the one target that went, not the whole knob: deleting a drive
+        // widget's caption must not take the picker off its bar.
+        foreach (var slot in _knobs)
+            if (slot.Target is { IsDrive: true } drive) drive.KeepDriveTargets(Adjustable.LiveDriveTargets(this, drive));
+        _knobs.RemoveAll(k => k.Target is not null && Adjustable.ToKnob(this, k.Target) is null);
+    }
 
     // ---- out -----------------------------------------------------------------------------------
 
     /// <summary>The template this document currently describes. Knob defaults are read here, from
     /// the values on the canvas, so editing an exposed value moves its default with it and there is
     /// no second copy to fall out of step.</summary>
-    public WidgetTemplate ToTemplate() => new()
+    public WidgetTemplate ToTemplate()
     {
-        Name = Name,
-        Key = Key,
-        Description = Description,
-        Width = Model.Signature.Width,
-        Height = Model.Signature.Height,
-        Anchor = Anchor,
-        Requires = Requires,
-        Sources = Model.Layout.Sources.Select(WidgetJson.CloneSource).ToList(),
-        Components = WidgetJson.CloneComponents(Model.Layout.Components),
-        Knobs = _knobs.Select(k => k.PassThrough ?? Adjustable.ToKnob(this, k.Target!)).OfType<Knob>().ToList(),
-    };
+        // Knobs first, from the document: a Drive knob's default is the real letter the canvas is
+        // drawing. Only the copy below is then tokenised, so the widget on screen keeps drawing
+        // real data and the file is portable. Tokenising is idempotent -- it rewrites whatever
+        // key is there -- so saving twice writes the same file.
+        var knobs = _knobs.Select(k => k.PassThrough ?? Adjustable.ToKnob(this, k.Target!)).OfType<Knob>().ToList();
+        var components = WidgetJson.CloneComponents(Model.Layout.Components);
+        foreach (var target in _knobs.Select(k => k.Target).OfType<AdjustableTarget>().Where(t => t.IsDrive))
+            Adjustable.SetDriveKey(components, target, "{" + Adjustable.DriveToken + "}");
+
+        return new WidgetTemplate
+        {
+            Name = Name,
+            Key = Key,
+            Description = Description,
+            Width = Model.Signature.Width,
+            Height = Model.Signature.Height,
+            Anchor = Anchor,
+            Requires = Requires,
+            Sources = Model.Layout.Sources.Select(WidgetJson.CloneSource).ToList(),
+            Components = components,
+            Knobs = knobs,
+        };
+    }
 
     /// <summary>Write this widget into the user's own templates folder, refusing rather than
     /// writing anything the gallery could not read back. Returns the file it landed in.</summary>

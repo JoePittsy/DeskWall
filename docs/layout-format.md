@@ -387,6 +387,17 @@ A knob the editor made has no stored default: the default written to the file is
 target holds on the canvas at the moment of saving, so changing the value after exposing it moves
 the default with it.
 
+**The Drive knob** is the one knob the editor builds over a *binding*. A property bound to a
+drive-keyed path -- `disks.drives[C].usedFraction`, `disks.drives[C].freeGB | "{0:N0} GB"` -- gets
+a "Drive" toggle instead of the usual "Knob" one, and turning it on exposes a `drive` knob whose
+`sets` entry is `components.<id>.<property>:{drive}`. A second drive-keyed property **joins the
+knob already there** rather than making a second one, so one picker repoints the bar and its
+caption together; the knob's card lists every target it writes. Only the **saved file** carries
+`{drive}`: the document in the editor keeps the real letter, so the canvas goes on drawing real
+data, and re-opening a saved drive widget puts the knob's default letter back before the canvas is
+shown. Tokenising is idempotent, so saving twice writes the same file. Nothing else about a
+binding can be made adjustable; `disks.drives[0]` (an index, not a drive) is not offered.
+
 **A placed instance is a stamped copy.** `WidgetInstance.Add` copies the template's components and
 sources into the layout, and nothing afterwards links the two. Saving a template therefore changes
 the gallery card and every *future* placement, and changes nothing already on a wallpaper. Deleting
