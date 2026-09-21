@@ -58,7 +58,7 @@ public sealed class DialDef : ComponentDef
     public PropertyValue ThresholdFill { get; set; } = PropertyValue.Literal("#D13438");
     public PropertyValue Thickness { get; set; } = PropertyValue.Literal(6);
     /// <summary>Degrees clockwise from 12 o'clock where the sweep begins.</summary>
-    public PropertyValue StartAngle { get; set; } = PropertyValue.Literal(135);
+    public PropertyValue StartAngle { get; set; } = PropertyValue.Literal(225);
     /// <summary>Degrees of arc for fraction 1.</summary>
     public PropertyValue Sweep { get; set; } = PropertyValue.Literal(270);
 }

@@ -95,10 +95,10 @@ stroked arc centred in `rect` with radius `min(w, h) / 2 - thickness / 2` and fl
 | `threshold` | `1` | At or above this fraction, `thresholdFill` is used instead of `fill`. A fraction of 1 is therefore at the default threshold, exactly as for `bar`. |
 | `thresholdFill` | `"#D13438"` | |
 | `thickness` | `6` | Stroke width in pixels. Scales with the smaller of the two display factors, not the geometric mean, because the radius comes from the short side of the rect. |
-| `startAngle` | `135` | Degrees **clockwise from 12 o'clock** where the sweep begins. |
+| `startAngle` | `225` | Degrees **clockwise from 12 o'clock** where the sweep begins. |
 | `sweep` | `270` | Degrees of arc for fraction 1. 360 or more draws a closed ring (as two arcs; one D2D arc segment cannot describe a full turn). |
 
-Angles are always clockwise from 12 o'clock, so the default `135` / `270` is the familiar gauge
+Angles are always clockwise from 12 o'clock, so the default `225` / `270` is the familiar gauge
 open at the bottom. Nothing but the arc is drawn: a number inside the dial is an ordinary `text`
 component the layout places over it.
 

@@ -116,7 +116,7 @@ public class LayoutResolverTests
         // colour, as it is for a full bar. The default fill is covered by the fraction-0 test below.
         Assert.Equal(Color.Parse("#D13438"), d.Fill);
         Assert.Equal(6f, d.Thickness);
-        Assert.Equal(135f, d.StartAngle);
+        Assert.Equal(225f, d.StartAngle);
         Assert.Equal(270f, d.Sweep);
     }
 

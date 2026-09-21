@@ -57,6 +57,7 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     {
         lock (_lock)
         {
+            if (_disposed) return;
             try
             {
                 var cpu = _reader.ReadCpu();
@@ -87,9 +88,9 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
 
     public override ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
-        if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
         lock (_lock)
         {
+            if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
             var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase)
             {
                 ["samples"] = new NumberValue(Math.Max(Math.Max(_cpu.Count, _ram.Count), _gpu.Count)),
@@ -131,9 +132,13 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true;
         _timer?.Dispose();
         _timer = null;
-        (_reader as IDisposable)?.Dispose();
+        lock (_lock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            (_reader as IDisposable)?.Dispose();
+        }
     }
 }

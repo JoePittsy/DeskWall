@@ -135,7 +135,7 @@ sampling.
 | `threshold` | `1` | at or above this fraction the fill uses `thresholdFill` |
 | `thresholdFill` | `"#D13438"` | same semantics as `bar` |
 | `thickness` | `6` | stroke width in pixels |
-| `startAngle` | `135` | degrees, clockwise from 12 o'clock, where the sweep begins |
+| `startAngle` | `225` | degrees, clockwise from 12 o'clock, where the sweep begins |
 | `sweep` | `270` | degrees of arc for fraction 1 |
 
 The arc is centred in `rect`, radius `min(w, h) / 2 - thickness / 2`, flat caps. Fill sweeps
@@ -217,8 +217,8 @@ Right-hand column, x 3220..3392 (172 wide), same base image and encode settings 
 | id | type | rect | binding |
 |---|---|---|---|
 | clock | text | 3220,40,172,78 | as `clock-disks.json` |
-| temp | text | 3220,128,108,48 | `weather...temperature_2m | "{0:N0}°"`, size 40, weight 300, right |
-| sky | image | 3336,128,56,56 | weather icon path, fit contain |
+| temp | text | 3220,128,108,52 | `weather...temperature_2m | "{0:N0}°"`, size 40, weight 300, right |
+| sky | image | 3336,126,56,56 | weather icon path, fit contain |
 | vpn | text | 3220,190,172,20 | `tailscale.json.BackendState | "VPN {0}"`, size 13 |
 | cpuDial / cpuPct | dial + text | 3220,1000,80,80 | `hardware.cpu`, threshold 0.9; text `hardware.cpuPct | "{0}%"` centred |
 | gpuDial / gpuPct | dial + text | 3312,1000,80,80 | `hardware.gpu`, threshold 0.9 |

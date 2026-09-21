@@ -59,6 +59,10 @@ source that shells out to Tailscale. Each has its own requirement:
   it finds an NVIDIA GPU (NVML). On a machine with no GPU, or a non-NVIDIA one, those two dials and
   their text simply draw at their bound properties' defaults - no error, no NVML on the box needed
   to try the rest of the layout.
+- **Hardware dials need the daemon running for a minute.** A one-shot `deskwall tick` always shows
+  the four dials empty, because the `hardware` source's 10-second sampler has not taken a reading
+  yet on that process's first (and only) tick; the resident daemon fills them once its own sampler
+  has been running for a bit.
 
 ## Shortcut slots
 

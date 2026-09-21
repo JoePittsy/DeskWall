@@ -184,4 +184,75 @@ public class HardwareSourceTests
 
     private static HardwareSource Make2(IHardwareReader r, TimeSpan sample, bool autoStart)
         => new("hw", TimeSpan.FromSeconds(60), sample, TimeSpan.FromSeconds(300), r, autoStart);
+
+    private sealed class BlockingReader : IHardwareReader, IDisposable
+    {
+        public readonly ManualResetEventSlim EnteredReadMemory = new(false);
+        public readonly ManualResetEventSlim ReleaseReadMemory = new(false);
+        public int Disposals;
+        public int ReadMemoryCalls;
+        public bool HasGpu => false;
+        public CpuTimes? ReadCpu() => null;
+        public MemoryReading? ReadMemory()
+        {
+            ReadMemoryCalls++;
+            EnteredReadMemory.Set();
+            ReleaseReadMemory.Wait();
+            return new MemoryReading(1, 4);
+        }
+        public GpuReading? ReadGpu() => null;
+        public void Dispose() => Disposals++;
+    }
+
+    /// <summary>SampleOnce holds _lock for the whole reader call, including any blocking native
+    /// call (NVML). Dispose must not tear down the reader while a sample is still inside it, or the
+    /// library can be unloaded out from under a thread-pool thread mid-call.</summary>
+    [Fact]
+    public async Task Dispose_Waits_For_An_InFlight_Sample_Before_Disposing_The_Reader()
+    {
+        var r = new BlockingReader();
+        var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: false);
+        var sampleTask = Task.Run(s.SampleOnce);
+        Assert.True(r.EnteredReadMemory.Wait(TimeSpan.FromSeconds(5)), "sample never reached the reader");
+
+        var disposeTask = Task.Run(s.Dispose);
+        // The sample is still inside the reader; Dispose must block on the same lock, not proceed.
+        var disposeFinishedEarly = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromMilliseconds(300))) == disposeTask;
+        Assert.False(disposeFinishedEarly, "Dispose returned while the sample was still in flight");
+
+        r.ReleaseReadMemory.Set();
+        var sampleDone = await Task.WhenAny(sampleTask, Task.Delay(TimeSpan.FromSeconds(5))) == sampleTask;
+        Assert.True(sampleDone, "the in-flight sample never completed");
+        var disposeDone = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5))) == disposeTask;
+        Assert.True(disposeDone, "Dispose never returned after the sample was released");
+
+        Assert.Equal(1, r.Disposals);
+
+        s.SampleOnce();                               // after Dispose, must be a no-op
+        Assert.Equal(1, r.ReadMemoryCalls);            // the reader was not touched again
+        var rec = await s.RefreshAsync(default);
+        Assert.Equal(1, N(rec, "samples"));            // only the original in-flight sample counted
+    }
+
+    private sealed class CountingReader : IHardwareReader
+    {
+        public int Calls;
+        public bool HasGpu => false;
+        public CpuTimes? ReadCpu() => null;
+        public MemoryReading? ReadMemory() { Interlocked.Increment(ref Calls); return new MemoryReading(1, 4); }
+        public GpuReading? ReadGpu() => null;
+    }
+
+    /// <summary>The old code started the timer with a check outside _lock, so a refresh racing a
+    /// dispose could resurrect the sampler after Dispose had already let the reader go.</summary>
+    [Fact]
+    public async Task Dispose_Then_RefreshAsync_Never_Starts_The_Timer()
+    {
+        var r = new CountingReader();
+        var s = Make2(r, TimeSpan.FromMilliseconds(20), autoStart: true);
+        s.Dispose();
+        await s.RefreshAsync(default);
+        await Task.Delay(200);
+        Assert.Equal(0, r.Calls);
+    }
 }
