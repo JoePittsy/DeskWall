@@ -25,7 +25,8 @@ writing any of our code, which is the "self serve new providers" thread from 202
 | What is the seam for | External producers first (scripts, Hearth, other apps). Built-in push sources use the same path. Existing internal wakes stay unless moving them is free. |
 | Transient display | **State only.** Nothing appears briefly and vanishes. No component lifetimes, no un-draw timers. |
 | Ingress | A **named pipe**, restricted to the current user. |
-| After a daemon restart | **Remember the last value per source**, and publish an age the layout can show. No expiry timer in v1. |
+| After a daemon restart | **Remember the last value per declared provider**, and publish an age the layout can show. No expiry timer in v1. |
+| Undeclared providers | **Accepted, not rejected** (revised 2026-09-21 after the owner pushed back). They live for the session and are not persisted; see section 3. |
 | Sequencing | **Bus and pipe first**, with a script example to try. Volume follows as the first in-process producer. |
 
 ## 3. The model
@@ -39,9 +40,31 @@ actually changed are redrawn. There is deliberately **no register/unsubscribe AP
 table of who-depends-on-what would drift from the first. "Register your widget on an event" means
 "bind a component to that source's values".
 
-**Sources are declared, never conjured.** An event naming a source the layout has not declared is
-logged, counted and dropped. Auto-creating branches would let any local process invent parts of
-the value tree, and would leave the designer unable to say what is bindable before data arrives.
+**There is no event source type in the layout.** A source declaration exists to tell the daemon
+what to go and do: a URL, a command, an interval. A pushed provider needs none of that, so
+declaring one in a layout would be a placeholder with no content. `SourceRegistry` is already a
+flat map of name to values and `Tree()` simply projects it, so a pushed provider is one more entry
+in that map. A layout binds `build.data.status` and it resolves if something is pushing `build`,
+and falls back if not, exactly as any unresolvable binding does today.
+
+**Declaring a provider is a reward, not a gate.** Three tiers, in rising order of commitment:
+
+1. **Just send.** No setup at all. The values land in the registry, appear in the designer and are
+   bindable at once. This is how a user tries something.
+2. **Write a provider manifest** (section 5). The designer can then show the provider and offer a
+   real binding picker *before any event has arrived*, a widget can be built against a producer
+   that is not running, and the last value survives a restart.
+3. **Built-in push producers** (volume, phase 2) register the same manifest shape at startup, so
+   they appear in that list identically to anything a user writes.
+
+The trade that makes declaring worth doing: **an undeclared provider's values are never written to
+disk**, so after sign-in its widget is blank until the producer sends again. That keeps any
+process from accumulating junk in the runtime directory forever, and it gives the designer
+something useful to offer: "remember this provider", which writes the manifest from the fields it
+has actually seen.
+
+**Collision:** a layout source and a pushed provider with the same name are not merged. The layout
+source wins and the clash is reported in diagnostics.
 
 **Events patch; scheduled refreshes replace.** A volume-change event knows the level and not the
 device name, and must not blank it. Merge is the default; an envelope flag asks for replacement.
@@ -65,10 +88,21 @@ attributes, never reject an event for missing `specversion`.
 Routing by `source` alone keeps the shape flat and predictable, and leaves `type` and `subject`
 free to gain meaning later without breaking a producer.
 
-## 5. The `event` source
+## 5. Providers and what they publish
 
-A new source type, receive-only. `NextDue` is never due of its own accord; it publishes whatever
-the bus last handed it.
+A provider is a name in the registry whose values arrive from the bus rather than from a poll.
+Nothing about it is declared in a layout.
+
+A **provider manifest** is `providers/<name>.json`, loaded from the shipped directory beside the
+exe and then the runtime directory, later winning on the same key, exactly as `WidgetCatalog`
+already loads widget templates. It holds the provider's name, a description, the fields it
+publishes (path, type, example) so the designer can offer a binding picker before any event, and
+optionally `expectEvery` in seconds.
+
+`expectEvery` exists because staleness today is judged from a source's own schedule
+(`SourceRegistry.Tree(sources, now)` reads it back from `NextDue`) and a pushed provider has none.
+Without it, a provider's values persist until replaced, which is what the owner chose. With it,
+the usual staleness rule applies and a silent producer's values stop being published.
 
 Published fields, following the `http` source's convention of payload under a named key with
 metadata beside it (`http` publishes `json`, `status`, `fetchedAt`):
@@ -115,14 +149,16 @@ processes cannot own one pipe name.
   rejected, each with a reason. "My script sends events and nothing happens" has four causes
   (wrong source name, malformed envelope, daemon not running, nothing bound to the value) and
   without this the user cannot tell them apart.
-- **Persistence**: the last record per source is written to `%LOCALAPPDATA%\DeskWall\events.json`,
-  at most once every few seconds and once on shutdown, and restored at start. That is what makes a
-  widget survive sign-in; `receivedAt` is what lets it admit its age.
+- **Persistence**: the last record of each provider **that has a manifest** is written to
+  `%LOCALAPPDATA%\DeskWall\events.json`, at most once every few seconds and once on shutdown, and
+  restored at start. That is what makes a widget survive sign-in; `receivedAt` is what lets it
+  admit its age. An undeclared provider is deliberately not written (section 3).
 
 ## 8. In the designer
 
-The event source's panel shows its current values, the recent-event ring, and a **Send test
-event** button. Designing a widget against an event that has not happened yet would otherwise mean
+The panel lists every provider: those with a manifest, those seen only this session, and what each
+publishes. An undeclared one carries a **Remember this provider** action that writes a manifest
+from the fields observed so far. There is also a **Send test event** button. Designing a widget against an event that has not happened yet would otherwise mean
 binding blind, and the test path is also how a user checks their producer's shape.
 
 ## 9. Security and trust
