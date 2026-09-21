@@ -37,13 +37,9 @@ public partial class KnobsPanel : UserControl
 
     public KnobsPanel() => InitializeComponent();
 
-    /// <summary>The owner asked for this widget to go. The shell removes it and re-arranges, because
-    /// the column closing up is the other half of the answer.</summary>
+    /// <summary>The owner asked for this widget to go. The shell removes it; nothing closes up
+    /// behind it, because nothing arranges the canvas any more.</summary>
     public event Action<string>? RemoveRequested;
-
-    /// <summary>A widget joined or left the arranger's stack (the Unlock switch). The shell
-    /// re-arranges.</summary>
-    public event Action? ArrangeRequested;
 
     public void Attach(DesignerModel model, IReadOnlyList<WidgetTemplate> catalog)
     {
@@ -101,7 +97,6 @@ public partial class KnobsPanel : UserControl
         var (instance, loose) = Selected();
         var key = instance is not null
             ? instance + "|" + string.Join(",", Record(instance)?.Knobs.Select(kv => kv.Key + "=" + kv.Value) ?? [])
-                       + "|" + (Record(instance)?.Unlocked == true)
             : loose is not null
             ? "loose|" + loose
             : "none|" + (_model?.Layout.BaseImage ?? "") + "|" + (_model?.Layout.JpegQuality ?? 0) + "|" + SourcesKey();
@@ -164,7 +159,7 @@ public partial class KnobsPanel : UserControl
         if (_model is null) return;
         var component = _model.Find(componentId);
         Root.Children.Add(Header(TypeName(component)));
-        Root.Children.Add(Hint("Placed by hand, so it belongs to no widget: it has no knobs, and the column leaves it where it is. Details has everything it does have."));
+        Root.Children.Add(Hint("Placed by hand, so it belongs to no widget and has no knobs. Drag it on the preview to move it, or open Details for everything it does have."));
         Root.Children.Add(BuildDetails(null, LooseComponents()));
     }
 
@@ -323,27 +318,14 @@ public partial class KnobsPanel : UserControl
     // ---- details --------------------------------------------------------------------------------
 
     /// <summary>The one place in the application that shows an id, a rect or a binding, and it is
-    /// shut. Inside: which component to edit, the Phase 5 properties panel for it, and - for a
-    /// widget - the switch that takes it out of the arranger's hands.</summary>
-    /// <param name="instanceId">the widget being edited, or null for a loose component, which has no
-    /// arranger to be unlocked from.</param>
+    /// shut. Inside: which component to edit, and the Phase 5 properties panel for it.
+    /// <para>The "Unlock position" switch that used to live here has gone with the column it was
+    /// an escape from: every widget is free-placed now, so there is nothing to be let out of.</para></summary>
+    /// <param name="instanceId">the widget being edited, or null for a loose component.</param>
     /// <param name="components">what the picker lists: a widget's own components, or every loose one.</param>
     private FrameworkElement BuildDetails(string? instanceId, IReadOnlyList<ComponentDef> components)
     {
         var body = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-
-        if (instanceId is not null)
-        {
-            var unlock = new CheckBox
-            {
-                Content = "Unlock position (the column stops arranging this one)",
-                IsChecked = Record(instanceId)?.Unlocked == true,
-                Margin = new Thickness(0, 0, 0, 12),
-            };
-            unlock.Checked += (_, _) => SetUnlocked(instanceId, true);
-            unlock.Unchecked += (_, _) => SetUnlocked(instanceId, false);
-            body.Children.Add(unlock);
-        }
 
         var ids = components.Select(c => c.Id).ToList();
         var combo = new ComboBox
@@ -381,16 +363,6 @@ public partial class KnobsPanel : UserControl
         if (_detailsOpen && combo.SelectedItem is string open)
             Dispatcher.BeginInvoke(new Action(() => _model?.Select([open])));
         return expander;
-    }
-
-    private void SetUnlocked(string instanceId, bool unlocked)
-    {
-        if (_model is null || Record(instanceId) is not { } record || record.Unlocked == unlocked) return;
-        _model.Edit(unlocked ? "Unlock position" : "Lock position", l =>
-        {
-            if (l.Widgets is not null && l.Widgets.TryGetValue(instanceId, out var r)) r.Unlocked = unlocked;
-        });
-        ArrangeRequested?.Invoke();
     }
 
     // ---- nothing selected: the layout's own two knobs, and the sources ------------------------------

@@ -14,7 +14,7 @@ namespace DeskWall.Designer.Views;
 /// <summary>
 /// The widget gallery, and the first thing anyone sees.
 /// <para>
-/// Job: let the owner recognise the widget he wants and put it on the column in one click. Every
+/// Job: let the owner recognise the widget he wants and put it on the wallpaper in one click. Every
 /// card carries a real render of the widget on the real base photo, its name, one line about it,
 /// and - only when there is one - the sentence that says what it needs. Deliberately left out:
 /// categories, a search box (eight widgets), previews at any size but the one it will be, icons,
@@ -53,7 +53,7 @@ public partial class GalleryPanel : UserControl
     /// this gallery is not allowed to be.</summary>
     public void Refresh() => RenderPictures();
 
-    /// <summary>How many of each widget are on the column now, for the count badge.</summary>
+    /// <summary>How many of each widget are on the wallpaper now, for the count badge.</summary>
     public void SetCounts(IReadOnlyDictionary<string, int> byKey)
     {
         foreach (var card in _cards) card.Count = byKey.TryGetValue(card.Key, out var n) ? n : 0;
