@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources.Hardware;
@@ -21,6 +21,7 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     private Timer? _timer;
     private readonly bool _autoStart;
     private bool _disposed;
+    private int _refreshes;
 
     /// <summary>Readings lost to a reader that threw. The readers are written not to throw, but this
     /// counts the times one did anyway; Core sources have no logger to report it to.</summary>
@@ -90,7 +91,12 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     {
         lock (_lock)
         {
-            if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
+            // Due time zero, not _sample: the first reading is taken as the sampler starts, so the
+            // next refresh has numbers. It waited a whole `sample` before, and the editor showed an
+            // empty value tree for that long. The callback takes _lock, so it queues behind this
+            // refresh rather than racing it.
+            if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, TimeSpan.Zero, _sample);
+            _refreshes++;
             var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase)
             {
                 ["samples"] = new NumberValue(Math.Max(Math.Max(_cpu.Count, _ram.Count), _gpu.Count)),
@@ -132,15 +138,30 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     /// repainted at :30 as well as the clock's :00 - two repaints a minute, against the owner's
     /// "sample every 10 s, paint on the minute" ruling. With `every` 60 s this is the clock's own
     /// boundary and the two sources share one wake.</summary>
+    /// <param name="lastRefresh">null until the source has been refreshed once.</param>
     public override DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
     {
         if (lastRefresh is null) return now;
+        // Cold start. The first refresh can only start the sampler, so it publishes nothing and
+        // every bound property falls back to its default - which read as broken for up to a minute
+        // when a hardware source was added in the editor. One free wake fixes that.
+        // Bounded to exactly one, and spent whether or not the reader produced anything: a reader
+        // that never reads is a *successful* refresh publishing samples: 0, so the scheduler's
+        // back-off never applies to it, and an unconditional "due now" would pin the daemon's wake
+        // at MinDelay - four ticks a second - which is finding 1 all over again. Once warm the
+        // source is back on the whole minute and shares the clock's single wake.
+        if (_refreshes == 1 && !HasAnyReading()) return now;
         var l = lastRefresh.Value;
         var dayStart = new DateTimeOffset(l.Year, l.Month, l.Day, 0, 0, 0, l.Offset);
         var sinceMidnight = (l - dayStart).Ticks;
         var floored = sinceMidnight - sinceMidnight % Every.Ticks;
         return dayStart.AddTicks(floored) + Every;
     }
+
+    /// <summary>Read without _lock on purpose. SampleOnce holds that lock across a blocking native
+    /// call (NVML), and this is called from the scheduler thread deciding the next wake; a stale
+    /// read of three ints costs at most one extra wake, which is the thing being asked for anyway.</summary>
+    private bool HasAnyReading() => _cpu.Count > 0 || _ram.Count > 0 || _gpu.Count > 0;
 
     /// <summary>Stops the sampler and lets go of whatever the reader holds (NVML, on this machine).
     /// Idempotent: the host may dispose a source it has already replaced, and shutting NVML down

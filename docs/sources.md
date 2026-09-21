@@ -1,4 +1,4 @@
-# Sources
+﻿# Sources
 
 A source is declared in a layout file's `sources` array:
 
@@ -39,7 +39,17 @@ each source reads its own `settings` keys and defaults) and `SourceFactory.cs`.
 No settings. Always due on the next whole minute (`NextDue` rounds up to `:00`).
 
 Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`TextValue`, e.g.
-`Saturday`).
+`Saturday`), and how far through the day, week and year local time is:
+
+| Field | Meaning |
+|---|---|
+| `dayFraction`, `weekFraction`, `yearFraction` | 0..1, rounded to 4 decimals |
+| `dayPercent`, `weekPercent`, `yearPercent` | the same, 0..100, rounded to a whole number |
+
+Both forms exist because a `bar`'s `fraction` wants 0..1 and a `text` wants the percent, and a
+format string cannot multiply by 100. The **week starts on Monday** (`((int)DayOfWeek + 6) % 7`),
+not on Sunday. The year divides by 366 in a leap year and 365 otherwise. All three are derived
+from the same local `now` the clock publishes, so a "day progress" widget needs no script.
 
 ## `disks`
 
@@ -74,10 +84,21 @@ top-level `every` field.
 
 CPU, RAM and (when an NVIDIA GPU is present) GPU load, averaged over a rolling window. A
 `System.Threading.Timer` inside the source, started on the first `RefreshAsync` and stopped on
-`Dispose`, takes one reading of each metric every `sample` seconds into a fixed ring of
-`window / sample` slots (at least 1). `RefreshAsync` itself only reads the rings, so the daemon's
-schedule is unchanged: the source is due every `every` seconds like any other, and the daemon
-still wakes once a minute. A reading that fails is skipped, not recorded as zero.
+`Dispose`, takes its first reading **immediately** and one more every `sample` seconds after that,
+into a fixed ring of `window / sample` slots (at least 1). `RefreshAsync` itself only reads the
+rings, so the daemon's schedule is unchanged: the source is due every `every` seconds like any
+other, and the daemon still wakes once a minute. A reading that fails is skipped, not recorded as
+zero.
+
+**Cold start.** The very first `RefreshAsync` can only start the sampler, so it publishes
+`samples: 0` and every bound property falls back to its own default -- which looked broken for up
+to a minute when a hardware source was added in the designer. `NextDue` therefore says "due now"
+after that first empty refresh, so the next wake (`Scheduler.MinDelay`, 250 ms later) paints real
+numbers. Exactly **one** such wake is granted, and it is spent whether or not the reader produced
+anything: a reader that never reads is a *successful* refresh publishing `samples: 0`, so the
+scheduler's failure back-off does not apply to it and an unconditional "due now" would pin the
+daemon's wake at 250 ms for ever. Once any ring has data the source is back on the whole minute
+and shares the clock's single wake.
 
 | Field | Meaning |
 |---|---|
@@ -121,6 +142,10 @@ Settings: `command` (required), `args` (optional, may contain `{secret:name}`), 
 (optional), `every` (default 600 s), `timeout` (seconds, default 10), `parse` (`"json"` or
 `"text"`; default: `json` if stdout starts with `{` or `[`, else `text`), `unixTimeFields`
 (comma-separated field names to reinterpret as Unix timestamps when parsing JSON).
+
+`command` and `workingDir` are expanded once, when the layout is loaded: `%ENV%` variables and
+then the `runtime:` prefix (below). `args` is not a path and is not expanded; its `{secret:}`
+substitution happens per request instead.
 
 Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` or `json`
 (whichever `parse` picked), `exitCode` (`NumberValue`), `ranAt` (`TimeValue`), and `stderr`
@@ -169,9 +194,27 @@ whitespace, truncated to 500 characters), `author` (omitted if absent).
 
 Same body cap (4 MB) and hard ceiling (`timeout * 6`) as `http`, for the same reason.
 
+## Paths in a source: `%ENV%` and `runtime:`
+
+A `command` source's `command` and `workingDir` and a `file` source's `path` take the same two
+expansions an image's `source` takes (`Paths.ExpandPath`, one implementation so the four cannot
+drift apart):
+
+| Written | Becomes |
+|---|---|
+| `%LOCALAPPDATA%\Foo\x.ps1` | the environment variable, as `ExpandEnvironmentVariables` does it |
+| `runtime:scripts\progress.ps1` | `<runtime dir>\scripts\progress.ps1`, honouring `DESKWALL_HOME` |
+| `runtime:` | the runtime dir itself |
+| anything else | itself, untouched |
+
+`runtime:` is case-insensitive and accepts forward slashes. It exists so a committed layout or a
+shared widget never carries one machine's `C:\Users\<name>\AppData\Local\DeskWall\...` inside
+it. Expansion happens at construction, so a variable changed after the daemon started is not
+picked up until the layout is reloaded.
+
 ## `file`
 
-Settings: `path` (required; `%ENV%` variables expanded), `parse` (`"json"`, `"text"` or `"rss"`;
+Settings: `path` (required; `%ENV%` variables and `runtime:` expanded, see above), `parse` (`"json"`, `"text"` or `"rss"`;
 default by extension: `.json` -> json, `.xml`/`.rss`/`.atom` -> rss, else text), `every` (default
 30 s -- a cheap mtime re-check; the running daemon also wakes on a file-system watcher),
 `unixTimeFields` (as `http`).
