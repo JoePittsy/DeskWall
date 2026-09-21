@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Drives",
+  "description": "Free space on every fixed drive.",
+  "size": [172, 92],
+  "anchor": "bottom",
+  "sources": [
+    { "name": "disks", "type": "disks", "every": 300 }
+  ],
+  "components": [
+    { "type": "repeater", "id": "drives", "rect": [0, 0, 172, 92], "z": 1,
+      "items": { "bind": "disks.drives" }, "axis": "vertical", "gap": 0, "cellHeight": 46,
+      "template": [
+        { "type": "text", "id": "letter", "rect": [0, 0, 60, 24], "text": { "bind": "letter | \"{0}:\"" }, "size": 15 },
+        { "type": "text", "id": "free", "rect": [60, 0, 112, 24], "text": { "bind": "freeGB | \"{0:N0} GB free\"" }, "size": 15, "align": "right" },
+        { "type": "bar", "id": "bar", "rect": [0, 26, 172, 6], "fraction": { "bind": "usedFraction" }, "threshold": 0.85, "thresholdFill": "#FFD13438" }
+      ] }
+  ],
+  "knobs": []
+}

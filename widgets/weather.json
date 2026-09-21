@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Weather",
+  "description": "Temperature and sky for a town, from Open-Meteo. No key needed.",
+  "size": [172, 60],
+  "sources": [
+    { "name": "weather", "type": "http", "every": 900, "settings": {
+        "url": "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day&timezone=auto" } }
+  ],
+  "components": [
+    { "type": "text", "id": "temp", "rect": [0, 0, 108, 52], "z": 1,
+      "text": { "bind": "weather.json.current.temperature_2m | \"{0:N0}°\"" }, "font": "Segoe UI Light", "size": 40, "weight": 300, "align": "right" },
+    { "type": "image", "id": "sky", "rect": [116, 0, 56, 56], "z": 1, "fit": "contain",
+      "source": { "bind": "weather.json.current.weather_code | \"runtime:assets/weather/{0}.png\"" } }
+  ],
+  "knobs": [
+    { "id": "town", "label": "Town", "type": "town", "default": "Leeds||53.8008||-1.5491",
+      "sets": [ "sources.weather.settings.url:{lat}", "sources.weather.settings.url:{lon}" ] }
+  ]
+}

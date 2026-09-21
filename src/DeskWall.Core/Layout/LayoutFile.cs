@@ -13,6 +13,11 @@ public sealed class LayoutFile
     public int JpegQuality { get; set; } = 92;
     public List<SourceDef> Sources { get; set; } = new();
     public List<ComponentDef> Components { get; set; } = new();
+    /// <summary>Widget instance id to the record the designer's widget picker needs to re-edit or
+    /// re-create it. Null (not an empty dictionary) when the layout was never touched by the
+    /// widget picker; the daemon ignores this field entirely (spec 3, `docs/layout-format.md`
+    /// "Widgets"). Component-level ownership is <see cref="ComponentDef.Widget"/>.</summary>
+    public Dictionary<string, WidgetRecord>? Widgets { get; set; }
 
     public static LayoutFile Parse(string json)
         => JsonSerializer.Deserialize(json, LayoutJsonContext.Default.LayoutFile) ?? throw new JsonException("empty layout");

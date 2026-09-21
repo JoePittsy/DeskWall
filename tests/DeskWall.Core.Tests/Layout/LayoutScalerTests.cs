@@ -47,6 +47,19 @@ public class LayoutScalerTests
     }
 
     [Fact]
+    public void Widget_Fields_Survive_A_Scale()
+    {
+        var src = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [ { "type": "text", "id": "clock-1.clock", "rect": [3220, 40, 172, 78], "size": 64, "text": "x", "widget": "clock-1" } ],
+          "widgets": { "clock-1": { "template": "clock", "knobs": {}, "unlocked": false } } }
+        """);
+        var s = LayoutScaler.Scale(src, new DisplaySignature("A", 3440, 1440, 100), new DisplaySignature("B", 1720, 720, 100));
+        Assert.Equal("clock-1", s.Components[0].Widget);
+        Assert.Equal("clock", s.Widgets!["clock-1"].Template);
+    }
+
+    [Fact]
     public void Dial_Thickness_Scales_With_The_Smaller_Factor()
     {
         // A dial's radius comes from the short side of its rect (min(w, h) / 2 - thickness / 2), so
