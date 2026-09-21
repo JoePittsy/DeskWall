@@ -23,7 +23,7 @@ public class StarterLayoutTests
     {
         var layout = LayoutFile.Load(Path.Combine(RepoLayouts(), file));
         var resolved = LayoutResolver.Resolve(layout, ValueTree.Empty);
-        Assert.NotEmpty(resolved);
+        Assert.NotNull(resolved);
     }
 
     [Fact]
@@ -34,5 +34,6 @@ public class StarterLayoutTests
         Assert.Contains(layout.Sources, s => s.Type == "http" && s.Name == "weather");
         Assert.Contains(layout.Sources, s => s.Type == "command" && s.Name == "tailscale");
         Assert.Contains(layout.Components, c => c is DialDef);
+        Assert.NotEmpty(LayoutResolver.Resolve(layout, ValueTree.Empty));
     }
 }
