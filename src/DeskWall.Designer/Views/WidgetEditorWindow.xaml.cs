@@ -85,7 +85,12 @@ public partial class WidgetEditorWindow : Window
         RebuildLiveSources();
         BuildKnobs();
         RefreshChrome();
-        ShowStatus(_document.Path is null ? "" : $"Editing {_document.Path}");
+        // A document with a key but no file is a shipped widget opened copy-on-write. Say so on
+        // the way in: the owner is about to edit something he cannot see a file for, and the
+        // rule he needs to know is that saving does not change the one that ships.
+        ShowStatus(_document.Path is { } path ? $"Editing {path}"
+            : _document.EditingKey is null ? ""
+            : "Editing the out-of-the-box widget. Saving keeps your version in your own widgets folder; the original stays as it is.");
     }
 
     /// <summary>The template was written. The shell reloads the catalog on this, so the gallery,
@@ -238,13 +243,22 @@ public partial class WidgetEditorWindow : Window
 
         body.Children.Add(new TextBlock
         {
-            Text = target.IsComponent ? $"{target.ComponentId} \u00b7 {target.Property}" : $"{target.SourceName} \u00b7 {target.SettingKey}",
+            Text = TargetLine(target),
             Style = (Style)FindResource("Hint"),
             Margin = new Thickness(0, 2, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
         });
 
         if (KnobTypeOf(target) == KnobType.Number) body.Children.Add(RangeRow(target));
         return card;
+    }
+
+    /// <summary>What the knob writes. A Drive knob writes several places -- that is the point of
+    /// it -- so the card lists them all rather than only the first.</summary>
+    private static string TargetLine(AdjustableTarget target)
+    {
+        if (target.IsDrive) return string.Join(", ", target.DriveTargets.Select(t => $"{t.ComponentId} · {t.Property}"));
+        return target.IsComponent ? $"{target.ComponentId} · {target.Property}" : $"{target.SourceName} · {target.SettingKey}";
     }
 
     private KnobType? KnobTypeOf(AdjustableTarget target) => Adjustable.ToKnob(_document, target)?.Type;

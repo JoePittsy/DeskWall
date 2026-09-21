@@ -49,6 +49,42 @@ public class WidgetDocumentTests
         AssertSameTemplate(original, doc.ToTemplate());
     }
 
+    /// <summary>The strict form of the test above, and the one that matters now that a shipped
+    /// widget can be edited in place: opening one in the editor and saving it without touching
+    /// anything must write back the file it came from, byte for byte once both are normalised
+    /// through the writer. A knob the editor cannot express is kept verbatim, so this covers the
+    /// pass-through path for real rather than field by field.</summary>
+    [Theory]
+    [MemberData(nameof(ShippedKeys))]
+    public void Opening_A_Shipped_Widget_And_Saving_It_Untouched_Changes_Nothing(string key)
+    {
+        var original = Shipped(key);
+        var reopened = WidgetDocument.FromTemplate(original, original.Path).ToTemplate();
+        Assert.Equal(WidgetTemplateWriter.ToJson(original), WidgetTemplateWriter.ToJson(reopened));
+    }
+
+    /// <summary>Which shipped widgets carry a knob the editor shows read-only, and why. Pinned so
+    /// that a knob quietly becoming uneditable, or an editable one being lost, is a failing test
+    /// rather than something the owner finds in the editor.
+    /// <list type="bullet">
+    /// <item><c>date.format</c>: a <c>=bind:</c> write - the choice swaps the binding, not a literal.</item>
+    /// <item><c>dial.metric</c>: a composite default, four parts across three targets.</item>
+    /// <item><c>weather.town</c>: two <c>:{token}</c> splices into one URL.</item>
+    /// </list></summary>
+    [Fact]
+    public void Only_These_Three_Shipped_Knobs_Are_Shown_Read_Only()
+    {
+        var passing = new List<string>();
+        foreach (var template in TestRepo.Widgets())
+        {
+            var doc = WidgetDocument.FromTemplate(template, template.Path);
+            passing.AddRange(doc.PassThroughKnobs.Select(k => $"{template.Key}.{k.Id}"));
+            // Nothing is ever dropped: every knob is either editable or kept verbatim.
+            Assert.Equal(template.Knobs.Count, doc.Adjustables.Count + doc.PassThroughKnobs.Count);
+        }
+        Assert.Equal(["date.format", "dial.metric", "weather.town"], passing);
+    }
+
     [Fact]
     public void FromTemplate_Deep_Copies_So_Editing_Cannot_Reach_The_Catalog()
     {

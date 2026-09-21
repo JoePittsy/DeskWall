@@ -50,9 +50,12 @@
              editing your own widgets is a rarer thing you go looking for. -->
         <Button.ContextMenu>
           <ContextMenu>
-            <MenuItem Header="Edit" Click="Edit_Click" Visibility="{Binding MineVisibility}" />
+            <!-- Edit is offered on every widget. A shipped one is copy-on-write: saving writes a
+                 file of the same key in the owner's folder, which the catalog prefers, and Reset
+                 deletes it again. -->
+            <MenuItem Header="Edit" Click="Edit_Click" />
             <MenuItem Header="Duplicate to mine" Click="Duplicate_Click" />
-            <MenuItem Header="Delete" Click="Delete_Click" Visibility="{Binding MineVisibility}" />
+            <MenuItem Header="{Binding DeleteHeader}" Click="Delete_Click" Visibility="{Binding MineVisibility}" />
           </ContextMenu>
         </Button.ContextMenu>
         <Grid Margin="12,10,12,11">
@@ -70,6 +73,11 @@
               <TextBlock Text="{Binding Count}" FontSize="11"
                          Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
             </Border>
+            <!-- One quiet word, in the caption style already on the card: the gallery must not
+                 say "Clock" when what it will place is the owner's edited Clock. -->
+            <TextBlock DockPanel.Dock="Right" Text="edited" Style="{StaticResource Caption}"
+                       VerticalAlignment="Center" Margin="8,0,0,0"
+                       Visibility="{Binding EditedVisibility}" />
             <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
           </DockPanel>

@@ -7,14 +7,16 @@ namespace DeskWall.Designer.Model.Widgets;
 public enum SourceFieldEditor { Text, Number, Choice }
 
 /// <summary>One row of the "+ Source" form. <see cref="Key"/> is the setting key it writes,
-/// except for the two that are not settings: <c>name</c> and <c>every</c>.</summary>
+/// except for the two that are not settings: <c>name</c> and <c>every</c>. <see cref="Hint"/> is
+/// the row's tooltip, for the two path fields where what may be typed is not obvious.</summary>
 public sealed record SourceField(
     string Key,
     string Label,
     SourceFieldEditor Editor,
     string Default,
     bool Required = false,
-    IReadOnlyList<string>? Choices = null);
+    IReadOnlyList<string>? Choices = null,
+    string? Hint = null);
 
 /// <summary>
 /// What the widget editor asks for when a source is added, as a table rather than three
@@ -48,6 +50,14 @@ public static class SourceForms
 
     private static readonly SourceField[] None = [];
 
+    /// <summary>What a path field may hold. <c>runtime:</c> keeps a widget portable: the two
+    /// dogfood command widgets carried this machine's own
+    /// "C:\Users\&lt;name&gt;\AppData\Local\DeskWall\scripts" because the form suggested nothing
+    /// else, and a template with that in it works on exactly one PC.</summary>
+    private const string PathHint =
+        "runtime: is the DeskWall folder (%LOCALAPPDATA%\\DeskWall), so runtime:scripts travels with the widget. "
+        + "%USERPROFILE% and other environment variables expand too, and a plain absolute path still works.";
+
     private static readonly SourceField[] Http =
     [
         new(NameKey, "Name", SourceFieldEditor.Text, "http", Required: true),
@@ -62,7 +72,7 @@ public static class SourceForms
         new(NameKey, "Name", SourceFieldEditor.Text, "command", Required: true),
         new("command", "Command", SourceFieldEditor.Text, "cmd.exe", Required: true),
         new("args", "Arguments", SourceFieldEditor.Text, "/c echo Hello from DeskWall"),
-        new("workingDir", "Working folder", SourceFieldEditor.Text, ""),
+        new("workingDir", "Working folder", SourceFieldEditor.Text, "runtime:scripts", Hint: PathHint),
         new(EveryKey, "Every (s)", SourceFieldEditor.Number, "600"),
         new("timeout", "Timeout (s)", SourceFieldEditor.Number, "10"),
         new("parse", "Parse", SourceFieldEditor.Choice, Auto, Choices: [Auto, "json", "text"]),
@@ -71,7 +81,7 @@ public static class SourceForms
     private static readonly SourceField[] File =
     [
         new(NameKey, "Name", SourceFieldEditor.Text, "file", Required: true),
-        new("path", "File", SourceFieldEditor.Text, "%USERPROFILE%\\data.json", Required: true),
+        new("path", "File", SourceFieldEditor.Text, "runtime:data.json", Required: true, Hint: PathHint),
         new(EveryKey, "Every (s)", SourceFieldEditor.Number, "30"),
         new("parse", "Parse", SourceFieldEditor.Choice, Auto, Choices: [Auto, "json", "text", "rss"]),
     ];

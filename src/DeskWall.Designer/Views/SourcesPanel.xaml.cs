@@ -289,7 +289,9 @@ public partial class SourcesPanel : UserControl
         }
         else
         {
-            var box = new TextBox { Text = values[field.Key], ToolTip = values[field.Key] };
+            // The hint wins over the value: a path field's value is short and readable in the box,
+            // and what may be typed in it (runtime:, %ENV%) is the part that is not obvious.
+            var box = new TextBox { Text = values[field.Key], ToolTip = field.Hint ?? values[field.Key] };
             void Do() => Commit(def.Name, field.Key, box.Text.Trim());
             box.LostFocus += (_, _) => Do();
             box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Do(); Keyboard.ClearFocus(); } };

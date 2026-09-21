@@ -110,9 +110,17 @@ public partial class GalleryPanel : UserControl
 
         public Visibility CountVisibility => _count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        /// <summary>Edit and Delete are for the owner's own files only: a shipped template lives
-        /// beside the exe and is replaced by the next install.</summary>
+        /// <summary>Delete is for the owner's own files only: there is no file of his to remove
+        /// for a shipped template he has never edited. Edit is offered on everything (a shipped
+        /// one saves a copy under the same key, <see cref="WidgetDocument.ForEditing"/>).</summary>
         public Visibility MineVisibility => WidgetCatalog.IsUserTemplate(Template) ? Visibility.Visible : Visibility.Collapsed;
+
+        /// <summary>Deleting an override is undoing an edit, not losing a widget, and the menu
+        /// has to say which of the two it is about to do.</summary>
+        public string DeleteHeader => Template.OverridesShipped ? "Reset to the out-of-the-box version" : "Delete";
+
+        public Visibility EditedVisibility =>
+            Template.OverridesShipped && WidgetCatalog.IsUserTemplate(Template) ? Visibility.Visible : Visibility.Collapsed;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

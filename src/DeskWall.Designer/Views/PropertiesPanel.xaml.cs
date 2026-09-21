@@ -218,21 +218,27 @@ public partial class PropertiesPanel : UserControl
     /// <summary>The "expose this as a knob" toggle, in the widget editor only. Drawn at the row's
     /// right edge rather than under the value, so a column of them reads as one list of what the
     /// widget lets its user change. Hidden for a property no knob can write (a binding, or a value
-    /// that is currently bound), because a toggle that refuses to move is worse than no toggle.</summary>
+    /// that is currently bound), because a toggle that refuses to move is worse than no toggle.
+    /// <para>The one bound property that does get a toggle is one keyed by a drive
+    /// (<c>disks.drives[C]...</c>): it makes a Drive knob, and a second one joins the first, so a
+    /// drive widget's bar and caption move together.</para></summary>
     private ToggleButton? BuildAdjustableToggle(ComponentDef def, PropertySchema.Prop prop)
     {
         if (IsAdjustable is null || ToggleAdjustable is null) return null;
-        if (!Adjustable.CanAdjust(def, prop)) return null;
+        var drive = Adjustable.CanAdjustAsDrive(def, prop);
+        if (!drive && !Adjustable.CanAdjust(def, prop)) return null;
         var id = def.Id;
         var toggle = new ToggleButton
         {
-            Content = "Knob",
+            Content = drive ? "Drive" : "Knob",
             FontSize = 11,
             Padding = new Thickness(6, 1, 6, 1),
             Margin = new Thickness(6, 2, 0, 0),
             VerticalAlignment = VerticalAlignment.Top,
             IsChecked = IsAdjustable(id, prop.Name),
-            ToolTip = "Let whoever places this widget change it",
+            ToolTip = drive
+                ? "Let whoever places this widget pick the drive. One picker drives every part of the widget that names a drive."
+                : "Let whoever places this widget change it",
         };
         toggle.Click += (_, _) => toggle.IsChecked = Toggled(id, prop.Name);
         return toggle;

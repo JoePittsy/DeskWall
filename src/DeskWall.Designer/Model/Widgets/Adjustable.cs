@@ -1,3 +1,4 @@
+using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 
 namespace DeskWall.Designer.Model.Widgets;
@@ -7,22 +8,38 @@ namespace DeskWall.Designer.Model.Widgets;
 /// splicing. Those still exist in shipped widgets and pass through the editor untouched
 /// (<see cref="WidgetDocument.PassThroughKnobs"/>).
 /// <para>Exactly one of the two pairs is set: (<see cref="ComponentId"/>, <see cref="Property"/>)
-/// or (<see cref="SourceName"/>, <see cref="SettingKey"/>).</para></summary>
+/// or (<see cref="SourceName"/>, <see cref="SettingKey"/>).</para>
+/// <para>The one exception is a <b>Drive</b> target (<see cref="IsDrive"/>), the editor's only
+/// knob over a binding: it carries a list of component properties rather than one, because a
+/// drive widget's bar and its caption have to move together and two pickers for one drive is two
+/// ways to get it wrong.</para></summary>
 public sealed class AdjustableTarget
 {
     private AdjustableTarget(string? componentId, string? property, string? sourceName, string? settingKey, string id, string label)
     {
-        ComponentId = componentId;
-        Property = property;
+        _componentId = componentId;
+        _property = property;
         SourceName = sourceName;
         SettingKey = settingKey;
         Id = id;
         Label = label;
     }
 
-    public string? ComponentId { get; }
+    private readonly string? _componentId;
+    private readonly string? _property;
+    private readonly List<(string ComponentId, string Property)> _driveTargets = [];
+
+    /// <summary>A Drive knob: <see cref="DriveTargets"/> is the list it writes, and its first
+    /// entry is what <see cref="ComponentId"/>/<see cref="Property"/> report.</summary>
+    public bool IsDrive { get; private init; }
+
+    /// <summary>Drive knobs only: every component property this one knob repoints, in the order
+    /// they were exposed. Empty for every other kind of target.</summary>
+    public IReadOnlyList<(string ComponentId, string Property)> DriveTargets => _driveTargets;
+
+    public string? ComponentId => IsDrive ? First().ComponentId : _componentId;
     /// <summary>The <see cref="PropertySchema.Prop.Name"/>, in its schema casing ("EffectRadius").</summary>
-    public string? Property { get; }
+    public string? Property => IsDrive ? First().Property : _property;
     public string? SourceName { get; }
     public string? SettingKey { get; }
 
@@ -35,13 +52,42 @@ public sealed class AdjustableTarget
     public double? Min { get; set; }
     public double? Max { get; set; }
 
-    public bool IsComponent => ComponentId is not null;
+    public bool IsComponent => IsDrive || _componentId is not null;
 
     public static AdjustableTarget ForComponent(string componentId, string property, string label, string? id = null)
         => new(componentId, property, null, null, id ?? WidgetDocument.Slug(label), label);
 
     public static AdjustableTarget ForSource(string sourceName, string settingKey, string label, string? id = null)
         => new(null, null, sourceName, settingKey, id ?? WidgetDocument.Slug(label), label);
+
+    public static AdjustableTarget ForDrive(string componentId, string property, string label, string? id = null)
+    {
+        var target = new AdjustableTarget(null, null, null, null, id ?? WidgetDocument.Slug(label), label) { IsDrive = true };
+        target.AddDriveTarget(componentId, property);
+        return target;
+    }
+
+    /// <summary>Put another component property under this same Drive knob.</summary>
+    public void AddDriveTarget(string componentId, string property)
+    {
+        if (!IsDrive || Targets(componentId, property)) return;
+        _driveTargets.Add((componentId, property));
+    }
+
+    /// <summary>Take one component property back off this Drive knob, leaving the rest. The knob
+    /// itself goes only when the last one does, which <see cref="WidgetDocument"/> decides.</summary>
+    public void RemoveDriveTarget(string componentId, string property)
+        => _driveTargets.RemoveAll(t => t.ComponentId == componentId && string.Equals(t.Property, property, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Replace the target list with the ones still worth writing (see
+    /// <see cref="Adjustable.LiveDriveTargets"/>).</summary>
+    public void KeepDriveTargets(IReadOnlyList<(string ComponentId, string Property)> keep)
+    {
+        ArgumentNullException.ThrowIfNull(keep);
+        if (!IsDrive) return;
+        _driveTargets.Clear();
+        _driveTargets.AddRange(keep);
+    }
 
     /// <summary>What the knob's <c>sets</c> entry says (docs/layout-format.md, "Widgets").</summary>
     public string SetsPath => IsComponent
@@ -50,12 +96,23 @@ public sealed class AdjustableTarget
             ? $"sources.{SourceName}.every"
             : $"sources.{SourceName}.settings.{SettingKey}";
 
+    /// <summary>Every <c>sets</c> entry this target writes: one, except for a Drive knob, which
+    /// writes a <c>:{drive}</c> substitution per component property it holds.</summary>
+    public IReadOnlyList<string> SetsPaths => IsDrive
+        ? _driveTargets.Select(t => Adjustable.DriveSetsPath(t.ComponentId, t.Property)).ToList()
+        : [SetsPath];
+
     /// <summary>True when this is the same place in the document as the arguments name.</summary>
     public bool Targets(string componentId, string property)
-        => IsComponent && ComponentId == componentId && string.Equals(Property, property, StringComparison.OrdinalIgnoreCase);
+        => IsDrive
+            ? _driveTargets.Any(t => t.ComponentId == componentId && string.Equals(t.Property, property, StringComparison.OrdinalIgnoreCase))
+            : _componentId is not null && _componentId == componentId && string.Equals(_property, property, StringComparison.OrdinalIgnoreCase);
 
     public bool TargetsSetting(string sourceName, string settingKey)
         => !IsComponent && SourceName == sourceName && string.Equals(SettingKey, settingKey, StringComparison.Ordinal);
+
+    private (string? ComponentId, string? Property) First()
+        => _driveTargets.Count == 0 ? (null, null) : _driveTargets[0];
 }
 
 /// <summary>Turning a target into the knob a template file carries, and deciding which targets may
@@ -66,6 +123,13 @@ public static class Adjustable
     /// <c>sets</c> path is <c>sources.&lt;name&gt;.every</c>, not <c>...settings.every</c>, because
     /// a value in <c>settings</c> would be silently ignored by every source factory.</summary>
     public const string EveryKey = "every";
+
+    /// <summary>The token a Drive knob substitutes, and the two path segments that say a binding
+    /// is about one drive: <c>disks.drives[C]...</c>. Deliberately just this one shape -- making
+    /// any part of any binding adjustable is a much bigger feature than a drive picker.</summary>
+    public const string DriveToken = "drive";
+    private const string DisksSource = "disks";
+    private const string DrivesField = "drives";
 
     /// <summary>Which knob control a property gets. A <see cref="PropertySchema.Editor.Binding"/>
     /// property is not offered at all: a knob writes literals, and a repeater's item list is not a
@@ -93,6 +157,76 @@ public static class Adjustable
         return prop.Get(def) is not { IsBound: true };
     }
 
+    // ---- drive knobs ---------------------------------------------------------------------------
+
+    /// <summary>The drive a binding is keyed by -- the <c>C</c> of <c>disks.drives[C].freeGB</c>,
+    /// or the <c>{drive}</c> a saved template carries there -- or null when the binding is about
+    /// anything else. An index (<c>disks.drives[0]</c>) is not a drive: it names whichever drive
+    /// happens to be first, which is not a thing a picker can set.</summary>
+    public static string? DriveKey(Binding? binding)
+    {
+        if (binding is null || binding.Path.Count < 3) return null;
+        if (binding.Path[0] is not NameSegment source || !string.Equals(source.Name, DisksSource, StringComparison.OrdinalIgnoreCase)) return null;
+        if (binding.Path[1] is not NameSegment list || !string.Equals(list.Name, DrivesField, StringComparison.OrdinalIgnoreCase)) return null;
+        return binding.Path[2] is KeySegment key ? key.Key : null;
+    }
+
+    /// <summary>Whether this property may join a Drive knob: it has to be bound, and bound to a
+    /// drive-keyed path. Everything else bound stays refused (<see cref="CanAdjust"/>).</summary>
+    public static bool CanAdjustAsDrive(ComponentDef def, PropertySchema.Prop prop)
+    {
+        ArgumentNullException.ThrowIfNull(prop);
+        var value = prop.Get(def);
+        return value is { IsBound: true } && DriveKey(value.Binding) is not null;
+    }
+
+    public static string DriveSetsPath(string componentId, string property)
+        => "components." + componentId + "." + property.ToLowerInvariant() + ":{" + DriveToken + "}";
+
+    /// <summary>The drive-knob targets still worth writing: the part is still on the canvas and
+    /// its property is still bound to a drive-keyed path. Re-binding one of a drive widget's parts
+    /// to something else takes that part off the knob without taking the knob away.</summary>
+    public static IReadOnlyList<(string ComponentId, string Property)> LiveDriveTargets(WidgetDocument document, AdjustableTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(target);
+        return target.DriveTargets.Where(t => KeyAt(document.Model.Layout.Components, t.ComponentId, t.Property) is not null).ToList();
+    }
+
+    /// <summary>Rewrite the drive key of every one of this knob's targets in
+    /// <paramref name="components"/>. Used twice: with "{drive}" onto the copy
+    /// <see cref="WidgetDocument.ToTemplate"/> is about to save, and with the knob's default
+    /// letter onto a document just opened from a saved template, so its canvas draws real data
+    /// instead of resolving a drive literally called "{drive}".</summary>
+    public static void SetDriveKey(IReadOnlyList<ComponentDef> components, AdjustableTarget target, string key)
+    {
+        ArgumentNullException.ThrowIfNull(components);
+        ArgumentNullException.ThrowIfNull(target);
+        if (string.IsNullOrEmpty(key)) return;
+        foreach (var (componentId, property) in target.DriveTargets)
+        {
+            var found = Find(components, componentId, property);
+            if (found.Def is not { } def || found.Prop is not { } prop) continue;
+            if (prop.Get(def) is not { IsBound: true } value || DriveKey(value.Binding) is null) continue;
+            var path = value.Binding!.Path.ToList();
+            path[2] = new KeySegment(key);
+            prop.Set(def, PropertyValue.Bound(new Binding(path, value.Binding.Format)));
+        }
+    }
+
+    private static string? KeyAt(IReadOnlyList<ComponentDef> components, string componentId, string property)
+    {
+        var found = Find(components, componentId, property);
+        if (found.Def is not { } def || found.Prop is not { } prop) return null;
+        return prop.Get(def) is { IsBound: true } value ? DriveKey(value.Binding) : null;
+    }
+
+    private static (ComponentDef? Def, PropertySchema.Prop? Prop) Find(IReadOnlyList<ComponentDef> components, string componentId, string property)
+    {
+        if (components.FirstOrDefault(c => c.Id == componentId) is not { } def) return (null, null);
+        return (def, PropertySchema.For(def).FirstOrDefault(p => string.Equals(p.Name, property, StringComparison.OrdinalIgnoreCase)));
+    }
+
     /// <summary>The knob for this target as the document stands <em>now</em>. Null when the target
     /// has gone (the part was deleted, the source removed) or has become a binding: the default is
     /// read here and nowhere else, so there is no stored copy to keep in step with the value.</summary>
@@ -101,6 +235,17 @@ public static class Adjustable
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(target);
         var layout = document.Model.Layout;
+
+        if (target.IsDrive)
+        {
+            // The default is the letter the canvas is drawing right now, the same rule every
+            // other knob follows; the file's "{drive}" is written by ToTemplate, not stored here.
+            var live = LiveDriveTargets(document, target);
+            if (live.Count == 0) return null;
+            var letter = KeyAt(layout.Components, live[0].ComponentId, live[0].Property) ?? "";
+            return new Knob(target.Id, target.Label, KnobType.Drive, letter,
+                live.Select(t => DriveSetsPath(t.ComponentId, t.Property)).ToList(), null, null, null);
+        }
 
         if (target.IsComponent)
         {
@@ -131,6 +276,7 @@ public static class Adjustable
     {
         ArgumentNullException.ThrowIfNull(knob);
         ArgumentNullException.ThrowIfNull(components);
+        if (knob.Type == KnobType.Drive) return FromDriveKnob(knob, components);
         if (knob.Sets.Count != 1) return null;
         if (knob.Default.Contains("||", StringComparison.Ordinal)) return null;
         var path = knob.Sets[0];
@@ -151,6 +297,30 @@ public static class Adjustable
         if (segments.Length == 3 && segments[0] == "sources" && segments[2] == EveryKey)
             return WithRange(AdjustableTarget.ForSource(segments[1], EveryKey, knob.Label, knob.Id), knob);
         return null;
+    }
+
+    /// <summary>A Drive knob the editor can drive again: every <c>sets</c> entry is a
+    /// <c>:{drive}</c> substitution into a component property that is bound to a drive-keyed path.
+    /// One entry that is not makes the whole knob pass through, because half a drive knob would
+    /// repoint half the widget.</summary>
+    private static AdjustableTarget? FromDriveKnob(Knob knob, IReadOnlyList<ComponentDef> components)
+    {
+        const string prefix = "components.";
+        var suffix = ":{" + DriveToken + "}";
+        if (knob.Sets.Count == 0) return null;
+
+        AdjustableTarget? target = null;
+        foreach (var path in knob.Sets)
+        {
+            if (!path.StartsWith(prefix, StringComparison.Ordinal) || !path.EndsWith(suffix, StringComparison.Ordinal)) return null;
+            var segments = path[..^suffix.Length].Split('.');
+            if (segments.Length != 3) return null;
+            var found = Find(components, segments[1], segments[2]);
+            if (found.Def is not { } def || found.Prop is not { } prop || !CanAdjustAsDrive(def, prop)) return null;
+            if (target is null) target = AdjustableTarget.ForDrive(def.Id, prop.Name, knob.Label, knob.Id);
+            else target.AddDriveTarget(def.Id, prop.Name);
+        }
+        return target;
     }
 
     private static AdjustableTarget WithRange(AdjustableTarget target, Knob knob)
