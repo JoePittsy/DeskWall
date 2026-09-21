@@ -8,15 +8,15 @@ layout proportionally when the display signature has no layout of its own.
 |---|---|
 | `clock-disks.json` | Clock top right, one row per fixed drive bottom right. No network, no secrets. |
 | `steam-recent.json` | The same column with the four most recently played Steam games between them, covers from Steam's CDN, each cover a click-to-launch shortcut. Needs two secrets. |
-| `starter-column.json` | The Designer's first-run "column" card. Identical to `steam-recent.json`; needs the same two secrets before the covers appear. |
-| `starter-clock.json` | The Designer's first-run "clock" card. Clock only, top right; no sources beyond time, no secrets. |
-| `starter-blank.json` | The Designer's first-run "blank" card. Base image only, nothing drawn on top. |
 | `column-system.json` | Clock, Leeds weather, Tailscale state, four hardware dials (CPU/GPU/RAM load, GPU temperature) and the drives row, all in the right-hand column. No Steam covers. See "column-system.json requirements" below. |
 
-The three `starter-*.json` files are what `FirstRun` offers when the layout store has no entry for
-the current display: it copies the chosen one into `runtime/layouts/<signature>.json`, scaled to
-the actual signature by `LayoutScaler`, and opens it in the designer. They are otherwise ordinary
-layout files - open one directly with `deskwall tick --layout` like any other.
+`clock-disks.json` and `column-system.json` are generated from the shipped widget templates
+(`widgets/*.json`, `docs/layout-format.md` "Widgets") by a small test-side generator
+(`tests/DeskWall.Designer.Tests/Widgets/StarterGenerator.cs`), not hand-placed; a test
+(`StarterGeneratorTests`) asserts the two stay equal so they cannot drift apart silently. They
+are otherwise ordinary layout files - open one directly with `deskwall tick --layout` like any
+other. `steam-recent.json` stays hand-written (it needs the two Steam secrets described below,
+which the widget picker's `steam-covers` widget also needs but does not set up on its own).
 
 ## Steam secrets
 
@@ -37,28 +37,31 @@ https://api.steampowered.com/...{secret:steamKey}...` with the placeholder, not 
 
 ## column-system.json requirements
 
-`column-system.json` is the widgets recipe from `docs/superpowers/specs/2026-09-21-widgets-hardware-weather-design.md`:
+`column-system.json` is generated (`StarterGenerator`, above) from the `clock`, `weather`, `vpn`
+and `dial` (times four: CPU, GPU, RAM, GPU temperature) and `drives` widgets in `widgets/*.json` -
 a `hardware` source (native CPU/RAM/GPU sampler), a Leeds `http` weather source, and a `command`
 source that shells out to Tailscale. Each has its own requirement:
 
 - **Weather.** The `http` source calls Open-Meteo with hard-coded coordinates for Leeds
-  (`latitude=53.8008&longitude=-1.5491` in the source's `url`). To point it at a different town,
-  edit those two numbers in the layout file - Open-Meteo needs no key and the request is unauthenticated.
-  The weather icon (`sky` component) binds `weather.json.current.weather_code |
-  "runtime:assets/weather/{0}.png"`; the `runtime:` prefix resolves against the runtime directory,
-  not the repo, so **`assets/weather` must be copied to `%LOCALAPPDATA%\DeskWall\assets\weather`**
-  before this layout renders icons (the designer does this automatically whenever it copies a
-  starter; a manual `deskwall tick --layout layouts\column-system.json` needs the folder copied
-  by hand first, or the icon area draws the missing-image fallback plate).
+  (`latitude=53.8008&longitude=-1.5491` in the source's `url`, the `weather` widget's `town` knob
+  default - `docs/layout-format.md` "Widgets"). To point it at a different town, use the widget
+  picker's Town knob, or edit those two numbers in the layout file by hand - Open-Meteo needs no
+  key and the request is unauthenticated. The weather icon (`sky` component) binds
+  `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"`; the `runtime:` prefix
+  resolves against the runtime directory, not the repo, so **`assets/weather` must be copied to
+  `%LOCALAPPDATA%\DeskWall\assets\weather`** before this layout renders icons (the designer does
+  this automatically whenever it copies a starter; a manual
+  `deskwall tick --layout layouts\column-system.json` needs the folder copied by hand first, or
+  the icon area draws the missing-image fallback plate).
 - **Tailscale.** The `vpn` line needs Tailscale installed at its default path,
   `C:\Program Files\Tailscale\tailscale.exe`; edit `sources[].settings.command` if yours is
   elsewhere. Without it the `command` source's own failure means the line falls back to its
   default (spec 3.2: a missing binding is never an exception).
-- **GPU dials.** The `gpuDial`/`gpuPct` and `tempDial`/`tempC` components bind `hardware.gpu` and
-  `hardware.gpuTempFraction`/`hardware.gpuTempC`, which the `hardware` source only publishes when
-  it finds an NVIDIA GPU (NVML). On a machine with no GPU, or a non-NVIDIA one, those two dials and
-  their text simply draw at their bound properties' defaults - no error, no NVML on the box needed
-  to try the rest of the layout.
+- **GPU dials.** The second (`dial-2`, GPU load) and fourth (`dial-4`, GPU temperature) dial
+  instances bind `hardware.gpu` and `hardware.gpuTempFraction`/`hardware.gpuTempC`, which the
+  `hardware` source only publishes when it finds an NVIDIA GPU (NVML). On a machine with no GPU,
+  or a non-NVIDIA one, those two dials and their text simply draw at their bound properties'
+  defaults - no error, no NVML on the box needed to try the rest of the layout.
 - **Hardware dials need the daemon running for a minute.** A one-shot `deskwall tick` always shows
   the four dials empty, because the `hardware` source's 10-second sampler has not taken a reading
   yet on that process's first (and only) tick; the resident daemon fills them once its own sampler

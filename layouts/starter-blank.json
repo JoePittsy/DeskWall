@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "baseImage": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\DesktopSpotlight\\Assets\\Images\\image_3.jpg",
-  "baseFit": "cover",
-  "encode": "jpeg",
-  "jpegQuality": 92,
-  "sources": [],
-  "components": []
-}

@@ -5,18 +5,140 @@
   "encode": "jpeg",
   "jpegQuality": 92,
   "sources": [
-    { "name": "time", "type": "time" },
-    { "name": "disks", "type": "disks", "every": 300 }
+    {
+      "name": "time",
+      "type": "time",
+      "every": null,
+      "settings": {}
+    },
+    {
+      "name": "disks",
+      "type": "disks",
+      "every": 300,
+      "settings": {}
+    }
   ],
   "components": [
-    { "type": "text", "id": "clock", "rect": [3220, 40, 172, 78], "z": 1,
-      "text": { "bind": "time.now | HH:mm" }, "font": "Segoe UI Light", "size": 64, "weight": 300, "align": "right" },
-    { "type": "repeater", "id": "drives", "rect": [3220, 1260, 172, 92], "z": 1,
-      "items": { "bind": "disks.drives" }, "axis": "vertical", "gap": 0, "cellHeight": 46,
+    {
+      "type": "text",
+      "text": {
+        "bind": "time.now | \"HH:mm\""
+      },
+      "font": "Segoe UI Light",
+      "size": "64",
+      "weight": "300",
+      "color": "#EBFFFFFF",
+      "align": "right",
+      "effect": "shadow",
+      "effectRadius": "6",
+      "effectColor": "#A0000000",
+      "id": "clock-1.clock",
+      "rect": [
+        3220,
+        40,
+        172,
+        78
+      ],
+      "z": 1,
+      "widget": "clock-1"
+    },
+    {
+      "type": "repeater",
+      "items": {
+        "bind": "disks.drives"
+      },
+      "axis": "vertical",
+      "gap": 0,
+      "cellHeight": "46",
       "template": [
-        { "type": "text", "id": "letter", "rect": [0, 0, 60, 24], "text": { "bind": "letter | \"{0}:\"" }, "size": 15 },
-        { "type": "text", "id": "free", "rect": [60, 0, 112, 24], "text": { "bind": "freeGB | \"{0:N0} GB free\"" }, "size": 15, "align": "right" },
-        { "type": "bar", "id": "bar", "rect": [0, 26, 172, 6], "fraction": { "bind": "usedFraction" }, "threshold": 0.85, "thresholdFill": "#FFD13438" }
-      ] }
-  ]
+        {
+          "type": "text",
+          "text": {
+            "bind": "letter | \"{0}:\""
+          },
+          "font": "Segoe UI",
+          "size": "15",
+          "weight": "400",
+          "color": "#EBFFFFFF",
+          "align": "left",
+          "effect": "shadow",
+          "effectRadius": "6",
+          "effectColor": "#A0000000",
+          "id": "letter",
+          "rect": [
+            0,
+            0,
+            60,
+            24
+          ],
+          "z": 0,
+          "widget": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "bind": "freeGB | \"{0:N0} GB free\""
+          },
+          "font": "Segoe UI",
+          "size": "15",
+          "weight": "400",
+          "color": "#EBFFFFFF",
+          "align": "right",
+          "effect": "shadow",
+          "effectRadius": "6",
+          "effectColor": "#A0000000",
+          "id": "free",
+          "rect": [
+            60,
+            0,
+            112,
+            24
+          ],
+          "z": 0,
+          "widget": null
+        },
+        {
+          "type": "bar",
+          "fraction": {
+            "bind": "usedFraction"
+          },
+          "track": "#46FFFFFF",
+          "fill": "#EBFFFFFF",
+          "threshold": "0.85",
+          "thresholdFill": "#FFD13438",
+          "direction": "horizontal",
+          "id": "bar",
+          "rect": [
+            0,
+            26,
+            172,
+            6
+          ],
+          "z": 0,
+          "widget": null
+        }
+      ],
+      "id": "drives-1.drives",
+      "rect": [
+        3220,
+        1308,
+        172,
+        92
+      ],
+      "z": 1,
+      "widget": "drives-1"
+    }
+  ],
+  "widgets": {
+    "clock-1": {
+      "template": "clock",
+      "knobs": {},
+      "unlocked": false
+    },
+    "drives-1": {
+      "template": "drives",
+      "knobs": {},
+      "unlocked": false
+    }
+  }
 }

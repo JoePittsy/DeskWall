@@ -37,6 +37,7 @@ public sealed class WidgetTemplate
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         AllowTrailingCommas = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     public static WidgetTemplate Load(string path)
