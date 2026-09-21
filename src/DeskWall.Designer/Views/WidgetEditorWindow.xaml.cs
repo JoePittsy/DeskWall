@@ -85,7 +85,12 @@ public partial class WidgetEditorWindow : Window
         RebuildLiveSources();
         BuildKnobs();
         RefreshChrome();
-        ShowStatus(_document.Path is null ? "" : $"Editing {_document.Path}");
+        // A document with a key but no file is a shipped widget opened copy-on-write. Say so on
+        // the way in: the owner is about to edit something he cannot see a file for, and the
+        // rule he needs to know is that saving does not change the one that ships.
+        ShowStatus(_document.Path is { } path ? $"Editing {path}"
+            : _document.EditingKey is null ? ""
+            : "Editing the out-of-the-box widget. Saving keeps your version in your own widgets folder; the original stays as it is.");
     }
 
     /// <summary>The template was written. The shell reloads the catalog on this, so the gallery,
