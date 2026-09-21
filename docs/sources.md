@@ -84,10 +84,21 @@ top-level `every` field.
 
 CPU, RAM and (when an NVIDIA GPU is present) GPU load, averaged over a rolling window. A
 `System.Threading.Timer` inside the source, started on the first `RefreshAsync` and stopped on
-`Dispose`, takes one reading of each metric every `sample` seconds into a fixed ring of
-`window / sample` slots (at least 1). `RefreshAsync` itself only reads the rings, so the daemon's
-schedule is unchanged: the source is due every `every` seconds like any other, and the daemon
-still wakes once a minute. A reading that fails is skipped, not recorded as zero.
+`Dispose`, takes its first reading **immediately** and one more every `sample` seconds after that,
+into a fixed ring of `window / sample` slots (at least 1). `RefreshAsync` itself only reads the
+rings, so the daemon's schedule is unchanged: the source is due every `every` seconds like any
+other, and the daemon still wakes once a minute. A reading that fails is skipped, not recorded as
+zero.
+
+**Cold start.** The very first `RefreshAsync` can only start the sampler, so it publishes
+`samples: 0` and every bound property falls back to its own default -- which looked broken for up
+to a minute when a hardware source was added in the designer. `NextDue` therefore says "due now"
+after that first empty refresh, so the next wake (`Scheduler.MinDelay`, 250 ms later) paints real
+numbers. Exactly **one** such wake is granted, and it is spent whether or not the reader produced
+anything: a reader that never reads is a *successful* refresh publishing `samples: 0`, so the
+scheduler's failure back-off does not apply to it and an unconditional "due now" would pin the
+daemon's wake at 250 ms for ever. Once any ring has data the source is back on the whole minute
+and shares the clock's single wake.
 
 | Field | Meaning |
 |---|---|
