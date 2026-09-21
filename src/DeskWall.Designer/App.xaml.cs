@@ -9,11 +9,11 @@ using DeskWall.Designer.Views;
 namespace DeskWall.Designer;
 
 /// <summary>Startup, and nothing else: find the display in front of the owner, find the layout the
-/// daemon would draw on it, and hand both to the shell. With no layout at all the first-run picker
-/// runs first; cancelling it exits, because a designer with nothing open has nothing to show.
-/// <para>ShutdownMode is OnExplicitShutdown, not OnMainWindowClose: WPF makes the first window
-/// instantiated the MainWindow, and that would be FirstRun, whose closing would then take the
-/// application down before the shell ever opened. MainWindow.OnClosed does the shutdown.</para></summary>
+/// daemon would draw on it, and hand both to the window. There is no first-run picker any more -
+/// a display with no layout gets an empty one and the gallery, which is a better first screen than
+/// a list of starters nobody can picture.
+/// <para>ShutdownMode is OnExplicitShutdown rather than OnMainWindowClose so a dialog opened before
+/// the window cannot take the application down with it; MainWindow.OnClosed does the shutdown.</para></summary>
 public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
@@ -24,22 +24,7 @@ public partial class App : Application
         var store = LayoutStore.Default();
         var signature = PrimarySignature(settings);
 
-        var resolution = store.Resolve(signature);
-        if (resolution is null)
-        {
-            var first = new FirstRun(signature, store);
-            if (first.ShowDialog() != true) { Shutdown(); return; }
-            resolution = store.Resolve(signature);
-            if (resolution is null)
-            {
-                MessageBox.Show($"No layout for {signature.Key}.", "DeskWall Designer",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                Shutdown();
-                return;
-            }
-        }
-
-        var window = new MainWindow(store, settings, signature, resolution);
+        var window = new MainWindow(store, settings, signature, store.Resolve(signature));
         MainWindow = window;
         window.Show();
     }

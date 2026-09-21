@@ -1,0 +1,7 @@
+﻿<UserControl x:Class="DeskWall.Designer.Views.KnobsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel x:Name="Root" Margin="16" />
+  </ScrollViewer>
+</UserControl>

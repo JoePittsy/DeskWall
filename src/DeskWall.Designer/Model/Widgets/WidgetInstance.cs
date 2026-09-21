@@ -242,6 +242,9 @@ public static class WidgetInstance
     private static string Substitute(string current, string? token, string value, Dictionary<string, string> tokens)
     {
         if (token is null) return value;
+        // A knob that carries named pieces (a town's lat and lon) only fills the tokens it has:
+        // writing the town's name where a latitude belongs would point the forecast at the ocean.
+        if (tokens.Count > 0 && !tokens.TryGetValue(token, out _)) return current;
         var replacement = tokens.TryGetValue(token, out var t) ? t : value;
         return current.Replace("{" + token + "}", replacement, StringComparison.OrdinalIgnoreCase);
     }
