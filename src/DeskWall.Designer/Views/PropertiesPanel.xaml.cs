@@ -256,8 +256,46 @@ public partial class PropertiesPanel : UserControl
         PropertySchema.Editor.Font => BuildFontEditor(prop, value),
         PropertySchema.Editor.Color => BuildColorEditor(prop, value),
         PropertySchema.Editor.Path => BuildPathEditor(prop, value),
+        PropertySchema.Editor.AutoNumber => BuildAutoNumberEditor(prop, value),
         _ => BuildTextEditor(prop, value),
     };
+
+    /// <summary>A pixel size that can be left to the renderer. An ordinary box with "auto" greyed
+    /// behind it while it is empty: clearing it writes the sentinel back, and that placeholder is
+    /// the only thing on screen that says what an empty one means. Anything unparseable snaps back
+    /// to what was there, so the box never reports a value the layout does not hold.</summary>
+    private FrameworkElement BuildAutoNumberEditor(PropertySchema.Prop prop, PropertyValue value)
+    {
+        var box = new TextBox { Text = PropertySchema.AutoNumberText(value) };
+        var hint = new TextBlock
+        {
+            Text = PropertySchema.Auto,
+            Margin = new Thickness(7, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            Foreground = SystemColors.GrayTextBrush,
+        };
+        void ShowHint() => hint.Visibility = box.Text.Trim().Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        void Commit()
+        {
+            var current = CurrentFound() is { } found && prop.Get(found.Def) is { Binding: null } live
+                ? live.LiteralText
+                : value.LiteralText;
+            var literal = PropertySchema.AutoNumberLiteral(box.Text, current);
+            box.Text = string.Equals(literal, PropertySchema.Auto, StringComparison.Ordinal) ? "" : literal;
+            ShowHint();
+            SetLiteral(prop, literal);
+        }
+        ShowHint();
+        box.TextChanged += (_, _) => ShowHint();
+        box.LostFocus += (_, _) => Commit();
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); Keyboard.ClearFocus(); } };
+
+        var grid = new Grid();
+        grid.Children.Add(box);
+        grid.Children.Add(hint);
+        return grid;
+    }
 
     private FrameworkElement BuildTextEditor(PropertySchema.Prop prop, PropertyValue value)
     {

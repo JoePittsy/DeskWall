@@ -9,7 +9,15 @@ namespace DeskWall.Designer.Model;
 /// hazard later).</summary>
 public static class PropertySchema
 {
-    public enum Editor { Text, Number, Color, Enum, Font, Path, Binding }
+    /// <summary><see cref="AutoNumber"/> is a pixel size the renderer may work out for itself; the
+    /// rest are what they say.</summary>
+    public enum Editor { Text, Number, AutoNumber, Color, Enum, Font, Path, Binding }
+
+    /// <summary>The sentinel Core reads for "you decide": a text shadow's radius follows the font
+    /// size, a repeater cell's height follows its first image's aspect ratio. It is a literal
+    /// string in the JSON, not a number, which is why an ordinary numeric box shows the word
+    /// <c>auto</c> back at the owner and an <see cref="Editor.AutoNumber"/> one does not.</summary>
+    public const string Auto = "auto";
 
     public sealed record Prop(string Name, Editor Editor, string[]? Choices, Func<ComponentDef, PropertyValue?> Get, Action<ComponentDef, PropertyValue> Set);
 
@@ -53,7 +61,7 @@ public static class PropertySchema
         new("Color", Editor.Color, null, c => ((TextDef)c).Color, (c, v) => ((TextDef)c).Color = v),
         new("Align", Editor.Enum, AlignChoices, c => ((TextDef)c).Align, (c, v) => ((TextDef)c).Align = v),
         new("Effect", Editor.Enum, EffectChoices, c => ((TextDef)c).Effect, (c, v) => ((TextDef)c).Effect = v),
-        new("EffectRadius", Editor.Number, null, c => ((TextDef)c).EffectRadius, (c, v) => ((TextDef)c).EffectRadius = v),
+        new("EffectRadius", Editor.AutoNumber, null, c => ((TextDef)c).EffectRadius, (c, v) => ((TextDef)c).EffectRadius = v),
         new("EffectColor", Editor.Color, null, c => ((TextDef)c).EffectColor, (c, v) => ((TextDef)c).EffectColor = v),
     ];
 
@@ -99,8 +107,36 @@ public static class PropertySchema
         new("Items", Editor.Binding, null, c => ((RepeaterDef)c).Items, (c, v) => ((RepeaterDef)c).Items = v),
         new("Axis", Editor.Enum, AxisChoices, c => AxisToProp(((RepeaterDef)c).Axis), (c, v) => ((RepeaterDef)c).Axis = PropToAxis(v, ((RepeaterDef)c).Axis)),
         new("Gap", Editor.Number, null, c => IntToProp(((RepeaterDef)c).Gap), (c, v) => ((RepeaterDef)c).Gap = PropToInt(v, ((RepeaterDef)c).Gap)),
-        new("CellHeight", Editor.Text, null, c => ((RepeaterDef)c).CellHeight, (c, v) => ((RepeaterDef)c).CellHeight = v),
+        new("CellHeight", Editor.AutoNumber, null, c => ((RepeaterDef)c).CellHeight, (c, v) => ((RepeaterDef)c).CellHeight = v),
     ];
+
+    // ---- "a number, or let the renderer decide" --------------------------------------------------
+
+    /// <summary>What an <see cref="Editor.AutoNumber"/> box shows: the number, or nothing at all
+    /// when the value is <see cref="Auto"/>. Nothing, rather than the word: an empty box with
+    /// "auto" greyed behind it reads as a setting left alone, whereas the word typed into a
+    /// numeric field reads as a value someone meant to be a number and got wrong.</summary>
+    public static string AutoNumberText(PropertyValue value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return value.IsBound || value.LiteralText is not { } text
+            || string.Equals(text, Auto, StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : text;
+    }
+
+    /// <summary>The literal to write back for what was typed into such a box: cleared (or the word
+    /// itself) means <see cref="Auto"/>, a number means that number, and anything else is a typo
+    /// that keeps <paramref name="current"/> - a numeric property is not a place to let "12px"
+    /// through and find out at the next tick.</summary>
+    public static string AutoNumberLiteral(string typed, string? current)
+    {
+        var text = (typed ?? "").Trim();
+        if (text.Length == 0 || string.Equals(text, Auto, StringComparison.OrdinalIgnoreCase)) return Auto;
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            ? number.ToString("R", CultureInfo.InvariantCulture)
+            : current ?? Auto;
+    }
 
     public static readonly IReadOnlyList<(string Name, Func<ComponentDef, int> Get, Action<ComponentDef, int> Set)> Geometry =
     [

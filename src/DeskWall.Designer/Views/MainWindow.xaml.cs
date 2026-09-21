@@ -18,18 +18,22 @@ namespace DeskWall.Designer.Views;
 /// <summary>
 /// The window.
 /// <para>
-/// Job: get a widget onto the column and looking right in under a minute, without the owner seeing
-/// a coordinate or a binding. Three panes and a verb: pick from the gallery on the left, see it on
-/// the wallpaper in the middle, change what it says on the right, Apply.
+/// Job: get a widget onto the wallpaper, where the owner wants it and looking right, in under a
+/// minute, without seeing a coordinate or a binding. Three panes and a verb: pick from the gallery
+/// on the left, drag it about on the wallpaper in the middle, change what it says on the right, Apply.
 /// </para>
 /// <para>
 /// Deliberately left out: a menu bar; a display selector and a "copy from another display" button
 /// (a layout belongs to the display in front of you, and the store scales the rest); a file name
 /// with a dirty marker (Apply is enabled exactly when there is something to apply, which says the
-/// same thing with no text); zoom, align, duplicate, bring-to-front and the rest of a drawing
-/// program's verbs (a widget's position is the arranger's answer); panel collapse keys; a
-/// confirmation for Apply. The status line at the foot says when it last reached the wallpaper and
-/// whether the daemon is there to paint it.
+/// same thing with no text); duplicate, bring-to-front and the rest of a drawing program's verbs;
+/// panel collapse keys; a confirmation for Apply. The status line at the foot says when it last
+/// reached the wallpaper and whether the daemon is there to paint it.
+/// </para>
+/// <para>
+/// Placement lives on the canvas, not up here: zoom, the grid, align and distribute are all
+/// controls over the preview, where what they act on is visible (<see cref="PreviewView"/>). The
+/// top bar keeps its four verbs and its six-control budget.
 /// </para>
 /// </summary>
 public partial class MainWindow : Window
@@ -61,11 +65,7 @@ public partial class MainWindow : Window
         _renderer = new PreviewRenderer(() => _live?.Tree() ?? ValueTree.Empty);
 
         Gallery.AddRequested += Add;
-        Preview.Reordered += ReorderWidget;
-        Preview.Moved += MoveUnlocked;
-        Preview.IsUnlocked = id => _model.Layout.Widgets is { } w && w.TryGetValue(id, out var r) && r.Unlocked;
         Knobs.RemoveRequested += Remove;
-        Knobs.ArrangeRequested += () => Arrange("Arrange");
 
         RestorePlacement();
         Open(signature, resolution);
@@ -184,54 +184,47 @@ public partial class MainWindow : Window
 
     // ---- the four things that change a layout ------------------------------------------------------
 
+    /// <summary>A widget picked from the gallery lands in the right-hand margin, below whatever is
+    /// already there, and is free to drag from that moment
+    /// (<see cref="Placement.Spawn"/>). Nothing is arranged, before or after: the canvas has no
+    /// column any more, and where a widget sits is the owner's answer.
+    /// <para>The margin rather than the middle of the canvas because windows sit centred on the
+    /// ultrawide and leave roughly 440 px either side (CLAUDE.md); dropping a new widget behind a
+    /// browser window would look like nothing had happened.</para></summary>
     private void Add(WidgetTemplate template)
     {
         string? added = null;
         _model.Edit($"Add {template.Name}", l =>
         {
-            // Dropped at the far end of the column so Order puts it last in its own anchor group;
-            // Arrange then gives it its real place.
-            var column = Column();
-            added = WidgetInstance.Add(l, template, new CRect(column.X, column.Bottom, 0, 0));
-            ArrangeIn(l);
+            var region = Arranger.Column(_model.Signature.Width, _model.Signature.Height);
+            var at = Placement.Spawn(region, Targets.All(l).Select(t => t.Bounds).ToList(), template.Width, template.Height);
+            added = WidgetInstance.Add(l, template, new CRect(at.X, at.Y, 0, 0));
         });
         if (added is not null) SelectInstance(added);
     }
 
     private void Remove(string instanceId)
     {
-        _model.Edit("Remove widget", l =>
-        {
-            WidgetInstance.Remove(l, instanceId);
-            ArrangeIn(l);
-        });
+        _model.Edit("Remove widget", l => WidgetInstance.Remove(l, instanceId));
         _model.ClearSelection();
     }
 
-    private void ReorderWidget(string instanceId, int index)
+    /// <summary>Delete takes out everything selected, widgets and loose components alike, in one
+    /// undo entry. One at a time would be a surprise now that three can be selected at once.</summary>
+    private void RemoveSelection()
     {
-        if (!Reorder.Changes(Arranger.Order(_model.Layout), instanceId, index)) return;
-        _model.Edit("Reorder", l => Arranger.Arrange(l, _catalog, Reorder.Move(Arranger.Order(l), instanceId, index),
-            _model.Signature.Width, _model.Signature.Height));
-        SelectInstance(instanceId);
+        var targets = Targets.From(_model.Layout, _model.Selection);
+        if (targets.Count == 0) return;
+        _model.Edit(targets.Count > 1 ? "Remove widgets" : "Remove widget", l =>
+        {
+            foreach (var target in targets)
+            {
+                if (target.IsWidget) WidgetInstance.Remove(l, target.Id);
+                else l.Components.RemoveAll(c => c.Id == target.Id);
+            }
+        });
+        _model.ClearSelection();
     }
-
-    /// <summary>A free move: a widget the arranger has been told to leave alone, or a loose component
-    /// from a layout written before widgets existed, which the arranger never owned in the first
-    /// place. Either way it is one undo entry.</summary>
-    private void MoveUnlocked(string id, int dx, int dy)
-    {
-        var ids = WidgetInstance.Components(_model.Layout, id).Select(c => c.Id).ToList();
-        if (ids.Count == 0 && _model.Find(id) is not null) ids.Add(id);
-        if (ids.Count > 0) _model.Move(ids, dx, dy);
-    }
-
-    private void Arrange(string label) => _model.Edit(label, ArrangeIn);
-
-    private void ArrangeIn(LayoutFile l)
-        => Arranger.Arrange(l, _catalog, Arranger.Order(l), _model.Signature.Width, _model.Signature.Height);
-
-    private CRect Column() => Arranger.Column(_model.Signature.Width, _model.Signature.Height);
 
     private void SelectInstance(string instanceId)
         => _model.Select(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList());
@@ -301,13 +294,10 @@ public partial class MainWindow : Window
             case Key.S when ctrl: Apply(); e.Handled = true; break;
             case Key.Z when ctrl && !typing: _model.Undo(); e.Handled = true; break;
             case Key.Y when ctrl && !typing: _model.Redo(); e.Handled = true; break;
-            case Key.Delete when !typing && SelectedInstance() is { } id: Remove(id); e.Handled = true; break;
+            case Key.Delete when !typing: RemoveSelection(); e.Handled = true; break;
             case Key.Escape when !typing: _model.ClearSelection(); e.Handled = true; break;
         }
     }
-
-    private string? SelectedInstance()
-        => _model is { Selection.Count: > 0 } ? _model.Find(_model.Selection[0])?.Widget : null;
 
     // ---- the status line ------------------------------------------------------------------------------
 
