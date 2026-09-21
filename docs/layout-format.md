@@ -126,7 +126,7 @@ A binding is a path into a source's published value tree, optionally followed by
     index      := non-negative integer literal
     key        := any text without ']'; looked up by the list's key field, case-insensitively as text
 
-Ten examples, each valid against the value trees the built-in sources publish:
+Twelve examples, each valid against the value trees the built-in sources publish:
 
 1. `time.now` -- the raw `TimeValue`, no format (falls back to `"o"` round-trip formatting).
 2. `time.now | HH:mm` -- a plain .NET format string applied to the resolved value's own type.
@@ -140,6 +140,13 @@ Ten examples, each valid against the value trees the built-in sources publish:
    composite format building a URL from a JSON field three levels deep.
 9. `rssFeed.items[0].title` -- index into a list published by an `rss` (or `file`-parsed-as-rss) source.
 10. `command1.json.some-key` -- a hyphenated field name from a `command` source's parsed JSON; `-` is legal inside a name after the first character.
+11. `weather.json.current.temperature_2m | "{0:N0}°"` -- composite format on a field published by
+    an `http` source (`layouts/column-system.json`'s Open-Meteo recipe).
+12. `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"` -- composite format
+    building a path instead of a URL; the leading `runtime:` is a token `LayoutResolver` expands
+    against the runtime directory (not the repo) after formatting, so a committed layout never
+    names a per-user absolute path. See `assets/weather/README.md` for the icon set this recipe
+    expects at that path.
 
 Two format rules matter (`Value.ToText`, spec 4.2):
 
