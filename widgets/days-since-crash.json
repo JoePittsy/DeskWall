@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "Days since crash",
+  "description": "Days since the last unexpected shutdown (event log 41/1001).",
+  "size": [172, 20],
+  "sources": [
+    { "name": "system", "type": "system" }
+  ],
+  "components": [
+    { "type": "text", "id": "crash", "rect": [0, 0, 172, 20], "z": 1,
+      "text": { "bind": "system.daysSinceCrash | \"{0}d since crash\"" }, "size": 13, "align": "right" }
+  ],
+  "knobs": []
+}

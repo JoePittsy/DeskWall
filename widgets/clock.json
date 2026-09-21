@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "Clock",
+  "description": "The current time, top right.",
+  "size": [172, 78],
+  "sources": [
+    { "name": "time", "type": "time" }
+  ],
+  "components": [
+    { "type": "text", "id": "clock", "rect": [0, 0, 172, 78], "z": 1,
+      "text": { "bind": "time.now | HH:mm" }, "font": "Segoe UI Light", "size": 64, "weight": 300, "align": "right" }
+  ],
+  "knobs": []
+}
