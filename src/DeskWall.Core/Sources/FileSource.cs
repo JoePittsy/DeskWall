@@ -19,6 +19,10 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
     /// reaching the daemon separately is a two-megabyte repaint for nothing.</summary>
     private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(300);
 
+    /// <summary>What `every` was before the watcher took over the latency, kept as the retry base
+    /// after a failure. See <see cref="Interval"/>.</summary>
+    private static readonly TimeSpan RetryBase = TimeSpan.FromSeconds(30);
+
     private readonly object _lock = new();
     private System.Threading.Timer? _debounce;
     private FileSystemWatcher? _watcher;
@@ -59,7 +63,14 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
         return mtime != _seenMtime ? now : lastRefresh.Value + every;
     }
 
-    public TimeSpan Interval(DateTimeOffset now) => every;
+    /// <summary>The scheduler asks this for one thing only: the base of the back-off after a
+    /// failure. It is deliberately not `every`. While a source is failing the scheduler ignores
+    /// NextDue, so the watcher cannot help it - a producer that deletes its file and writes the new
+    /// one more than a debounce later is refused once and then not asked again until the back-off
+    /// is up. Raising the healthy re-check to 300 s would otherwise have taken that retry from
+    /// 30 s to 300 s as a side effect, which is not what raising it was for. An `every` shorter
+    /// than 30 s is an explicit ask and still wins.</summary>
+    public TimeSpan Interval(DateTimeOffset now) => every < RetryBase ? every : RetryBase;
 
     /// <summary>Watch the file's directory, filtered to its name. Idempotent and cheap to retry: a
     /// layout may name a file whose directory a producer has not created yet, and FileSystemWatcher

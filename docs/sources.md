@@ -286,9 +286,15 @@ always `true` when this source has ever published -- see below).
   mtime poll was the only path). It is now purely a re-check, and it stays because a watcher is
   not guaranteed: a network path or a container mount can raise no events at all, and a directory
   that does not exist yet cannot be watched until it does (the source retries on each refresh).
-- `NextDue` returns "now" whenever the file's mtime has changed since the last refresh, so any
-  daemon wake -- the watcher's or anything else's -- picks up an edit rather than waiting out the
-  re-check.
+- `NextDue` returns "now" whenever the watcher has seen a change that has not been published yet,
+  or the file's mtime has changed since the last refresh, so any daemon wake -- the watcher's or
+  anything else's -- picks up an edit rather than waiting out the re-check. Both, rather than
+  mtime alone, because NTFS timestamps are coarse enough that a save in the same tick as the
+  previous refresh can look unchanged.
+- **The retry after a failure is still 30 s**, not 300. While a source is failing the scheduler
+  refreshes it on its back-off and ignores `NextDue`, so the watcher cannot help it; a producer
+  that deletes its file and writes the new one more than a debounce later would otherwise hold
+  its last values for five minutes. Setting `every` below 30 s lowers the retry too.
 - **A missing file throws** rather than publishing `{ exists: false }`. Publishing that shape
   would be a *successful* record with false-y content that overwrites the last good list -- the
   same partial-record-over-last-good problem spec 3.2 rules out elsewhere. A producer that writes

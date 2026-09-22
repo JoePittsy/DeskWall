@@ -189,6 +189,27 @@ public class FileSourceTests
         Assert.Equal(t0.AddSeconds(300), src.NextDue(t0, t0));
     }
 
+    /// <summary>Scheduler.Interval is used for one thing only: the back-off after a failure. While
+    /// a source is failing the scheduler ignores NextDue, so the watcher cannot help it - a
+    /// producer that deletes its file and writes a new one more than a debounce later is refused
+    /// once and then not asked again until the back-off is up. Raising `every` to 300 s therefore
+    /// took that retry from 30 s to 300 s, which is a change nobody asked for; the retry base stays
+    /// where it was.</summary>
+    [Fact]
+    public void A_Failed_Refresh_Retries_On_The_Old_Interval_Not_The_New_Recheck()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        var now = DateTimeOffset.UnixEpoch;
+        using var src = FileSource.FromDef(Def(p), Clock());
+        Assert.Equal(TimeSpan.FromSeconds(30), src.Interval(now));
+
+        var fast = Def(p);
+        fast.EverySeconds = 5;
+        using var quick = FileSource.FromDef(fast, Clock());
+        Assert.Equal(TimeSpan.FromSeconds(5), quick.Interval(now));   // an explicit shorter one still wins
+    }
+
     [Fact]
     public void Dispose_Is_Idempotent()
     {
