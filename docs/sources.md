@@ -160,6 +160,60 @@ Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` 
   `{secret:...}` in `args` into a value a text component could draw on the wallpaper. Do not
   bind a component to a command's `stderr` if its `args` carry a secret.
 
+### `stream: true`: a command that stays up and pushes
+
+Add `"stream": "true"` to the settings and the source changes shape entirely. The process starts
+on the first refresh and **stays up**; every line it writes to stdout is parsed the way the
+non-streaming source parses its whole output, becomes the source's current values, and wakes the
+daemon. This is how a cheap always-on producer works without a process spawn per tick, and it is
+the seam for anything that can print a line -- native AOT cannot load a plugin, so printing is
+the way in for a producer you write yourself. The other way in is the event pipe, below; use the
+pipe when your producer wants to own its own lifetime, and `stream` when you would rather
+DeskWall started and restarted it for you.
+
+A line is expected to be one whole record: `{ "temp": 41.2 }` in `json` mode, or any text in
+`text` mode. Print one line per change and nothing else.
+
+Publishes `json` or `text` (the last line that parsed), `ranAt` (`TimeValue`, when that line
+arrived), `running` (`BoolValue`), `starts` (`NumberValue`, how many times the process has been
+started, so a crash loop is visible on the wallpaper), `badLines` (`NumberValue`) and `stderr`
+(the last non-empty stderr line) when there is one.
+
+- **The parse mode is fixed once**, by `parse` if it is set and otherwise by the first line. It
+  is not re-decided per line: one diagnostic line would otherwise move a producer's values from
+  `json` to `text` and blank every binding under it.
+- **A line that does not parse is skipped and counted** in `badLines`. The last good values are
+  left alone, so a producer that prints a stray line, or half a line because it was killed
+  mid-write, does not blank the widget.
+- **Nothing printed yet is not a failure.** Before the first line the record has `running`,
+  `starts` and `badLines` and no payload, and bound components fall back. It deliberately does
+  not throw: a failed refresh puts a source on the scheduler's back-off, and a backed-off source
+  is refreshed on its back-off schedule rather than when it says it is due -- so the wake the
+  first line raises would find the source not due and the push path would never start.
+- **The process exiting is not fatal.** It is restarted with the same exponential back-off a
+  failing source gets (250 ms, 500 ms, 1 s ... capped at 15 minutes), and a run that lasted 30
+  seconds or more resets the doubling. A command that exits immediately therefore costs a few
+  starts a minute, not a spin.
+- **`timeout` does not apply** and is ignored, because there is no single run to time out. Bound
+  the producer's own work inside the producer.
+- `every` (default 600 s) is only the re-check that notices the process is down; it is not the
+  latency, which is the line arriving plus the bus's 400 ms coalescing window.
+- `Dispose` -- a layout change, a display change, shutdown -- kills the whole process tree, so a
+  producer that starts a helper of its own does not leave it behind.
+
+```json
+{
+  "name": "gpu",
+  "type": "command",
+  "settings": {
+    "command": "runtime:scripts\\gpu-watch.ps1",
+    "command_comment": "prints one JSON object per change, forever",
+    "stream": "true",
+    "parse": "json"
+  }
+}
+```
+
 ## `http`
 
 Settings: `url` (required, may contain `{secret:name}`), `every` (default 600 s), `timeout`
