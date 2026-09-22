@@ -1,4 +1,4 @@
-using DeskWall.Core.Sources;
+﻿using DeskWall.Core.Sources;
 
 namespace DeskWall.Core.Events;
 
@@ -107,6 +107,29 @@ public sealed class EventBus : IDisposable
         }
         handler?.Invoke();
         return true;
+    }
+
+    /// <summary>An in-process source saying it has new values: wake, and let the ordinary tick
+    /// refresh it. Unlike <see cref="Publish(EventEnvelope)"/> this carries no payload and touches
+    /// no provider record. The source keeps its own name, its declaration in the layout and its
+    /// failure back-off, and gains only "I know I am due now" - which is why a schedule-shaped
+    /// source is not harmed by using it.
+    /// <para>This is the single path for every out-of-band value arrival: an async fetch landing
+    /// after its tick gave up, an image arriving, a watched file changing, a volume callback. They
+    /// share the one coalescing deadline, so several landing together cost one repaint rather than
+    /// one each.</para>
+    /// <para>Deliberately not written to the diagnostics ring: signals are frequent and internal,
+    /// and fifty of them would push out the pipe events the ring exists to explain.</para></summary>
+    public void Signal(string source)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(source);
+        bool arm;
+        lock (_lock)
+        {
+            arm = _wakeDue is null;
+            if (arm) _wakeDue = _clock.Now + _coalesce;
+        }
+        if (arm) ArmTimer();
     }
 
     private bool Apply(EventEnvelope e, string line)
