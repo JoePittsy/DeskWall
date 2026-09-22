@@ -24,6 +24,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     /// its last good values, so a bound component falls back instead of showing a frozen number.</summary>
     private const int StaleAfter = 3;
 
+    /// <summary>The image cache is not a source and has no name in the value tree, but the bus
+    /// wants one; this is it.</summary>
+    private const string ImageCacheSignal = "image-cache";
+
     /// <summary>False under `deskwall run --no-shortcuts`: the wallpaper still updates, but no desktop
     /// .lnk is written, moved or deleted. An init property rather than a constructor parameter so the
     /// constructor keeps its shape.</summary>
@@ -82,8 +86,9 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         // Spec section 3: every provider's last record is remembered, so a pushed widget survives a
         // sign-in and the designer can offer a binding for a producer it has never been told about.
         bus.Restore(EventStore.Load());
-        // The one wake the seam adds, and it is one the daemon already knows: a late async source
-        // and a landed image post exactly the same reason.
+        // The one out-of-band wake there is. A pipe event, a late async source, a landed image, a
+        // watched file, a streaming command: all of them signal the bus, the bus coalesces them
+        // into one deadline, and this is where the batch becomes a tick.
         bus.WakeRequested += () => _win?.Post(WakeKind.SourceCompleted);
         bus.ProviderChanged += _ => _eventsDirty = true;
         events.Start();
@@ -121,7 +126,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         WallpaperSetter.RecordRestorePoint();
         // A download that lands after the frame was drawn must repaint it; images nobody has looked
         // up for 30 days go now, once, not on a timer.
-        _images.Landed += _ => win.Post(WakeKind.SourceCompleted);
+        // Through the bus like everything else, so a page of covers landing together is one repaint
+        // rather than one each. The name is only a label: Signal carries no payload and touches no
+        // provider record.
+        _images.Landed += _ => bus.Signal(ImageCacheSignal);
         var swept = _images.Sweep();
         if (swept > 0) log.Info($"image cache swept {swept} file(s)");
 
@@ -315,8 +323,11 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             else log.Info($"source '{name}' is fresh again");
         };
         var sources = res.Layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
-        foreach (var s in sources.OfType<AsyncSource>())
-            s.Completed += _ => _win?.Post(WakeKind.SourceCompleted);   // a fetch that overran its timeout has landed
+        // Every source that knows when it changed - a fetch that overran its timeout, a watched
+        // file, a streaming command - goes through the one seam. Nothing is detached because the
+        // source holds the handler, not the bus: a replaced set of sources takes its handlers with
+        // it. The designer has to detach because its bus is the one thing that survives an edit.
+        if (_bus is { } bus) SourceSignals.ConnectAll(bus, sources);
 
         var runner = new TickRunner(res.Layout, sources, registry, clock, monitor, images: _images, shortcuts: Shortcuts ? new ShortcutManager(Calibration.Load()) : null);
         return new Active(monitor, res, sources, registry, new Scheduler(sources, registry), runner, monitor.Signature.Key);

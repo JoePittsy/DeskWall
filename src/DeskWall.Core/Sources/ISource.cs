@@ -27,6 +27,22 @@ public interface ISource
     ValueTask<RecordValue> RefreshAsync(CancellationToken ct);
 }
 
+/// <summary>A source that knows when it has something new, rather than waiting to be asked.
+/// <para>One event for what used to be four bespoke wakes: an async fetch landing after its tick
+/// gave up, an image arriving, a watched file changing, a streaming command printing a line. The
+/// host attaches <see cref="Events.SourceSignals"/> to every one of these, the bus coalesces, and
+/// the whole lot costs one repaint.</para>
+/// <para>Raising <see cref="Changed"/> is a claim that the source is due, so an implementation's
+/// <see cref="ISource.NextDue"/> must answer <c>now</c> while it holds something unharvested. The
+/// wake is not forced: the tick still asks the scheduler which sources to refresh, and a source
+/// that signals but says it is not due wakes the machine for nothing.</para>
+/// <para>Changed is raised on whatever thread noticed - a pool thread, a watcher thread, a reader
+/// thread - so a handler must be thread safe and must not block.</para></summary>
+public interface ISignalSource
+{
+    event Action<ISource>? Changed;
+}
+
 /// <summary>Helper for the common "every N" schedule.</summary>
 public abstract class PeriodicSource(string name, TimeSpan every) : ISource
 {
