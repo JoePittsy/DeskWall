@@ -22,6 +22,11 @@ public sealed class AudioSource : ISource, IDisposable
     private bool _disposed;
     private int _readerFaults;
 
+    /// <summary>1 while a notification has been signalled but not yet published. Read from the
+    /// scheduler thread and written from the audio thread, so it is an int under Volatile rather
+    /// than a bool behind _lock: NextDue is asked on every wake and must never block on a refresh.</summary>
+    private int _pending;
+
     /// <summary>What was last published or last signalled: the values as a *consumer* sees them,
     /// so a notification that does not move any of them is not a repaint. Null before the first
     /// refresh and whenever there is no playback device.</summary>
@@ -47,12 +52,21 @@ public sealed class AudioSource : ISource, IDisposable
     /// the times one did anyway, because Core sources have no logger to report it to.</summary>
     public int ReaderFaults => Volatile.Read(ref _readerFaults);
 
-    /// <summary>Due on the next whole minute, like <see cref="TimeSource"/>: the source has nothing
-    /// to poll for, so its schedule exists only to catch a default-device change, and it does that
-    /// riding the clock's wake rather than asking for one of its own.</summary>
+    /// <summary>Due now while a notification is waiting to be published, otherwise on the next
+    /// whole minute, like <see cref="TimeSource"/>.
+    /// <para>Both halves are load-bearing. Signalling the bus only buys a *wake*; the tick that
+    /// follows refreshes the sources the scheduler says are due (<c>Scheduler.IsDue</c>, which asks
+    /// this method), so without the pending flag the volume moves, the daemon wakes, every source
+    /// reports what it already had, the content key is unchanged and nothing is painted until the
+    /// minute turns. Measured on JOES-PC before this existed: no repaint at all inside 5 seconds.
+    /// The flag is set only when <c>Changed</c> was raised, so the debounce governs both - a
+    /// notification not worth a wake is not worth a refresh either, or the source is permanently
+    /// due and pins the daemon's wake at <c>Scheduler.MinDelay</c>.</para>
+    /// <para>Off the notification path the schedule exists only to catch a default-device change,
+    /// and it does that riding the clock's wake rather than asking for one of its own.</para></summary>
     public DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
     {
-        if (lastRefresh is null) return now;
+        if (lastRefresh is null || Volatile.Read(ref _pending) != 0) return now;
         var l = lastRefresh.Value;
         return new DateTimeOffset(l.Year, l.Month, l.Day, l.Hour, l.Minute, 0, l.Offset).AddMinutes(1);
     }
@@ -63,6 +77,10 @@ public sealed class AudioSource : ISource, IDisposable
     {
         lock (_lock)
         {
+            // Cleared before the reading is taken, not after: a notification that lands while this
+            // refresh is running sets it again and earns the next tick, rather than being lost
+            // between the read and the clear.
+            Volatile.Write(ref _pending, 0);
             AudioReading? reading;
             try
             {
@@ -125,6 +143,8 @@ public sealed class AudioSource : ISource, IDisposable
                 // that moves nothing a consumer can see is dropped here rather than at the bus.
                 if (form == _lastForm) return;
                 _lastForm = form;
+                // Due and awake are set together, on purpose: see NextDue.
+                Volatile.Write(ref _pending, 1);
                 handler = Changed;
             }
         }

@@ -287,6 +287,41 @@ public class AudioSourceTests
     }
 
     [Fact]
+    public void A_Pending_Notification_Makes_The_Source_Due_Now()
+    {
+        // Signalling the bus only buys a wake; the tick that follows refreshes the sources the
+        // scheduler says are due, and on the whole-minute schedule this one would not be. Without
+        // this the volume moves, the daemon wakes, every source reports the same values it had,
+        // the content key is unchanged and nothing is painted until the minute turns. Measured on
+        // JOES-PC before the fix: a volume change produced no repaint at all inside 5 seconds.
+        using var reader = OneSpeaker(0.5);
+        using var src = new AudioSource("audio", reader);
+        Refresh(src);
+        Assert.Equal(new DateTimeOffset(2026, 9, 22, 9, 31, 0, TimeSpan.Zero), src.NextDue(T0, T0));
+
+        reader.Push(0.6, muted: false);
+        Assert.Equal(T0, src.NextDue(T0, T0));
+
+        Refresh(src);
+        Assert.Equal(new DateTimeOffset(2026, 9, 22, 9, 31, 0, TimeSpan.Zero), src.NextDue(T0, T0));
+    }
+
+    [Fact]
+    public void A_Debounced_Notification_Does_Not_Make_It_Due()
+    {
+        // The two must agree: a notification that is not worth a wake is not worth a refresh
+        // either, or the daemon's next scheduled wake finds a source permanently due and the
+        // pair of them pin the tick at Scheduler.MinDelay.
+        using var reader = OneSpeaker(0.5);
+        using var src = new AudioSource("audio", reader);
+        Refresh(src);
+
+        reader.Push(0.5001, muted: false);
+
+        Assert.Equal(new DateTimeOffset(2026, 9, 22, 9, 31, 0, TimeSpan.Zero), src.NextDue(T0, T0));
+    }
+
+    [Fact]
     public void Dispose_Lets_Go_Of_The_Reader_And_Is_Safe_Twice()
     {
         var reader = OneSpeaker();

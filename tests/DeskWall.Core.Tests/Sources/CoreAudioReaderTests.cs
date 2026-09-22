@@ -60,8 +60,17 @@ public class CoreAudioReaderTests(ITestOutputHelper output)
     {
         using var src = new AudioSource("audio", new CoreAudioReader());
 
+        // Measured, not asserted (CLAUDE.md): the first refresh pays for the enumerator, the
+        // endpoint, the property store and the registration; every later one only compares two
+        // device ids. Printed rather than bounded, because a number that fails a build on a busy
+        // machine teaches nothing.
+        var cold = System.Diagnostics.Stopwatch.StartNew();
         var r = await src.RefreshAsync(CancellationToken.None);
-
+        cold.Stop();
+        var warm = System.Diagnostics.Stopwatch.StartNew();
+        await src.RefreshAsync(CancellationToken.None);
+        warm.Stop();
+        output.WriteLine($"refresh: first {cold.Elapsed.TotalMilliseconds:F2} ms, second {warm.Elapsed.TotalMilliseconds:F2} ms");
         output.WriteLine(string.Join(", ", r.Fields.Select(f => $"{f.Key}={f.Value.ToText(null)}")));
         Assert.Equal(0, src.ReaderFaults);
         if (r.Fields.Count == 0) return;            // no playback device: the empty record is correct
