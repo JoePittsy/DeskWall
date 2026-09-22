@@ -142,6 +142,53 @@ public class FileSourceTests
         Assert.True(((BoolValue)v.Get("exists")!).Flag);
     }
 
+    /// <summary>Signalling only buys a wake. The tick that follows still asks the scheduler which
+    /// sources are due, so a source that signals and then says "not due" wakes the machine and
+    /// changes nothing on screen - which is exactly what the audio lane measured as eight volume
+    /// changes producing zero repaints.</summary>
+    [Fact]
+    public async Task A_Pending_Change_Makes_The_Source_Due_Now()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        var t0 = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
+        using var src = FileSource.FromDef(Def(p), new FixedClock(t0));
+        using var fired = new ManualResetEventSlim(false);
+        src.Changed += _ => fired.Set();
+        await src.RefreshAsync(default);
+        var seen = File.GetLastWriteTimeUtc(p);
+
+        File.WriteAllText(p, """{ "n": 1 }""");
+        Assert.True(fired.Wait(TimeSpan.FromSeconds(5)));
+        // Put the timestamp back to what the last refresh saw. NTFS timestamps are coarse enough
+        // that a save in the same tick as the previous refresh genuinely looks like this, and the
+        // mtime check alone would then call the source not due and swallow the change.
+        File.SetLastWriteTimeUtc(p, seen);
+
+        Assert.Equal(t0, src.NextDue(t0, t0));
+    }
+
+    /// <summary>And back on its ordinary interval once the change has been handed over. This is
+    /// the half that stops the spin: a source that is unconditionally due pins the daemon's wake
+    /// at Scheduler.MinDelay, which is four ticks a second for ever.</summary>
+    [Fact]
+    public async Task An_Idle_Source_With_Nothing_Pending_Is_Back_On_Its_Interval()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        var t0 = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
+        using var src = FileSource.FromDef(Def(p), new FixedClock(t0));
+        using var fired = new ManualResetEventSlim(false);
+        src.Changed += _ => fired.Set();
+        await src.RefreshAsync(default);
+
+        File.WriteAllText(p, """{ "n": 1 }""");
+        Assert.True(fired.Wait(TimeSpan.FromSeconds(5)));
+        await src.RefreshAsync(default);   // the change is published
+
+        Assert.Equal(t0.AddSeconds(300), src.NextDue(t0, t0));
+    }
+
     [Fact]
     public void Dispose_Is_Idempotent()
     {

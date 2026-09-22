@@ -23,6 +23,15 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
     private System.Threading.Timer? _debounce;
     private FileSystemWatcher? _watcher;
     private DateTime _seenMtime;
+    /// <summary>The watcher has raised Changed and no refresh has taken the new contents yet.
+    /// Signalling only buys a wake: the tick that follows still asks the scheduler which sources
+    /// are due, so without this the wake finds nothing to do and the save never reaches the
+    /// screen. The mtime check below is nearly the same statement, but NTFS timestamps are coarse
+    /// and a write in the same tick as the last refresh's mtime would slip through it.
+    /// <para>It must go back to false in RefreshAsync. A source that is unconditionally due pins
+    /// the daemon's wake at Scheduler.MinDelay - four ticks a second - which is the failure mode
+    /// HardwareSource.NextDue's comment warns about.</para></summary>
+    private volatile bool _pending;
     /// <summary>Set on the loop thread in Dispose, read on watcher and timer threads.</summary>
     private volatile bool _disposed;
 
@@ -45,6 +54,7 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
     public DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
     {
         if (lastRefresh is null) return now;
+        if (_pending) return now;
         var mtime = File.Exists(Path) ? File.GetLastWriteTimeUtc(Path) : DateTime.MinValue;
         return mtime != _seenMtime ? now : lastRefresh.Value + every;
     }
@@ -110,6 +120,9 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
     private void Fire()
     {
         if (_disposed) return;
+        // Set in the same branch that raises Changed, so one debounce governs both the wake and
+        // the due-ness that wake depends on.
+        _pending = true;
         try { Changed?.Invoke(this); }
         catch (Exception) { }
     }
@@ -119,6 +132,10 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
         // Idempotent, and the retry for the directory-that-appeared-later case. Here rather than in
         // NextDue, which runs several times a tick, because the retry costs a syscall.
         StartWatching();
+        // Cleared before the read, not after: a save that lands mid-read would otherwise be marked
+        // taken when what was published predates it. Clearing it at all is what stops an
+        // unconditionally-due source pinning the daemon at Scheduler.MinDelay.
+        _pending = false;
         var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(Path))
         {
