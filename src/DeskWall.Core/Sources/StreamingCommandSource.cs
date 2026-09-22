@@ -46,7 +46,6 @@ public sealed class StreamingCommandSource : ISource, ISignalSource, IDisposable
 
     private readonly object _lock = new();
     private Process? _process;
-    private Thread? _reader;
     private System.Threading.Timer? _restart;
     private Value? _payload;          // the last line that parsed, as json or text
     private string? _payloadKey;      // "json" or "text", fixed once decided
@@ -183,8 +182,9 @@ public sealed class StreamingCommandSource : ISource, ISignalSource, IDisposable
             // Read it we must, though - an unread stderr pipe fills and blocks the producer.
             p.ErrorDataReceived += OnStderr;
             try { p.BeginErrorReadLine(); } catch (InvalidOperationException) { }
-            _reader = new Thread(() => Read(p)) { IsBackground = true, Name = $"deskwall-stream-{_name}" };
-            _reader.Start();
+            // Not kept: nothing ever joins it. It ends when the pipe closes, and Dispose closes the
+            // pipe by killing the process. A background thread never holds the process open.
+            new Thread(() => Read(p)) { IsBackground = true, Name = $"deskwall-stream-{_name}" }.Start();
         }
     }
 
