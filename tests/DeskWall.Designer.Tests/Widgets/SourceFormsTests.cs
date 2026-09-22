@@ -13,7 +13,7 @@ public class SourceFormsTests
     public void The_Built_Ins_Need_No_Form()
     {
         foreach (var type in SourceForms.BuiltIn) Assert.Empty(SourceForms.For(type));
-        Assert.Equal(["time", "disks", "system", "hardware"], SourceForms.BuiltIn);
+        Assert.Equal(["time", "disks", "system", "hardware", "audio"], SourceForms.BuiltIn);
     }
 
     [Theory]

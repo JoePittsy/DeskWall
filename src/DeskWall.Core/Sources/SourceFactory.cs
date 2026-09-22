@@ -23,6 +23,7 @@ public static class SourceFactory
                 ? StreamingCommandSource.FromDef(def, clock, secrets)
                 : CommandSource.FromDef(def, clock, secrets),
             "hardware" => Hardware.HardwareSource.FromDef(def),
+            "audio" => Audio.AudioSource.FromDef(def),
             _ => throw new NotSupportedException($"source type '{def.Type}' (source '{def.Name}')"),
         };
     }

@@ -472,6 +472,31 @@ public class WidgetInstanceTests
         Assert.Equal("https://example.invalid/atom.xml", source.Settings["url"]);
     }
 
+    /// <summary>The volume widget replaces the owner's PowerShell stopgap, so it has to stand on
+    /// the `audio` source alone: no script, no file, nothing to install.</summary>
+    [Fact]
+    public void Volume_Widget_Is_A_Dial_On_The_Audio_Source_That_Turns_Red_When_Muted()
+    {
+        var t = Shipped("volume");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+
+        var source = Assert.Single(layout.Sources);
+        Assert.Equal("audio", source.Type);
+        Assert.Empty(source.Settings);
+
+        var dial = (DialDef)layout.Components.Single(c => c.Id == $"{id}.dial");
+        Assert.Equal("audio.volume", dial.Fraction.Binding!.ToString());
+        // The mute colour rides the map format on an ordinary bindable property: no component
+        // knows what a bool is, and the same one expression paints the arc and both labels.
+        Assert.Equal("audio.muted | \"?true=#FFD13438,*=#EBFFFFFF\"", dial.Fill.Binding!.ToString());
+
+        var value = (TextDef)layout.Components.Single(c => c.Id == $"{id}.value");
+        Assert.Equal("audio.volumePct | \"{0}%\"", value.Text.Binding!.ToString());
+        var label = (TextDef)layout.Components.Single(c => c.Id == $"{id}.label");
+        Assert.Equal("audio.muted | \"?true=muted,*=vol\"", label.Text.Binding!.ToString());
+    }
+
     /// <summary>A command source publishes stderr verbatim, so a CLI that fails and echoes its own
     /// argument list back can put a substituted {secret:} on the wallpaper (layouts/README.md
     /// "Command source stderr"). No shipped widget may bind it.</summary>
