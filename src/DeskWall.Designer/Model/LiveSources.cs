@@ -14,9 +14,6 @@ public sealed class LiveSources : IDisposable
     {
         public required SourceDef Def;
         public ISource? Source;
-        /// <summary>Kept so Dispose can unsubscribe: an in-flight HTTP fetch otherwise holds this
-        /// instance, and through Updated the panel's whole visual tree, until it times out.</summary>
-        public Action<ISource>? OnCompleted;
     }
 
     private readonly IClock _clock;
@@ -24,13 +21,30 @@ public sealed class LiveSources : IDisposable
     private readonly SourceRegistry _registry = new();
     private readonly object _registryLock = new();
     private readonly Timer _timer;
+    /// <summary>The bus this instance signals. Owned (and disposed) only when the caller did not
+    /// supply one.</summary>
+    private readonly EventBus _bus;
+    private readonly bool _ownsBus;
+    /// <summary>Kept so Dispose can unsubscribe. The designer rebuilds LiveSources on every edit to
+    /// the Sources list while the bus survives, so a handler left on a source keeps this instance -
+    /// and through Updated the panel's whole visual tree - alive behind its replacement.</summary>
+    private readonly Action<ISource> _onSignal;
+    private readonly Action _onWake;
     private int _ticking;
     private bool _disposed;
 
     /// <param name="create">Test seam: how a def becomes a source. Null means the real factory.</param>
-    public LiveSources(IReadOnlyList<SourceDef> defs, Secrets secrets, IClock clock, Func<SourceDef, ISource>? create = null)
+    /// <param name="bus">The bus to signal through. Null means one of this instance's own, which is
+    /// what the designer uses: it does not own the pipe, so its bus carries only in-process signals
+    /// and the providers panel's test events.</param>
+    public LiveSources(IReadOnlyList<SourceDef> defs, Secrets secrets, IClock clock, Func<SourceDef, ISource>? create = null, EventBus? bus = null)
     {
         _clock = clock;
+        _ownsBus = bus is null;
+        _bus = bus ?? new EventBus(clock, EventBus.DefaultCoalesce);
+        _onSignal = SourceSignals.To(_bus);
+        _onWake = OnBusWake;
+        _bus.WakeRequested += _onWake;
         _entries = new List<Entry>(defs.Count);
         foreach (var def in defs)
         {
@@ -38,11 +52,9 @@ public sealed class LiveSources : IDisposable
             try
             {
                 entry.Source = create is null ? SourceFactory.Create(def, clock, secrets) : create(def);
-                if (entry.Source is AsyncSource async)
-                {
-                    entry.OnCompleted = _ => OnAsyncCompleted(entry);
-                    async.Completed += entry.OnCompleted;
-                }
+                // The one rule, same as the daemon's: anything that knows it changed signals the
+                // bus by name and the coalesced wake refreshes whatever is then due.
+                if (entry.Source is ISignalSource sig) sig.Changed += _onSignal;
             }
             catch (Exception ex)
             {
@@ -109,12 +121,14 @@ public sealed class LiveSources : IDisposable
         finally { Interlocked.Exchange(ref _ticking, 0); }
     }
 
-    private void OnAsyncCompleted(Entry entry)
+    /// <summary>A coalesced batch of signals. Ticking, rather than refreshing one named entry, is
+    /// what makes this the same rule the daemon runs: the signal is a claim of due-ness and the
+    /// source's own NextDue is what decides. AsyncSource answers "now" while an overrun fetch is
+    /// waiting to be harvested, so a late landing is still picked up at once.</summary>
+    private void OnBusWake()
     {
         if (_disposed) return;
-        // An overrun refresh finished late; harvest it now (AsyncSource.RefreshAsync returns the
-        // finished result immediately once Completed has fired) rather than waiting for the next tick.
-        _ = RefreshEntryAsync(entry);
+        Tick();
     }
 
     private async Task RefreshEntryAsync(Entry entry)
@@ -146,8 +160,10 @@ public sealed class LiveSources : IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Dispose();
+        _bus.WakeRequested -= _onWake;
         foreach (var e in _entries)
-            if (e.Source is AsyncSource a && e.OnCompleted is { } handler) a.Completed -= handler;
+            if (e.Source is ISignalSource sig) sig.Changed -= _onSignal;
+        if (_ownsBus) _bus.Dispose();
         // The designer builds a new LiveSources on every edit to the Sources list, so a source that
         // holds a timer or a native library (`hardware` holds both) would leak one per edit.
         SourceFactory.DisposeAll(_entries.Select(e => e.Source).OfType<ISource>());

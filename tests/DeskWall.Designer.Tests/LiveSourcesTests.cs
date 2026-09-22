@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using DeskWall.Core.Events;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Designer.Model;
@@ -14,6 +15,35 @@ file sealed class DisposableSource() : PeriodicSource("d", TimeSpan.FromMinutes(
     public override ValueTask<DeskWall.Core.Values.RecordValue> RefreshAsync(CancellationToken ct)
         => new(new DeskWall.Core.Values.RecordValue(new Dictionary<string, DeskWall.Core.Values.Value>()));
     public void Dispose() => Disposals++;
+}
+
+/// <summary>A source that knows when it has something new: a watched file, a streaming command, a
+/// volume callback. Due only once it has said so, which is how a pushed source earns its refresh.</summary>
+file sealed class SignallingSource : ISource, ISignalSource
+{
+    private volatile bool _pending;
+    public readonly ManualResetEventSlim Refreshed = new(false);
+    public int Refreshes;
+
+    public string Name => "pushy";
+    public event Action<ISource>? Changed;
+
+    public void Fire()
+    {
+        _pending = true;
+        Changed?.Invoke(this);
+    }
+
+    public DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
+        => _pending ? now : now.AddMinutes(10);
+
+    public ValueTask<DeskWall.Core.Values.RecordValue> RefreshAsync(CancellationToken ct)
+    {
+        _pending = false;
+        Interlocked.Increment(ref Refreshes);
+        Refreshed.Set();
+        return new(new DeskWall.Core.Values.RecordValue(new Dictionary<string, DeskWall.Core.Values.Value>()));
+    }
 }
 
 public class LiveSourcesTests
@@ -106,5 +136,42 @@ public class LiveSourcesTests
         live.Dispose();   // idempotent
 
         Assert.Equal(1, fake.Disposals);
+    }
+
+    /// <summary>The designer routes a signalling source through its own bus exactly as the daemon
+    /// does: Changed signals, the bus coalesces, one wake refreshes whatever is due. Before this the
+    /// designer had a second, bespoke path for AsyncSource alone.</summary>
+    [Fact]
+    public void A_Signalling_Source_Is_Refreshed_When_The_Bus_Wakes()
+    {
+        var clock = new FixedClock(DateTimeOffset.UtcNow);
+        using var bus = new EventBus(clock, TimeSpan.FromMilliseconds(400), autoWake: false);
+        var fake = new SignallingSource();
+        using var live = new LiveSources([new SourceDef { Name = "pushy", Type = "time" }], NoSecrets(), clock, _ => fake, bus);
+        Assert.Equal(0, fake.Refreshes);   // not due until it says so
+
+        fake.Fire();
+        Assert.True(bus.PumpWake(clock.Now.AddMilliseconds(400)));
+
+        Assert.True(fake.Refreshed.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Equal(1, fake.Refreshes);
+    }
+
+    /// <summary>The designer rebuilds LiveSources on every edit to the Sources list. A handler left
+    /// on the bus would keep the whole discarded set alive and refresh it behind the new one.</summary>
+    [Fact]
+    public void Dispose_Detaches_From_The_Bus()
+    {
+        var clock = new FixedClock(DateTimeOffset.UtcNow);
+        using var bus = new EventBus(clock, TimeSpan.FromMilliseconds(400), autoWake: false);
+        var fake = new SignallingSource();
+        var live = new LiveSources([new SourceDef { Name = "pushy", Type = "time" }], NoSecrets(), clock, _ => fake, bus);
+        live.Dispose();
+
+        fake.Fire();
+        bus.PumpWake(clock.Now.AddMilliseconds(400));
+
+        Assert.False(fake.Refreshed.Wait(TimeSpan.FromMilliseconds(300)));
+        Assert.Equal(0, fake.Refreshes);
     }
 }
