@@ -136,6 +136,56 @@ JOES-PC (the ACPI thermal zone is access denied and is not a core reading anyway
 HWiNFO64 resident or shipping an MSR driver were both declined; GPU temperature from NVML is the
 only temperature published.
 
+## `audio`
+
+No settings. `every` is accepted and ignored: there is nothing to poll.
+
+The default playback endpoint's master volume, and the first source that is **pure push**.
+CoreAudio's `IAudioEndpointVolumeCallback` fires the moment the volume or the mute flag moves and
+the notification carries both new values, so the source never asks; it tells the host it has
+something, the host coalesces (`EventBus.Signal`), and the next tick reads what the callback
+already stored.
+
+| Field | Meaning |
+|---|---|
+| `volume` | master scalar of the default playback endpoint, 0..1, rounded to 3 decimals |
+| `volumePct` | the same as an integer 0..100, for text |
+| `muted` | `BoolValue`; drives a colour through the map format (`docs/layout-format.md`) |
+| `device` | the endpoint's friendly name, e.g. "Digital Output (3- High Definition Audio Device)" |
+
+**The schedule is the whole minute**, the same boundary `time` and `hardware` use, so the source
+shares the clock's existing wake and asks for none of its own. It has exactly two jobs a
+notification cannot do: take the very first reading, and notice that the **default device**
+changed. A headset being plugged in is silent by construction, because any notification would
+come from the endpoint that is no longer the default; the refresh compares the endpoint id
+against the one the callback is registered on and re-registers when they differ.
+
+**No playback device publishes an empty record**, not zeros, so every bound property falls back to
+its own default rather than drawing a confident "0%". The same is true of a COM failure on the
+endpoint: it costs that refresh and nothing more, and is counted rather than thrown, so the
+source never lands in the scheduler's failure back-off for something the next minute fixes.
+
+**Not every notification is a repaint.** CoreAudio fires per slider step and several steps land
+inside one rounded percent, while a repaint re-encodes and writes about two megabytes. A
+notification raises `Changed` only when the published form - endpoint id, volume to 3 decimals,
+mute - actually differs from what was last published or signalled.
+
+`volumePct` rounds away from zero rather than to even, so 12.5 and 37.5 percent do not round in
+opposite directions at neighbouring steps of the same slider.
+
+**Implementation notes.** `IAudioEndpointVolumeCallback` is implemented with a hand-built vtable:
+four `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]` statics over a struct whose
+first field is the vtable pointer, with a `GCHandle` back to the reader. Nothing escapes the
+callback - it runs on an audio service thread inside native code's own call frame, where an
+exception crossing back takes the whole process down - and it calls nothing back into COM. The
+reader keeps two locks: one for the COM pointers, one for the four fields the notification writes,
+never nested, because `UnregisterControlChangeNotify` can block on a notification already in
+flight. COM is touched on the first refresh, not at construction. `Dispose` unregisters, releases
+and frees the GCHandle, and is safe twice.
+
+The endpoint role is `eMultimedia`: that is what the Windows volume flyout and the keyboard volume
+keys move, so it is the number the screen should agree with.
+
 ## `command`
 
 Settings: `command` (required), `args` (optional, may contain `{secret:name}`), `workingDir`
