@@ -43,7 +43,7 @@ public static class SourceForms
     public const string Auto = "auto";
 
     /// <summary>Added with one click and no form: there is nothing to ask.</summary>
-    public static IReadOnlyList<string> BuiltIn { get; } = ["time", "disks", "system", "hardware"];
+    public static IReadOnlyList<string> BuiltIn { get; } = ["time", "disks", "system", "hardware", "audio"];
 
     /// <summary>The user's own three, which open the form.</summary>
     public static IReadOnlyList<string> Configurable { get; } = ["http", "command", "file"];

@@ -49,6 +49,18 @@ public class SourceFactoryTests
         Assert.Equal(TimeSpan.FromSeconds(60), hw.Every);
     }
 
+    /// <summary>The factory builds a real CoreAudio reader, so this also proves construction costs
+    /// nothing: the source touches COM only on its first refresh.</summary>
+    [Fact]
+    public void Audio_Type_Creates_AudioSource_On_The_Whole_Minute()
+    {
+        var def = new SourceDef { Name = "audio", Type = "audio" };
+        using var s = Assert.IsType<DeskWall.Core.Sources.Audio.AudioSource>(
+            SourceFactory.Create(def, new FakeClock(DateTimeOffset.UnixEpoch)));
+        var t = new DateTimeOffset(2026, 9, 22, 9, 30, 12, TimeSpan.Zero);
+        Assert.Equal(new DateTimeOffset(2026, 9, 22, 9, 31, 0, TimeSpan.Zero), s.NextDue(t, t));
+    }
+
     /// <summary>Sources outlive nothing: the daemon replaces the whole set on every layout change,
     /// so whoever owns a set has to let go of the ones that hold a timer or a native library.</summary>
     [Fact]

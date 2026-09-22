@@ -139,3 +139,17 @@ GetSystemTimes
 GlobalMemoryStatusEx
 MEMORYSTATUSEX
 FILETIME
+IMMDeviceEnumerator
+MMDeviceEnumerator
+IMMDevice
+IAudioEndpointVolume
+IAudioEndpointVolumeCallback
+AUDIO_VOLUME_NOTIFICATION_DATA
+EDataFlow
+ERole
+IPropertyStore
+PROPERTYKEY
+PROPVARIANT
+PropVariantClear
+PKEY_Device_FriendlyName
+CLSCTX

@@ -19,6 +19,7 @@ public static class SourceFactory
             "rss" => RssSource.FromDef(def, secrets),
             "command" => CommandSource.FromDef(def, clock, secrets),
             "hardware" => Hardware.HardwareSource.FromDef(def),
+            "audio" => Audio.AudioSource.FromDef(def),
             _ => throw new NotSupportedException($"source type '{def.Type}' (source '{def.Name}')"),
         };
     }
