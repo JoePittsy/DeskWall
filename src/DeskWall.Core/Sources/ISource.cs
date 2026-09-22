@@ -1,4 +1,4 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
@@ -41,6 +41,16 @@ public interface ISource
 public interface ISignalSource
 {
     event Action<ISource>? Changed;
+
+    /// <summary>True while the source is holding something no refresh has published yet.
+    /// <para>The scheduler asks, because a failing source is otherwise scheduled from its back-off
+    /// and its own NextDue is ignored (finding 1, which must stay true). A push saying "due now" is
+    /// not a request to retry a failure, it is a statement that the answer is already in hand, and
+    /// without this a volume change or a file save is swallowed for the whole back-off.</para>
+    /// <para>Every implementation must clear it when a refresh is <em>attempted</em>, not when one
+    /// succeeds. That is what stops a source that keeps failing being due forever and pinning the
+    /// daemon at <see cref="Scheduling.Scheduler.MinDelay"/>: one signal buys one attempt.</para></summary>
+    bool HasPending { get; }
 }
 
 /// <summary>Helper for the common "every N" schedule.</summary>

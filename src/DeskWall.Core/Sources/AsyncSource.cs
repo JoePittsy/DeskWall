@@ -1,4 +1,4 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
@@ -24,6 +24,17 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
     /// already holds. The daemon reaches this only through Scheduler.DueAt, which uses the failure
     /// back-off instead while a source is failing, so in practice this is the designer's live
     /// panel; it is still the honest answer to "when are you next due".</summary>
+    /// <inheritdoc />
+    /// <remarks>A fetch that overran its tick and has since landed is exactly "something no refresh
+    /// has published yet". Before the scheduler asked this, the Changed wake such a landing raises
+    /// was a no-op in the daemon: the source was failing (it had timed out), so the back-off
+    /// ignored NextDue and the result sat unused until the delay expired. Cleared by the attempt,
+    /// because RefreshAsync takes the task out of _inFlight before awaiting it.</remarks>
+    public bool HasPending
+    {
+        get { lock (_lock) return _inFlight is { IsCompleted: true }; }
+    }
+
     public override DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
     {
         lock (_lock)

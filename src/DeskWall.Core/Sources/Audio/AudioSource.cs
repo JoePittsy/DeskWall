@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources.Audio;
@@ -26,6 +26,9 @@ public sealed class AudioSource : ISource, ISignalSource, IDisposable
     /// scheduler thread and written from the audio thread, so it is an int under Volatile rather
     /// than a bool behind _lock: NextDue is asked on every wake and must never block on a refresh.</summary>
     private int _pending;
+
+    /// <inheritdoc />
+    public bool HasPending => Volatile.Read(ref _pending) != 0;
 
     /// <summary>What was last published or last signalled: the values as a *consumer* sees them,
     /// so a notification that does not move any of them is not a repaint. Null before the first

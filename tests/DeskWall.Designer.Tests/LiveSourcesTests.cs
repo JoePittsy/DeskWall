@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 using DeskWall.Core.Events;
 using DeskWall.Core.Layout;
@@ -22,6 +22,8 @@ file sealed class DisposableSource() : PeriodicSource("d", TimeSpan.FromMinutes(
 file sealed class SignallingSource : ISource, ISignalSource
 {
     private volatile bool _pending;
+
+    public bool HasPending => _pending;
     public readonly ManualResetEventSlim Refreshed = new(false);
     public int Refreshes;
 

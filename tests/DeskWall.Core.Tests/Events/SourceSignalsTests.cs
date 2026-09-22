@@ -1,4 +1,4 @@
-using DeskWall.Core.Events;
+﻿using DeskWall.Core.Events;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using Xunit;
@@ -14,9 +14,14 @@ file sealed class FakeSignalSource(string name) : ISource, ISignalSource
 {
     public string Name => name;
     public event Action<ISource>? Changed;
-    public void Fire() => Changed?.Invoke(this);
+    public bool HasPending { get; private set; }
+    public void Fire() { HasPending = true; Changed?.Invoke(this); }
     public DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now) => now;
-    public ValueTask<RecordValue> RefreshAsync(CancellationToken ct) => new(new RecordValue(new Dictionary<string, Value>()));
+    public ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
+    {
+        HasPending = false;                       // cleared by the attempt, as every real one does
+        return new(new RecordValue(new Dictionary<string, Value>()));
+    }
 }
 
 /// <summary>A source that is only ever asked.</summary>

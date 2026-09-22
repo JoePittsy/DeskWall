@@ -36,6 +36,9 @@ public sealed class FileSource(string name, TimeSpan every, string path, string?
     /// the daemon's wake at Scheduler.MinDelay - four ticks a second - which is the failure mode
     /// HardwareSource.NextDue's comment warns about.</para></summary>
     private volatile bool _pending;
+
+    /// <inheritdoc />
+    public bool HasPending => _pending;
     /// <summary>Set on the loop thread in Dispose, read on watcher and timer threads.</summary>
     private volatile bool _disposed;
 

@@ -55,6 +55,9 @@ public sealed class StreamingCommandSource : ISource, ISignalSource, IDisposable
     private int _exits;               // consecutive exits with no healthy run between them
     private int _starts;
     private bool _pending;            // a line has arrived that no refresh has published yet
+
+    /// <inheritdoc />
+    public bool HasPending { get { lock (_lock) return _pending; } }
     private bool _restartPending;     // the back-off timer is armed; a refresh must not start a second process
     private volatile bool _disposed;
 
