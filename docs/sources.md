@@ -216,15 +216,25 @@ picked up until the layout is reloaded.
 
 Settings: `path` (required; `%ENV%` variables and `runtime:` expanded, see above), `parse` (`"json"`, `"text"` or `"rss"`;
 default by extension: `.json` -> json, `.xml`/`.rss`/`.atom` -> rss, else text), `every` (default
-30 s -- a cheap mtime re-check; the running daemon also wakes on a file-system watcher),
-`unixTimeFields` (as `http`).
+300 s -- a cheap mtime re-check, not the latency; see the watcher below), `unixTimeFields` (as
+`http`).
 
 Publishes `json`, `text`, or (for `"rss"`) the same `title`/`link`/`items` shape as the `rss`
 source, plus `modifiedAt` (`TimeValue`, local time), `size` (bytes), `exists` (`BoolValue`,
 always `true` when this source has ever published -- see below).
 
+- **The source watches the file** (a `FileSystemWatcher` on its directory, filtered to its name)
+  and signals the daemon when it changes, so a save reaches the wallpaper in about a second
+  rather than at the next re-check. Several file-system events for one save (an editor writing,
+  or writing a temp file and renaming it over the target) are collapsed by a 300 ms debounce into
+  one signal, and a burst of signals across several sources costs one repaint, not one each.
+- Because the watcher carries the latency, `every` defaults to **300 s** (it was 30 s while the
+  mtime poll was the only path). It is now purely a re-check, and it stays because a watcher is
+  not guaranteed: a network path or a container mount can raise no events at all, and a directory
+  that does not exist yet cannot be watched until it does (the source retries on each refresh).
 - `NextDue` returns "now" whenever the file's mtime has changed since the last refresh, so any
-  daemon wake picks up an edit immediately rather than waiting out the 30 s poll.
+  daemon wake -- the watcher's or anything else's -- picks up an edit rather than waiting out the
+  re-check.
 - **A missing file throws** rather than publishing `{ exists: false }`. Publishing that shape
   would be a *successful* record with false-y content that overwrites the last good list -- the
   same partial-record-over-last-good problem spec 3.2 rules out elsewhere. A producer that writes

@@ -55,18 +55,104 @@ public class FileSourceTests
         Assert.Equal("hello", ((TextValue)v.Get("text")!).Text);
     }
 
+    /// <summary>The mtime check is the belt to the watcher's braces: a network path or a container
+    /// mount may raise no events at all, and the re-check still finds the change on any wake. The
+    /// 300 s is the re-check interval, not the latency; the watcher carries that.</summary>
     [Fact]
     public async Task Due_When_Mtime_Changes_Else_Periodic()
     {
         var p = Temp("w.json");
         File.WriteAllText(p, "{}");
         var t0 = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
-        var src = FileSource.FromDef(Def(p), new FixedClock(t0));
+        using var src = FileSource.FromDef(Def(p), new FixedClock(t0));
         await src.RefreshAsync(default);
-        Assert.Equal(t0.AddSeconds(30), src.NextDue(t0, t0));
+        Assert.Equal(t0.AddSeconds(300), src.NextDue(t0, t0));
         File.SetLastWriteTimeUtc(p, DateTime.UtcNow.AddMinutes(5));
         Assert.Equal(t0, src.NextDue(t0, t0));   // changed on disk: due now
     }
+
+    /// <summary>The point of the watcher: a save reaches the wallpaper in well under the 300 s
+    /// re-check. Before this the source polled mtime and nothing else.</summary>
+    [Fact]
+    public void A_Write_Raises_Changed()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        using var src = FileSource.FromDef(Def(p), Clock());
+        using var fired = new ManualResetEventSlim(false);
+        src.Changed += _ => fired.Set();
+
+        File.WriteAllText(p, """{ "n": 1 }""");
+
+        Assert.True(fired.Wait(TimeSpan.FromSeconds(5)));
+    }
+
+    /// <summary>One Ctrl+S raises three or four FileSystemWatcher events. LayoutWatcher already
+    /// solved this; the same 300 ms debounce, for the same reason - without it the daemon takes
+    /// three repaints of two megabytes each for one save.</summary>
+    [Fact]
+    public void One_Save_Raises_One_Changed()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        using var src = FileSource.FromDef(Def(p), Clock());
+        using var fired = new ManualResetEventSlim(false);
+        var n = 0;
+        src.Changed += _ => { Interlocked.Increment(ref n); fired.Set(); };
+
+        File.WriteAllText(p, """{ "n": 1, "padding": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }""");
+
+        Assert.True(fired.Wait(TimeSpan.FromSeconds(5)));
+        Thread.Sleep(700);   // anything the save raised after the first has had two debounces to arrive
+        Assert.Equal(1, n);
+    }
+
+    /// <summary>A producer that writes its JSON by delete-then-create is the case FileSource's own
+    /// missing-file rule exists for, so it has to be the case the watcher survives too.</summary>
+    [Fact]
+    public void Delete_And_Recreate_Still_Signals()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        using var src = FileSource.FromDef(Def(p), Clock());
+        using var fired = new ManualResetEventSlim(false);
+        src.Changed += _ => fired.Set();
+
+        File.Delete(p);
+        File.WriteAllText(p, """{ "n": 2 }""");
+
+        Assert.True(fired.Wait(TimeSpan.FromSeconds(5)));
+    }
+
+    /// <summary>FileSystemWatcher throws from its constructor when the directory is not there. A
+    /// layout naming a file a producer has not created yet must still load, and must still find the
+    /// file through the mtime path once it appears.</summary>
+    [Fact]
+    public async Task A_Watcher_That_Cannot_Be_Created_Leaves_The_Source_Working()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "later-" + Guid.NewGuid().ToString("N")[..8]);
+        var p = Path.Combine(dir, "x.json");
+        using var src = FileSource.FromDef(Def(p), Clock());   // no directory: must not throw
+        await Assert.ThrowsAsync<FileNotFoundException>(async () => await src.RefreshAsync(default));
+
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(p, """{ "n": 3 }""");
+        var v = await src.RefreshAsync(default);
+
+        Assert.True(((BoolValue)v.Get("exists")!).Flag);
+    }
+
+    [Fact]
+    public void Dispose_Is_Idempotent()
+    {
+        var p = Temp("w.json");
+        File.WriteAllText(p, "{}");
+        var src = FileSource.FromDef(Def(p), Clock());
+        src.Dispose();
+        src.Dispose();
+    }
+
+    private static IClock Clock() => new FixedClock(DateTimeOffset.UnixEpoch);
 
     [Fact]
     public async Task Bad_Json_Throws()
