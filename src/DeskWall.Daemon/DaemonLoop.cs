@@ -1,6 +1,7 @@
 using DeskWall.Core;
 using DeskWall.Core.Diagnostics;
 using DeskWall.Core.Display;
+using DeskWall.Core.Events;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Scheduling;
@@ -23,6 +24,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     /// its last good values, so a bound component falls back instead of showing a frozen number.</summary>
     private const int StaleAfter = 3;
 
+    /// <summary>The image cache is not a source and has no name in the value tree, but the bus
+    /// wants one; this is it.</summary>
+    private const string ImageCacheSignal = "image-cache";
+
     /// <summary>False under `deskwall run --no-shortcuts`: the wallpaper still updates, but no desktop
     /// .lnk is written, moved or deleted. An init property rather than a constructor parameter so the
     /// constructor keeps its shape.</summary>
@@ -37,7 +42,19 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         TickRunner Runner,
         string SignatureKey);
 
+    /// <summary>The persisted provider records are rewritten no more often than this, however many
+    /// events arrive. A slider drag is a coalesced wake every 400 ms and the file is only there so
+    /// a provider survives a restart and the designer can see it; a 2 KB write per repaint would be
+    /// paying for a promptness nobody asked for.</summary>
+    private static readonly TimeSpan SaveEventsEvery = TimeSpan.FromSeconds(5);
+
     private readonly RemoteImageCache _images = RemoteImageCache.Default();
+    private readonly HashSet<string> _seenProviders = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _clashesLogged = new(StringComparer.OrdinalIgnoreCase);
+    private EventBus? _bus;
+    // Set on a pipe reader thread, read and cleared on the tick thread.
+    private volatile bool _eventsDirty;
+    private DateTimeOffset _eventsSaved;
     private Active? _active;
     private bool _paused;
     private DateTimeOffset _nextWake;
@@ -55,11 +72,26 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
 
         using var win = new HostWindow();
         using var timer = new WaitableTimer();
+        // Declared before the pipe so `using` disposes the pipe first: no line may reach a bus that
+        // has already let go of its coalescing timer.
+        using var bus = new EventBus(clock, EventBus.DefaultCoalesce);
         using var trayIcon = wantTray ? new TrayIcon(win) : null;
         using var watcher = new LayoutWatcher(store, () => win.Post(WakeKind.LayoutChanged));
+        using var events = new EventPipeServer(line => Publish(bus, line), m => log.Warn($"events: {m}"));
         _win = win;
         _watcher = watcher;
+        _bus = bus;
         var exit = false;
+
+        // Spec section 3: every provider's last record is remembered, so a pushed widget survives a
+        // sign-in and the designer can offer a binding for a producer it has never been told about.
+        bus.Restore(EventStore.Load());
+        // The one out-of-band wake there is. A pipe event, a late async source, a landed image, a
+        // watched file, a streaming command: all of them signal the bus, the bus coalesces them
+        // into one deadline, and this is where the batch becomes a tick.
+        bus.WakeRequested += () => _win?.Post(WakeKind.SourceCompleted);
+        bus.ProviderChanged += _ => _eventsDirty = true;
+        events.Start();
 
         if (trayIcon is not null)
         {
@@ -94,7 +126,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         WallpaperSetter.RecordRestorePoint();
         // A download that lands after the frame was drawn must repaint it; images nobody has looked
         // up for 30 days go now, once, not on a timer.
-        _images.Landed += _ => win.Post(WakeKind.SourceCompleted);
+        // Through the bus like everything else, so a page of covers landing together is one repaint
+        // rather than one each. The name is only a label: Signal carries no payload and touches no
+        // provider record.
+        _images.Landed += _ => bus.Signal(ImageCacheSignal);
         var swept = _images.Sweep();
         if (swept > 0) log.Info($"image cache swept {swept} file(s)");
 
@@ -116,10 +151,16 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         }
 
         log.Info("daemon stop");
+        // Stop listening before the last save, not after: an event accepted between the two
+        // would be in the bus and not in the file, which is the one case where a producer sent
+        // something and it was genuinely lost.
+        events.Dispose();
+        SaveEvents(force: true);   // whatever arrived since the last tick, before the process goes
         SourceFactory.DisposeAll(_active?.Sources);   // stop the samplers before the process goes
         _active = null;
         _win = null;
         _watcher = null;
+        _bus = null;
         return 0;
     }
 
@@ -157,6 +198,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
                 _nextWake = clock.Now.AddMinutes(1);
                 return;
             }
+            // Tick thread only. SourceRegistry is not synchronised and the tick reads it while it
+            // resolves, so the bus (which is synchronised) is the only thing the pipe thread ever
+            // touches, and this is where its state crosses over.
+            SyncProviders(clock.Now);
             _last = _active.Runner.RunAsync(force, apply: true, CancellationToken.None).GetAwaiter().GetResult();
             log.Info($"tick {why}: {(_last.Skipped ? "skipped" : $"redrawn {_last.Redrawn}")} total {_last.TotalMs} ms cpu {_last.CpuMs:N0} ms");
             if (_active.Runner.LastShortcutOutcome is { } sc)
@@ -165,6 +210,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
                 foreach (var w in sc.Warnings) log.Warn($"shortcuts: {w}");
             }
             _nextWake = _active.Scheduler.NextWake(clock.Now);
+            SaveEvents(force: false);
         }
         catch (Exception ex)
         {
@@ -178,6 +224,80 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             Footprint.Release();   // collect, decommit, trim: the idle footprint is what the process costs between wakes
         }
     }
+
+    /// <summary>Copy the bus's provider records into the active registry as values. Called on the
+    /// tick thread immediately before the resolve, so a component bound to build.data.status sees
+    /// what the pipe accepted since the last tick and never a half-applied event: Providers hands
+    /// back a snapshot and each record inside it was swapped whole.</summary>
+    private void SyncProviders(DateTimeOffset now)
+    {
+        if (_active is null || _bus is null) return;
+        var providers = _bus.Providers;
+        // A provider the designer forgot must stop being published rather than linger in this
+        // registry for the life of the process.
+        foreach (var gone in _active.Registry.ProviderNames.Where(n => !providers.ContainsKey(n)).ToList())
+            _active.Registry.RemoveProvider(gone);
+        foreach (var (name, record) in providers)
+        {
+            _active.Registry.SetProvider(name, record.ToValues(now));
+            // Spec section 3: a layout source and a provider of the same name are not merged, the
+            // layout source wins, and the clash is reported rather than left to the user as "my
+            // events do nothing". Once per name: this runs on every tick.
+            if (_active.Sources.Any(src => string.Equals(src.Name, name, StringComparison.OrdinalIgnoreCase)) && _clashesLogged.Add(name))
+                log.Warn($"event provider '{name}' is shadowed by a layout source of the same name; the layout source wins");
+        }
+    }
+
+    /// <summary>Write events.json, at most every few seconds, and unconditionally on shutdown. Tick
+    /// thread only, so two writers can never race for the file.</summary>
+    private void SaveEvents(bool force)
+    {
+        if (_bus is null || !_eventsDirty) return;
+        var now = clock.Now;
+        if (!force && now - _eventsSaved < SaveEventsEvery) return;
+        try
+        {
+            // Cleared before the read, not after: an event that lands mid-save would otherwise be
+            // marked saved when what went to disk predates it.
+            _eventsDirty = false;
+            EventStore.Save(_bus.Providers.Values);
+            _eventsSaved = now;
+        }
+        catch (Exception ex)
+        {
+            // A provider that is not remembered costs a restart, not a frame; the tick goes on,
+            // and the next one tries the write again.
+            _eventsDirty = true;
+            log.Warn($"events: could not save {EventStore.Path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Hand one line to the bus and say in the log why it was turned down. Runs on a pipe
+    /// reader thread: the bus and RollingLog are both thread safe, and the registry is
+    /// deliberately not touched from here.</summary>
+    private bool Publish(EventBus bus, string line)
+    {
+        if (bus.Publish(line))
+        {
+            // Once per provider name per run. "My script sends events and nothing happens" is
+            // answered by whether this line is in the log, and a burst must not write a burst.
+            string? source = null;
+            lock (_seenProviders)
+            {
+                var last = bus.Recent.LastOrDefault(e => e.Accepted && e.Source is not null);
+                if (last?.Source is { } name && _seenProviders.Add(name)) source = name;
+            }
+            if (source is not null) log.Info($"events: provider '{source}' seen");
+            return true;
+        }
+        var why = bus.Recent.LastOrDefault(e => !e.Accepted && string.Equals(e.Line, line, StringComparison.Ordinal))?.Reason;
+        log.Info($"events: rejected ({why ?? "unknown"}): {Trim(line)}");
+        return false;
+    }
+
+    /// <summary>A rejected line belongs in the log, but a producer sending a megabyte of malformed
+    /// JSON must not roll the log away.</summary>
+    private static string Trim(string line) => line.Length <= 200 ? line : string.Concat(line.AsSpan(0, 200), "...");
 
     private Active? Activate(MonitorInfo monitor)
     {
@@ -203,8 +323,11 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             else log.Info($"source '{name}' is fresh again");
         };
         var sources = res.Layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
-        foreach (var s in sources.OfType<AsyncSource>())
-            s.Completed += _ => _win?.Post(WakeKind.SourceCompleted);   // a fetch that overran its timeout has landed
+        // Every source that knows when it changed - a fetch that overran its timeout, a watched
+        // file, a streaming command - goes through the one seam. Nothing is detached because the
+        // source holds the handler, not the bus: a replaced set of sources takes its handlers with
+        // it. The designer has to detach because its bus is the one thing that survives an edit.
+        if (_bus is { } bus) SourceSignals.ConnectAll(bus, sources);
 
         var runner = new TickRunner(res.Layout, sources, registry, clock, monitor, images: _images, shortcuts: Shortcuts ? new ShortcutManager(Calibration.Load()) : null);
         return new Active(monitor, res, sources, registry, new Scheduler(sources, registry), runner, monitor.Signature.Key);
@@ -232,6 +355,10 @@ internal static class Designer
     {
         var exe = Find();
         if (exe is null) { log.Warn("designer not installed"); return; }
+        // One line per launch, so "it opened twice" is answerable from the log: two lines a few
+        // milliseconds apart means the shell reported one click as two events, one line means it
+        // did not and the second window came from somewhere else.
+        log.Info("designer requested");
         // UseShellExecute false, and no redirection: the designer outlives this daemon happily and
         // inherits nothing it could block on.
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false }); }

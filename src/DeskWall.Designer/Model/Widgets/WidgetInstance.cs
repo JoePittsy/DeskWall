@@ -225,6 +225,16 @@ public static class WidgetInstance
         {
             FindSource(layout, segments[1], setPath).Settings[segments[3]] = part;
         }
+        else if (segments.Length == 3 && segments[0] == "sources" && segments[2] == "every")
+        {
+            // Not a setting: the refresh interval is SourceDef's own field, and every source
+            // factory reads it from there. A knob that wrote settings["every"] would set nothing.
+            // An unparseable value leaves the interval alone rather than reverting it to the
+            // type's default, which is what null would mean.
+            var source = FindSource(layout, segments[1], setPath);
+            if (int.TryParse(part, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds > 0)
+                source.EverySeconds = seconds;
+        }
         else
         {
             throw new InvalidOperationException($"bad sets path \"{setPath}\"");
@@ -247,11 +257,16 @@ public static class WidgetInstance
             var templateComponent = t.Components.FirstOrDefault(c => c.Id == templateId)
                 ?? throw new InvalidOperationException($"sets path \"{targetPath}\": widget \"{t.Key}\" has no component \"{templateId}\"");
             var templateProp = FindProperty(templateComponent, segments[2], targetPath);
-            var original = templateProp.Get(templateComponent)?.LiteralText ?? "";
+            var templateValue = templateProp.Get(templateComponent);
 
             var instanceComponent = FindComponent(layout, instanceId, templateId, targetPath);
             var instanceProp = FindProperty(instanceComponent, segments[2], targetPath);
-            instanceProp.Set(instanceComponent, PropertyValue.Literal(Substitute(original, tokens)));
+            // A bound target substitutes into the binding's own text and stays bound. Writing a
+            // literal here would silently discard the binding, which is what a Drive knob
+            // (a "{drive}" key inside "disks.drives[{drive}].usedFraction") is entirely made of.
+            instanceProp.Set(instanceComponent, templateValue is { IsBound: true } bound
+                ? PropertyValue.Bound(Binding.Parse(Substitute(bound.Binding!.ToString(), tokens)))
+                : PropertyValue.Literal(Substitute(templateValue?.LiteralText ?? "", tokens)));
         }
         else if (segments.Length >= 4 && segments[0] == "sources" && segments[2] == "settings")
         {

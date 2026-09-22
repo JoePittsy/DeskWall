@@ -105,7 +105,7 @@ public class BoundedFetchTests
         def.Settings["timeout"] = "0.1";
         var src = HttpSource.FromDef(def, new Clock(DateTimeOffset.UnixEpoch), NoSecrets(), h);
         var landed = new TaskCompletionSource();
-        src.Completed += _ => landed.TrySetResult();
+        src.Changed += _ => landed.TrySetResult();
 
         await Assert.ThrowsAsync<TimeoutException>(async () => await src.RefreshAsync(default));
 

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Date",
+  "description": "Today's date, in whichever of five wordings you prefer.",
+  "size": [172, 26],
+  "sources": [
+    { "name": "time", "type": "time" }
+  ],
+  "components": [
+    { "type": "text", "id": "date", "rect": [0, 0, 172, 26], "z": 1,
+      "text": { "bind": "time.now | \"dddd d MMMM\"" }, "size": 18, "align": "right" }
+  ],
+  "knobs": [
+    { "id": "format", "label": "Wording", "type": "choice",
+      "default": "Weekday, day and month||time.now | \"dddd d MMMM\"",
+      "choices": [
+        "Weekday, day and month||time.now | \"dddd d MMMM\"",
+        "Short weekday, day and month||time.now | \"ddd d MMM\"",
+        "Day and month||time.now | \"d MMMM\"",
+        "Numeric (yyyy-MM-dd)||time.date",
+        "Weekday only||time.weekday"
+      ],
+      "sets": [ "components.date.text=bind:time.now | \"dddd d MMMM\"" ] }
+  ]
+}

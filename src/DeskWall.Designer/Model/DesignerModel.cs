@@ -4,16 +4,21 @@ using DeskWall.Core.Layout;
 
 namespace DeskWall.Designer.Model;
 
-public enum AlignEdge { Left, Right, Top, Bottom, CenterX, CenterY }
-
 /// <summary>The open document. All mutation goes through <see cref="Edit"/> so undo and change
 /// notification are uniform. Undo is whole-document JSON snapshots, capped at 100. Not
 /// thread-affine; views marshal to the UI thread.</summary>
 public sealed class DesignerModel
 {
     private const int UndoCap = 100;
-    private readonly List<string> _undo = new();
-    private readonly Stack<string> _redo = new();
+
+    /// <summary>What an undo entry holds. The canvas size is in here and not in a parallel stack
+    /// because the widget editor's <c>Fit to parts</c> moves the components AND changes the size in
+    /// one <see cref="Edit"/>: two stacks would let a single Ctrl+Z put back one and not the
+    /// other.</summary>
+    private readonly record struct Snapshot(string Json, DisplaySignature Signature);
+
+    private readonly List<Snapshot> _undo = new();
+    private readonly Stack<Snapshot> _redo = new();
     private readonly List<string> _selection = new();
     private string _savedJson;
 
@@ -26,7 +31,10 @@ public sealed class DesignerModel
     }
 
     public LayoutFile Layout { get; private set; }
-    public DisplaySignature Signature { get; }
+
+    /// <summary>The canvas this document is authored on. A layout's is the display's and never
+    /// changes; a widget document's is the widget's own size, which <see cref="ResizeCanvas"/> edits.</summary>
+    public DisplaySignature Signature { get; private set; }
     public string? Path { get; set; }
     public bool Dirty => Layout.ToJson() != _savedJson;
     public bool CanUndo => _undo.Count > 0;
@@ -52,7 +60,7 @@ public sealed class DesignerModel
     /// <summary>Snapshot, mutate the live LayoutFile, notify.</summary>
     public void Edit(string label, Action<LayoutFile> mutate)
     {
-        _undo.Add(Layout.ToJson());
+        _undo.Add(Capture());
         if (_undo.Count > UndoCap) _undo.RemoveAt(0);
         _redo.Clear();
         mutate(Layout);
@@ -62,11 +70,28 @@ public sealed class DesignerModel
 
     public string? LastEditLabel { get; private set; }
 
+    /// <summary>Change the canvas the document is authored on, undoably. Only the widget editor
+    /// calls this: a layout's canvas is the display's, and the store scales between displays.
+    /// <para>Not named Resize, for the same reason <see cref="SetRect"/> is not: the canvas's own
+    /// <see cref="Model.Resize"/> maths has to stay reachable by name from in here.</para></summary>
+    public void ResizeCanvas(int width, int height)
+    {
+        var w = Math.Max(1, width);
+        var h = Math.Max(1, height);
+        if (Signature.Width == w && Signature.Height == h) return;
+        Edit("Resize canvas", _ => SetSignatureSize(w, h));
+    }
+
+    /// <summary>The size change on its own, with no undo entry of its own, for a caller already
+    /// inside an <see cref="Edit"/> that moves the components at the same time (Fit to parts).</summary>
+    internal void SetSignatureSize(int width, int height)
+        => Signature = Signature with { Width = Math.Max(1, width), Height = Math.Max(1, height) };
+
     public void Undo()
     {
         if (!CanUndo) return;
-        _redo.Push(Layout.ToJson());
-        Layout = LayoutFile.Parse(_undo[^1]);
+        _redo.Push(Capture());
+        Restore(_undo[^1]);
         _undo.RemoveAt(_undo.Count - 1);
         PruneSelection();
         Changed?.Invoke();
@@ -75,10 +100,18 @@ public sealed class DesignerModel
     public void Redo()
     {
         if (!CanRedo) return;
-        _undo.Add(Layout.ToJson());
-        Layout = LayoutFile.Parse(_redo.Pop());
+        _undo.Add(Capture());
+        Restore(_redo.Pop());
         PruneSelection();
         Changed?.Invoke();
+    }
+
+    private Snapshot Capture() => new(Layout.ToJson(), Signature);
+
+    private void Restore(Snapshot snapshot)
+    {
+        Layout = LayoutFile.Parse(snapshot.Json);
+        Signature = snapshot.Signature;
     }
 
     public ComponentDef? Find(string id) => Layout.Components.FirstOrDefault(c => c.Id == id);
@@ -88,7 +121,9 @@ public sealed class DesignerModel
         foreach (var id in ids) if (Find(id) is { } c) c.Rect = c.Rect.Offset(dx, dy);
     });
 
-    public void Resize(string id, Rect newRect) => Edit("Resize", l =>
+    /// <summary>Put one component's rect somewhere exactly. Named SetRect and not Resize so the
+    /// canvas's <see cref="Model.Resize"/> maths is reachable by name from in here.</summary>
+    public void SetRect(string id, Rect newRect) => Edit("Resize", l =>
     {
         if (Find(id) is { } c) c.Rect = new Rect(newRect.X, newRect.Y, Math.Max(4, newRect.W), Math.Max(4, newRect.H));
     });
@@ -180,27 +215,39 @@ public sealed class DesignerModel
         if (_selection.RemoveAll(set.Contains) > 0) SelectionChanged?.Invoke();
     }
 
-    public void Align(IEnumerable<string> ids, AlignEdge edge)
+    /// <summary>Move several groups of components, each group by its own offset, as ONE undo
+    /// entry.
+    /// <para>What a drag, a group drag, an align, a distribute and an arrow-key nudge all come
+    /// down to: the canvas works out an offset per target (<see cref="Placement"/>), and this
+    /// writes them. One entry, not one per component - undoing an align that moved six widgets six
+    /// times is not undo, it is a chore. A set of offsets that all come to nothing is not an edit
+    /// at all, so a click that happened to wobble does not fill the history.</para></summary>
+    public void MoveGroups(string label, IReadOnlyList<(IReadOnlyList<string> Ids, int Dx, int Dy)> moves)
     {
-        var comps = ids.Select(Find).Where(c => c is not null).Cast<ComponentDef>().ToList();
-        if (comps.Count < 2) return;
-        var anchor = comps[0].Rect;
-        Edit("Align", l =>
+        ArgumentNullException.ThrowIfNull(moves);
+        if (moves.All(m => m.Dx == 0 && m.Dy == 0)) return;
+        Edit(label, _ =>
         {
-            foreach (var c in comps.Skip(1))
+            foreach (var (ids, dx, dy) in moves)
             {
-                var r = c.Rect;
-                c.Rect = edge switch
-                {
-                    AlignEdge.Left => r with { X = anchor.X },
-                    AlignEdge.Right => r with { X = anchor.Right - r.W },
-                    AlignEdge.Top => r with { Y = anchor.Y },
-                    AlignEdge.Bottom => r with { Y = anchor.Bottom - r.H },
-                    AlignEdge.CenterX => r with { X = anchor.X + (anchor.W - r.W) / 2 },
-                    AlignEdge.CenterY => r with { Y = anchor.Y + (anchor.H - r.H) / 2 },
-                    _ => r,
-                };
+                if (dx == 0 && dy == 0) continue;
+                foreach (var id in ids) if (Find(id) is { } c) c.Rect = c.Rect.Offset(dx, dy);
             }
+        });
+    }
+
+    /// <summary>Scale everything in <paramref name="ids"/> from one bounding box to another, as
+    /// ONE undo entry: the whole resize gesture, however many components and however many mouse
+    /// moves it took. <paramref name="scaleSizes"/> carries the pixel sizes inside each component
+    /// (font size, dial stroke) along with the box, which is what a corner drag means and an edge
+    /// drag does not (<see cref="Resize.Apply"/>).</summary>
+    public void Scale(string label, IReadOnlyList<string> ids, Rect from, Rect to, bool scaleSizes)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        if (ids.Count == 0 || from == to || from.W <= 0 || from.H <= 0) return;
+        Edit(label, _ =>
+        {
+            foreach (var id in ids) if (Find(id) is { } c) Resize.Apply(c, from, to, scaleSizes);
         });
     }
 

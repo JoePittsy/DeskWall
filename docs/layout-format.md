@@ -1,4 +1,4 @@
-# Layout file format
+﻿# Layout file format
 
 A layout is one JSON file. It names a base image, the sources it needs, and the components
 placed on the canvas in physical pixels. Source of truth for this document: `LayoutFile.cs`,
@@ -56,7 +56,7 @@ Example:
 | `color` | `"#EBFFFFFF"` | ARGB hex. |
 | `align` | `"left"` | `left` \| `center` \| `right`. |
 | `effect` | `"shadow"` | Text effect style. |
-| `effectRadius` | `6` | Blur radius in pixels for the shadow. |
+| `effectRadius` | `"auto"` | Blur radius in pixels for the shadow. `"auto"` (and any other non-number) means a tenth of `size`, floored at 1 px: 64 -> 6, 40 -> 4, 13 -> 1. A flat 6 px is a drop shadow on a 64 px clock and a dark crust on a 13 px label, so the default follows the font; set a number to pin it. |
 | `effectColor` | `"#A0000000"` | ARGB hex for the shadow/outline/plate. |
 
 ### `image`
@@ -168,8 +168,9 @@ Twelve examples, each valid against the value trees the built-in sources publish
     names a per-user absolute path. See `assets/weather/README.md` for the icon set this recipe
     expects at that path.
 
-Two format rules matter (`Value.ToText`, spec 4.2):
+Three format rules matter (`Value.ToText`, spec 4.2):
 
+- A format string whose first character is `?` is a **map** (below).
 - A format string containing `{0` is treated as a *composite* format and applied with
   `string.Format` to the value's raw CLR object (the underlying string, double, `DateTimeOffset`
   or bool). Anything else is applied as a plain .NET format string to the value's own
@@ -177,6 +178,41 @@ Two format rules matter (`Value.ToText`, spec 4.2):
 - A malformed format (an argument index the value does not supply, an unbalanced brace, an
   unknown type specifier) falls back to the unformatted text rather than throwing. A layout
   authoring mistake must never abort a tick.
+
+### A number that arrived as JSON text
+
+A JSON API is free to return a number as a string (Coinbase's `"amount": "64394.01"`). When a
+composite format carries a **specifier** -- `{0:` something, as in `"{0:N0}"` -- the author has
+asked for a number, so a text value that parses as a `double` under the invariant culture is
+formatted as that number:
+
+    btc.json.data.amount | "{0:N0}"      "64394.01" -> 64,394
+
+This is deliberately narrow. A bare `{0}` with no specifier formats the original text unchanged,
+so `"007"` stays `007` and `"1.10"` stays `1.10`. A text that does not parse (`"abc"`) is left
+alone, and the parse rejects thousands separators, so `"1234,6"` is never read as `12346`.
+
+### The map format: a value picks a string
+
+A format beginning with `?` is a comma-separated list of `key=text` pairs. The key is matched
+against the value's **own plain text** (what it renders with no format at all),
+case-insensitively, and the matching entry's text is the result.
+
+    volume.json.muted | "?true=#D13438,false=#EBFFFFFF"     a bool driving a colour
+    volume.json.muted | "?true=muted"                       text when true, nothing when false
+    weather.json.current.is_day | "?1=day,0=night,*=?"      a number driving text
+
+- `*=text` is the fallback for any value no key matched.
+- **No match and no `*` is the empty string**, not the unformatted value: drawing nothing when a
+  flag is false is the point of the `muted` case above.
+- Keys are trimmed, so `?a=one, b=two` works; the picked text is taken verbatim, so it may be
+  blank or carry spaces.
+- A key or a picked text cannot contain `,` or `=`; there is no escape.
+- A format starting with `?` with no `=` anywhere is **not** a map and is handled as an ordinary
+  format string, so nothing that worked before maps existed changed.
+
+No component knows about maps. `color`, `text` and an image's `source` are all ordinary bindable
+properties, so the one rule in `Value.ToText` makes all three react to a bool.
 
 A binding that cannot be resolved (a missing field, an out-of-range index, a key with no match,
 indexing into the wrong shape of value) resolves to `null`; the bound property then falls back to
@@ -232,7 +268,9 @@ it (`LayoutScaler.Scale`) rather than leaving the canvas blank:
 
 - Every component `rect` scales by `(sx, sy) = (toWidth / fromWidth, toHeight / fromHeight)`.
 - `TextDef.Size`, `TextDef.EffectRadius` and `ImageDef.Radius` scale by the geometric mean
-  `sqrt(sx * sy)`, so a font or corner radius does not stretch non-uniformly.
+  `sqrt(sx * sy)`, so a font or corner radius does not stretch non-uniformly. An
+  `effectRadius` of `"auto"` is left alone, like `cellHeight`: it is derived from the scaled
+  `size` when the layout is resolved, so scaling it here would apply the factor twice.
 - `DialDef.Thickness` scales by `min(sx, sy)` instead: the arc's radius is taken from the short
   side of its rect, and the geometric mean is 1 for a display that halves in width and doubles in
   height, which would leave the stroke wider than the ring it is drawn on.
@@ -307,7 +345,16 @@ A knob's `sets` list names the paths a value change writes to, in order:
 | `components.<id>.<property>` | Overwrites the component property (found by `<instanceId>.<id>`, matched against `PropertySchema.For` by name) with a **literal**. |
 | `components.<id>.<property>=bind:<text>` | Overwrites the property with a **binding**, parsed from the resolved value (below), not from `<text>` -- `<text>` documents the default choice's shape for a human reading the template but is never parsed. |
 | `sources.<name>.settings.<key>` | Overwrites the named source's setting with a literal. |
+| `sources.<name>.every` | Overwrites the named source's refresh interval, in seconds. Not a setting: `every` is `SourceDef`'s own field and a value under `settings` is ignored by every source factory. A value that is not a positive whole number leaves the interval alone. |
 | any of the above, with a trailing `:{token}` | Instead of overwriting, **substitutes** the literal substring `{token}` inside the target's *current* string (its own currently-authored placeholder, e.g. the weather URL's `{lat}`) with the resolved value, leaving the rest of the string as it was. |
+
+The `:{token}` form works on a **bound** property as well as a literal one: when the template's
+property is a binding, the token is substituted into the binding's own text and the property is
+written back as a binding, so it goes on drawing live data. That is what a `drive` knob is made
+of -- `components.bar.fraction:{drive}` against a template binding of
+`disks.drives[{drive}].usedFraction` repoints the bar at another drive without touching anything
+else in the path or its format. (Before this, a token knob on a bound property overwrote it with
+an empty literal.)
 
 A knob's stored value (`Knob.Default`, what a caller passes to `SetKnob`, and what
 `WidgetRecord.Knobs[knobId]` keeps for showing a knob back and re-applying it) may be a **plain
@@ -342,12 +389,68 @@ differently-shaped targets:
   the widget model has no mechanism for one knob's default to depend on another's value, so a
   metric-specific default is the instantiator's job, not the template's.
 
-**Known limitation:** `sources.<name>` in a `sets` path is resolved by the template-local name
-literally, not through the rename an `Add`-time source clash would have produced for that
-instance. None of the eight shipped widgets can actually clash (each uses a name no other
-shipped widget also uses, or the same name at the same type), so this only matters if a future
-widget's source name collides with another already-placed widget's differently-typed source of
-the same name; re-editing that knob would then write to the wrong (original) source.
+**Known limitation (a renamed source):** `sources.<name>` in a `sets` path is resolved by the
+template-local name literally, not through the rename an `Add`-time source clash would have
+produced for that instance. None of the fourteen shipped widgets can actually clash (each uses a
+name no other shipped widget also uses, or the same name at the same type), so this only matters
+if a future widget's source name collides with another already-placed widget's differently-typed
+source of the same name; re-editing that knob would then write to the wrong (original) source.
+
+**Known limitation (two instances, one source):** `MergeSources` *reuses* a source of the same
+name and the same type rather than adding a second one, so two instances of the same widget share
+one source. For widgets whose sources carry no knobs (`clock`, `dial`, `drives`, `uptime`, ...)
+that is the point -- four dials want one `hardware` sampler, not four. For a widget whose knobs
+write to `sources.<name>.settings.*` -- `command` and `headline` -- it means the two instances
+fight: adding the second applies its own defaults over the first's settings, and editing either
+one's knob afterwards changes what both draw. Two different commands, or two different feeds, need
+the second instance's source renamed by hand in the layout file (and its component's binding with
+it).
+
+### Your own templates, and the widget editor
+
+Templates in `%LOCALAPPDATA%\DeskWall\widgets\` are the owner's own and sit in the same gallery
+as the shipped ones, overriding a shipped template of the same key. They are written by the
+designer's **widget editor** (`WidgetEditorWindow`, `docs/superpowers/specs/2026-09-21-widget-editor-design.md`),
+reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** on
+any of them, **Duplicate to mine** on any of them, and **Delete** (or **Reset**, below) on the
+owner's own. The editor is the layout
+canvas over a document the size of the widget, plus a parts palette (`text`, `image`, `bar`,
+`dial` only), the source list and its live values, and a "Knob" toggle on each property and each
+source setting that exposes it as a knob. It writes only the simple knob forms; a composite, a
+`{token}` splice or a `=bind:` write in a duplicated template is shown read-only and written back
+exactly as it was read, so nothing is lost by opening one.
+
+**Editing a shipped widget is copy on write.** The shipped folder sits beside the exe and is
+replaced by every install, so nothing is ever written back into it. Editing a shipped widget opens
+it with no path and its shipped key, and saving writes `%LOCALAPPDATA%\DeskWall\widgets\<key>.json`,
+which `WidgetCatalog.Load` then prefers -- in the place the key was first seen, so the gallery's
+order does not move. Such a card is marked "edited" and its menu offers **Reset to the
+out-of-the-box version**, which deletes only that user file; the shipped template returns on the
+next catalog reload. (Renaming while editing a shipped widget saves under the new key and still
+leaves the shipped file alone.) The refusal "A shipped widget is already called '<name>'" is about
+a *new* widget silently shadowing a shipped one and still fires for that; it does not fire for a
+deliberate edit of that key.
+
+A knob the editor made has no stored default: the default written to the file is whatever the
+target holds on the canvas at the moment of saving, so changing the value after exposing it moves
+the default with it.
+
+**The Drive knob** is the one knob the editor builds over a *binding*. A property bound to a
+drive-keyed path -- `disks.drives[C].usedFraction`, `disks.drives[C].freeGB | "{0:N0} GB"` -- gets
+a "Drive" toggle instead of the usual "Knob" one, and turning it on exposes a `drive` knob whose
+`sets` entry is `components.<id>.<property>:{drive}`. A second drive-keyed property **joins the
+knob already there** rather than making a second one, so one picker repoints the bar and its
+caption together; the knob's card lists every target it writes. Only the **saved file** carries
+`{drive}`: the document in the editor keeps the real letter, so the canvas goes on drawing real
+data, and re-opening a saved drive widget puts the knob's default letter back before the canvas is
+shown. Tokenising is idempotent, so saving twice writes the same file. Nothing else about a
+binding can be made adjustable; `disks.drives[0]` (an index, not a drive) is not offered.
+
+**A placed instance is a stamped copy.** `WidgetInstance.Add` copies the template's components and
+sources into the layout, and nothing afterwards links the two. Saving a template therefore changes
+the gallery card and every *future* placement, and changes nothing already on a wallpaper. Deleting
+a template leaves its placed instances exactly as they are, minus the knobs panel (which needs the
+template to know what the knobs are; the Details expander still edits the components).
 
 ### Arranger
 

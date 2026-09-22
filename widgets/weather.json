@@ -9,7 +9,7 @@
   ],
   "components": [
     { "type": "text", "id": "temp", "rect": [0, 0, 108, 52], "z": 1,
-      "text": { "bind": "weather.json.current.temperature_2m | \"{0:N0}°\"" }, "font": "Segoe UI Light", "size": 40, "weight": 300, "align": "right" },
+      "text": { "bind": "weather.json.current.temperature_2m | \"{0:N0}°\"" }, "font": "Segoe UI Light", "size": 40, "weight": 300, "align": "right", "effectRadius": 6 },
     { "type": "image", "id": "sky", "rect": [116, 0, 56, 56], "z": 1, "fit": "contain",
       "source": { "bind": "weather.json.current.weather_code | \"runtime:assets/weather/{0}.png\"" } }
   ],

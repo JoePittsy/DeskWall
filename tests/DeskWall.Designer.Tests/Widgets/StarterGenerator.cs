@@ -40,6 +40,25 @@ internal static class StarterGenerator
         return layout;
     }
 
+    /// <summary>The last hand-authored starter, now built from the same three widgets that
+    /// describe what was in it: clock at the top, Steam covers below it, drives up from the
+    /// bottom. The bands move a few pixels against the file it replaces -- the Arranger stacks by
+    /// each widget's own height and gap rather than the numbers that were typed in -- and the
+    /// widgets bring their own current settings (an effectRadius, a thresholdFill) with them.
+    /// That is the point of defining it from them.</summary>
+    public static LayoutFile SteamRecent(IReadOnlyList<WidgetTemplate> catalog)
+    {
+        var layout = new LayoutFile { BaseImage = SpotlightImage };
+        WidgetTemplate Find(string key) => catalog.First(t => t.Key == key);
+
+        var clock = WidgetInstance.Add(layout, Find("clock"), new Rect(0, 0, 0, 0));
+        var covers = WidgetInstance.Add(layout, Find("steam-covers"), new Rect(0, 0, 0, 0));
+        var drives = WidgetInstance.Add(layout, Find("drives"), new Rect(0, 0, 0, 0));
+
+        Arranger.Arrange(layout, catalog, [clock, covers, drives]);
+        return layout;
+    }
+
     public static LayoutFile ClockDisks(IReadOnlyList<WidgetTemplate> catalog)
     {
         var layout = new LayoutFile { BaseImage = SpotlightImage };

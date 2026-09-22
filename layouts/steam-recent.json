@@ -1,33 +1,215 @@
 {
   "version": 1,
   "baseImage": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\DesktopSpotlight\\Assets\\Images\\image_3.jpg",
-  "baseFit": "cover",
+  "baseFit": "Cover",
   "encode": "jpeg",
   "jpegQuality": 92,
   "sources": [
-    { "name": "time", "type": "time" },
-    { "name": "disks", "type": "disks", "every": 300 },
-    { "name": "steam", "type": "http", "every": 600, "settings": {
-        "url": "https://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v1/?key={secret:steamKey}&steamid={secret:steamId}&count=4&format=json",
-        "unixTimeFields": "rtime_last_played" } }
+    {
+      "name": "time",
+      "type": "time",
+      "every": null,
+      "settings": {}
+    },
+    {
+      "name": "steam",
+      "type": "http",
+      "every": 600,
+      "settings": {
+        "url": "https://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v1/?key={secret:steamKey}\u0026steamid={secret:steamId}\u0026count=4\u0026format=json",
+        "unixTimeFields": "rtime_last_played"
+      }
+    },
+    {
+      "name": "disks",
+      "type": "disks",
+      "every": 300,
+      "settings": {}
+    }
   ],
   "components": [
-    { "type": "text", "id": "clock", "rect": [3220, 40, 172, 78], "z": 1,
-      "text": { "bind": "time.now | HH:mm" }, "font": "Segoe UI Light", "size": 64, "weight": 300, "align": "right" },
-    { "type": "repeater", "id": "games", "rect": [3220, 142, 172, 1094], "z": 1,
-      "items": { "bind": "steam.json.response.games" }, "axis": "vertical", "gap": 14, "cellHeight": "auto",
+    {
+      "type": "text",
+      "text": {
+        "bind": "time.now | \u0022HH:mm\u0022"
+      },
+      "font": "Segoe UI Light",
+      "size": "64",
+      "weight": "300",
+      "color": "#EBFFFFFF",
+      "align": "right",
+      "effect": "shadow",
+      "effectRadius": "6",
+      "effectColor": "#A0000000",
+      "id": "clock-1.clock",
+      "rect": [
+        3220,
+        40,
+        172,
+        78
+      ],
+      "z": 1,
+      "widget": "clock-1"
+    },
+    {
+      "type": "repeater",
+      "items": {
+        "bind": "steam.json.response.games"
+      },
+      "axis": "Vertical",
+      "gap": 14,
+      "cellHeight": "auto",
       "template": [
-        { "type": "image", "id": "cover", "rect": [0, 0, 172, 258], "radius": 4,
-          "source": { "bind": "appid | \"https://cdn.cloudflare.steamstatic.com/steam/apps/{0}/library_600x900.jpg\"" } },
-        { "type": "shortcut", "id": "play", "rect": [0, 0, 172, 258], "slot": 8,
-          "target": { "bind": "appid | \"steam://rungameid/{0}\"" }, "tooltip": { "bind": "name | \"Play {0}\"" } }
-      ] },
-    { "type": "repeater", "id": "drives", "rect": [3220, 1260, 172, 92], "z": 1,
-      "items": { "bind": "disks.drives" }, "axis": "vertical", "gap": 0, "cellHeight": 46,
+        {
+          "type": "image",
+          "source": {
+            "bind": "appid | \u0022https://cdn.cloudflare.steamstatic.com/steam/apps/{0}/library_600x900.jpg\u0022"
+          },
+          "fit": "cover",
+          "radius": "4",
+          "opacity": "1",
+          "id": "cover",
+          "rect": [
+            0,
+            0,
+            172,
+            258
+          ],
+          "z": 0,
+          "widget": null
+        },
+        {
+          "type": "shortcut",
+          "target": {
+            "bind": "appid | \u0022steam://rungameid/{0}\u0022"
+          },
+          "tooltip": {
+            "bind": "name | \u0022Play {0}\u0022"
+          },
+          "slot": 8,
+          "id": "play",
+          "rect": [
+            0,
+            0,
+            172,
+            258
+          ],
+          "z": 0,
+          "widget": null
+        }
+      ],
+      "id": "steam-covers-1.games",
+      "rect": [
+        3220,
+        134,
+        172,
+        1094
+      ],
+      "z": 1,
+      "widget": "steam-covers-1"
+    },
+    {
+      "type": "repeater",
+      "items": {
+        "bind": "disks.drives"
+      },
+      "axis": "Vertical",
+      "gap": 0,
+      "cellHeight": "46",
       "template": [
-        { "type": "text", "id": "letter", "rect": [0, 0, 60, 24], "text": { "bind": "letter | \"{0}:\"" }, "size": 15 },
-        { "type": "text", "id": "free", "rect": [60, 0, 112, 24], "text": { "bind": "freeGB | \"{0:N0} GB free\"" }, "size": 15, "align": "right" },
-        { "type": "bar", "id": "bar", "rect": [0, 26, 172, 6], "fraction": { "bind": "usedFraction" }, "threshold": 0.85, "thresholdFill": "#FFD13438" }
-      ] }
-  ]
+        {
+          "type": "text",
+          "text": {
+            "bind": "letter | \u0022{0}:\u0022"
+          },
+          "font": "Segoe UI",
+          "size": "15",
+          "weight": "400",
+          "color": "#EBFFFFFF",
+          "align": "left",
+          "effect": "shadow",
+          "effectRadius": "6",
+          "effectColor": "#A0000000",
+          "id": "letter",
+          "rect": [
+            0,
+            0,
+            60,
+            24
+          ],
+          "z": 0,
+          "widget": null
+        },
+        {
+          "type": "text",
+          "text": {
+            "bind": "freeGB | \u0022{0:N0} GB free\u0022"
+          },
+          "font": "Segoe UI",
+          "size": "15",
+          "weight": "400",
+          "color": "#EBFFFFFF",
+          "align": "right",
+          "effect": "shadow",
+          "effectRadius": "6",
+          "effectColor": "#A0000000",
+          "id": "free",
+          "rect": [
+            60,
+            0,
+            112,
+            24
+          ],
+          "z": 0,
+          "widget": null
+        },
+        {
+          "type": "bar",
+          "fraction": {
+            "bind": "usedFraction"
+          },
+          "track": "#46FFFFFF",
+          "fill": "#EBFFFFFF",
+          "threshold": "0.85",
+          "thresholdFill": "#FFD13438",
+          "direction": "horizontal",
+          "id": "bar",
+          "rect": [
+            0,
+            26,
+            172,
+            6
+          ],
+          "z": 0,
+          "widget": null
+        }
+      ],
+      "id": "drives-1.drives",
+      "rect": [
+        3220,
+        1308,
+        172,
+        92
+      ],
+      "z": 1,
+      "widget": "drives-1"
+    }
+  ],
+  "widgets": {
+    "clock-1": {
+      "template": "clock",
+      "knobs": {},
+      "unlocked": false
+    },
+    "steam-covers-1": {
+      "template": "steam-covers",
+      "knobs": {},
+      "unlocked": false
+    },
+    "drives-1": {
+      "template": "drives",
+      "knobs": {},
+      "unlocked": false
+    }
+  }
 }

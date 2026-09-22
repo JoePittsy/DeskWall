@@ -1,21 +1,46 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
 /// <summary>Periodic source whose work may be slow. RefreshAsync races the work against Timeout:
 /// on timeout it throws TimeoutException (the tick marks the source failed) and lets the work
-/// finish in the background; when it finishes, Completed fires with the result and the next
-/// RefreshAsync returns it immediately without re-running.</summary>
-public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout) : PeriodicSource(name, every)
+/// finish in the background; when it finishes, Changed fires and the next RefreshAsync returns the
+/// result immediately without re-running.</summary>
+public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout) : PeriodicSource(name, every), ISignalSource
 {
     private readonly object _lock = new();
     private Task<RecordValue>? _inFlight;
-    private Task<RecordValue>? _notified;   // the overrunning task a Completed notification is already attached to
+    private Task<RecordValue>? _notified;   // the overrunning task a Changed notification is already attached to
 
     public TimeSpan Timeout => timeout;
 
-    /// <summary>Raised (on a pool thread) when a refresh that overran its timeout finally completes, successfully or not.</summary>
-    public event Action<ISource>? Completed;
+    /// <summary>Raised (on a pool thread) when a refresh that overran its timeout finally completes,
+    /// successfully or not. This is ISignalSource.Changed: one name for one thing.</summary>
+    public event Action<ISource>? Changed;
+
+    /// <summary>Due now while an overrun fetch is sitting there finished, because the next
+    /// RefreshAsync hands it straight back. Without this the wake that Changed asked for lands on a
+    /// tick that declines to refresh, and an every=600 source waits out ten minutes for a result it
+    /// already holds. The daemon reaches this only through Scheduler.DueAt, which uses the failure
+    /// back-off instead while a source is failing, so in practice this is the designer's live
+    /// panel; it is still the honest answer to "when are you next due".</summary>
+    /// <inheritdoc />
+    /// <remarks>A fetch that overran its tick and has since landed is exactly "something no refresh
+    /// has published yet". Before the scheduler asked this, the Changed wake such a landing raises
+    /// was a no-op in the daemon: the source was failing (it had timed out), so the back-off
+    /// ignored NextDue and the result sat unused until the delay expired. Cleared by the attempt,
+    /// because RefreshAsync takes the task out of _inFlight before awaiting it.</remarks>
+    public bool HasPending
+    {
+        get { lock (_lock) return _inFlight is { IsCompleted: true }; }
+    }
+
+    public override DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
+    {
+        lock (_lock)
+            if (_inFlight is { IsCompleted: true }) return now;
+        return base.NextDue(lastRefresh, now);
+    }
 
     protected abstract Task<RecordValue> FetchAsync(CancellationToken ct);
 
@@ -46,7 +71,7 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
         return await work.ConfigureAwait(false);
     }
 
-    /// <summary>Raise Completed once when a fetch the tick has already given up on finishes - at once
+    /// <summary>Raise Changed once when a fetch the tick has already given up on finishes - at once
     /// if it has already finished. Attached at most once per task, so a fetch that overruns several
     /// ticks still produces a single wake.</summary>
     private void NotifyWhenItLands(Task<RecordValue> work)
@@ -56,7 +81,7 @@ public abstract class AsyncSource(string name, TimeSpan every, TimeSpan timeout)
             if (ReferenceEquals(_notified, work)) return;
             _notified = work;
         }
-        work.ContinueWith(_ => Completed?.Invoke(this), TaskScheduler.Default);
+        work.ContinueWith(_ => Changed?.Invoke(this), TaskScheduler.Default);
     }
 
     // Never cancelled by the tick's token: the work must finish and report so the next tick can use it.

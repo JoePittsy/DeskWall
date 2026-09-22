@@ -1,3 +1,6 @@
 FindWindow
 PostMessage
 WM_CLOSE
+SetForegroundWindow
+ShowWindow
+IsIconic

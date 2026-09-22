@@ -1,4 +1,4 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
@@ -19,11 +19,29 @@ public sealed class TimeSource(string name, IClock clock) : ISource
     public ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
         var now = clock.Now;
-        return new(new RecordValue(new Dictionary<string, Value>
+        var day = now.TimeOfDay.TotalDays;
+        // Monday first: DayOfWeek counts from Sunday = 0, and a week that rolls over on Sunday
+        // evening is not the week anyone here plans by.
+        var week = (((int)now.DayOfWeek + 6) % 7 + day) / 7d;
+        var year = (now.DayOfYear - 1 + day) / (DateTime.IsLeapYear(now.Year) ? 366d : 365d);
+        var d = new Dictionary<string, Value>
         {
             ["now"] = new TimeValue(now),
             ["date"] = new TextValue(now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)),
             ["weekday"] = new TextValue(now.DayOfWeek.ToString()),
-        }));
+        };
+        // Both forms of each: a bar binds the fraction, a text binds the percent, and a format
+        // string cannot multiply by 100. Fractions are quantised so a content key does not change
+        // for a difference below a pixel, the same rule as ResolvedBar.
+        Progress(d, "day", day);
+        Progress(d, "week", week);
+        Progress(d, "year", year);
+        return new(new RecordValue(d));
+    }
+
+    private static void Progress(Dictionary<string, Value> d, string prefix, double fraction)
+    {
+        d[prefix + "Fraction"] = new NumberValue(Math.Round(fraction, 4));
+        d[prefix + "Percent"] = new NumberValue(Math.Round(fraction * 100));
     }
 }

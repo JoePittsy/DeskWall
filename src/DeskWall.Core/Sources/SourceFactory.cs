@@ -17,8 +17,13 @@ public static class SourceFactory
             "file" => FileSource.FromDef(def, clock),
             "http" => HttpSource.FromDef(def, clock, secrets),
             "rss" => RssSource.FromDef(def, secrets),
-            "command" => CommandSource.FromDef(def, clock, secrets),
+            // `stream: true` is a different lifecycle, not a different setting: a process that stays
+            // up and pushes lines, rather than one run per refresh raced against a timeout.
+            "command" => StreamingCommandSource.IsStreaming(def)
+                ? StreamingCommandSource.FromDef(def, clock, secrets)
+                : CommandSource.FromDef(def, clock, secrets),
             "hardware" => Hardware.HardwareSource.FromDef(def),
+            "audio" => Audio.AudioSource.FromDef(def),
             _ => throw new NotSupportedException($"source type '{def.Type}' (source '{def.Name}')"),
         };
     }

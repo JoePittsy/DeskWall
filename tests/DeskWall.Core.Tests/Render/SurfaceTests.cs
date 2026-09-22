@@ -367,8 +367,16 @@ public class FrameRendererLeakTests
 
 public class PaintBoundsTests
 {
+    /// <summary>
+    /// Everything that paints inside its box still reports its rect unchanged. Text no longer does:
+    /// it used to be Rect inflated by <see cref="TextStyle.PaintMargin"/>, which pinned the painted
+    /// region to the authored rect and clipped away anything larger (see
+    /// <c>TextMeasureTests</c>). It is now the measured glyph ink plus that same margin, so this
+    /// asserts the relationship rather than the old constants: the margin values themselves are
+    /// unchanged and still the allowance for what the effects paint outside the glyphs.
+    /// </summary>
     [Fact]
-    public void PaintBounds_Is_Rect_Plus_The_Shared_Margin()
+    public void PaintBounds_Is_Rect_For_Shapes_And_Measured_Ink_Plus_The_Margin_For_Text()
     {
         var rect = new Rect(3220, 40, 172, 78);
         Resolved plain = new ResolvedBar("b", rect, 0, 0.5, Color.White, Color.White, Axis.Horizontal);
@@ -376,10 +384,13 @@ public class PaintBoundsTests
 
         var shadow = TextStyle.Default with { Effect = TextEffect.Shadow, EffectRadius = 6 };
         Assert.Equal(8, shadow.PaintMargin());
-        Assert.Equal(new Rect(3212, 32, 188, 94), new ResolvedText("t", rect, 0, "14:32", shadow).PaintBounds);
+        Assert.Equal(TextMeasure.PaintBounds("14:32", shadow, rect), new ResolvedText("t", rect, 0, "14:32", shadow).PaintBounds);
+        // Measured, so a 16 px clock in a 172x78 box no longer claims the whole 188x94 of Rect + margin.
+        Assert.True(new ResolvedText("t", rect, 0, "14:32", shadow).PaintBounds.W < rect.W + 2 * shadow.PaintMargin());
 
-        Assert.Equal(0, (TextStyle.Default with { Effect = TextEffect.None }).PaintMargin());
-        Assert.Equal(rect, new ResolvedText("t", rect, 0, "14:32", TextStyle.Default with { Effect = TextEffect.None }).PaintBounds);
+        var none = TextStyle.Default with { Effect = TextEffect.None };
+        Assert.Equal(0, none.PaintMargin());
+        Assert.Equal(TextMeasure.Ink("14:32", none, rect), new ResolvedText("t", rect, 0, "14:32", none).PaintBounds);
         Assert.Equal(14, (TextStyle.Default with { Effect = TextEffect.Plate, EffectRadius = 6 }).PaintMargin());
     }
 }

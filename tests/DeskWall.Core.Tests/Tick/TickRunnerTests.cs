@@ -126,4 +126,48 @@ public class TickRunnerTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => runner.RunAsync(force: false, apply: false, default));
         Assert.Equal(before, Surface.LiveCount);   // the previous-frame surface LoadRaw produced must not leak
     }
+
+    /// <summary>
+    /// Text paint bounds are measured, so a component can be owed a redraw for a reason its content
+    /// key cannot see - the same string in the same style measuring differently because the font
+    /// behind it changed, or the first tick after an upgrade that changed how bounds are derived.
+    /// TickRunner defends against that by comparing the measured bounds with the ones it persisted,
+    /// and the persisted rects are what the next tick restores the base over, so a stale pair means
+    /// residue. Simulated here by editing the persisted rect directly: nothing else about the tick
+    /// has moved, so without the defence this tick would skip.
+    /// </summary>
+    [Fact]
+    public async Task A_Component_Whose_Paint_Bounds_Moved_Redraws_Even_Though_Its_Key_Did_Not()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bounds-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        var basePng = Path.Combine(dir, "base.png");
+        using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 10, 10, 10)); b.SavePng(basePng); }
+        var layout = LayoutFile.Parse($$"""
+        { "version": 1, "baseImage": {{System.Text.Json.JsonSerializer.Serialize(basePng)}}, "sources": [],
+          "components": [ { "type": "text", "id": "static", "rect": [10, 10, 100, 30], "text": "hi" } ] }
+        """);
+        var clock = new TickFakeClock(new DateTimeOffset(2026, 9, 20, 14, 32, 5, TimeSpan.Zero));
+        var monitor = new MonitorInfo(new DisplaySignature("TEST-PB", 320, 180, 100), new Rect(0, 0, 320, 180), true, "TEST-PB");
+        var statePath = Path.Combine(dir, "state.json");
+        var runner = new TickRunner(layout, [], new SourceRegistry(), clock, monitor,
+            statePath: statePath, outPath: Path.Combine(dir, "out.jpg"), framePath: Path.Combine(dir, "frame.raw"));
+
+        await runner.RunAsync(force: true, apply: false, default);
+        Assert.True((await runner.RunAsync(force: false, apply: false, default)).Skipped);   // nothing moved: skips
+
+        // Pretend the last tick recorded larger bounds than the text measures now, which is what a
+        // font change or an upgrade of this code leaves behind.
+        var state = FrameState.Load(statePath);
+        var recorded = state.RectsById["static"];
+        state.RectsById["static"] = [recorded[0], recorded[1], recorded[2] + 40, recorded[3] + 10];
+        state.Save(statePath);
+
+        var t = await runner.RunAsync(force: false, apply: false, default);
+        Assert.False(t.Skipped);
+        Assert.Equal(1, t.Redrawn);
+        // And the recorded bounds are back to the measured ones, so the tick after this one skips again.
+        Assert.Equal(recorded, FrameState.Load(statePath).RectsById["static"]);
+        Assert.True((await runner.RunAsync(force: false, apply: false, default)).Skipped);
+    }
 }

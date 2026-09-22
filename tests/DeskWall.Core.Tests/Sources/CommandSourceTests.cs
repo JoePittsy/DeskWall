@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
@@ -26,6 +26,20 @@ public class CommandSourceTests
         Assert.Equal(3, ((NumberValue)v.Get("exitCode")!).Number);
         Assert.IsType<TimeValue>(v.Get("ranAt"));
         Assert.Null(v.Get("stderr"));
+    }
+
+    /// <summary>Found building a "3 in Downloads" widget: cmd's `find /c` prints "3\r\n", and a text
+    /// component bound to `cmd.text | "{0} in Downloads"` wrapped onto two lines because the newline
+    /// was inside the value. A console program's trailing line break is how it ends its output, not
+    /// part of the value; anything else (interior lines, leading spaces) is kept as printed.</summary>
+    [Fact]
+    public async Task Text_Drops_The_Trailing_Line_Break_Only()
+    {
+        var v = await CommandSource.FromDef(Def("cmd.exe", "/c echo  two words"), new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets()).RefreshAsync(default);
+        Assert.Equal(" two words", ((TextValue)v.Get("text")!).Text);
+
+        var multi = await CommandSource.FromDef(Def("cmd.exe", "/c (echo one & echo two)"), new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets()).RefreshAsync(default);
+        Assert.Equal("one \r\ntwo", ((TextValue)multi.Get("text")!).Text);
     }
 
     /// <summary>Finding 15: a non-zero exit with nothing on stdout has no values to publish, and
@@ -77,4 +91,38 @@ public class CommandSourceTests
     [Fact]
     public void Missing_Command_Setting_Throws_On_Create()
         => Assert.Throws<ArgumentException>(() => CommandSource.FromDef(new SourceDef { Name = "c", Type = "command" }, new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets()));
+
+    /// <summary>The Downloads and Progress widgets carried an absolute
+    /// C:\Users\<me>\AppData\Local\DeskWall\scripts inside them, so the template was not
+    /// portable. `command` and `workingDir` understand `runtime:` as well as %ENV%.</summary>
+    [Fact]
+    public void Command_And_WorkingDir_Understand_The_Runtime_Prefix()
+    {
+        var src = CommandSource.FromDef(
+            Def(@"runtime:scripts\progress.ps1", "-x", ("workingDir", "runtime:scripts")),
+            new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets());
+        Assert.Equal(DeskWall.Core.Paths.InRuntime("scripts", "progress.ps1"), src.Command);
+        Assert.Equal(DeskWall.Core.Paths.InRuntime("scripts"), src.WorkingDir);
+    }
+
+    [Fact]
+    public void An_Ordinary_Command_Is_Untouched_And_Env_Still_Expands()
+    {
+        var clock = new FixedClock(DateTimeOffset.UnixEpoch);
+        Assert.Equal("cmd.exe", CommandSource.FromDef(Def("cmd.exe", "/c echo x"), clock, NoSecrets()).Command);
+        Assert.Equal("", CommandSource.FromDef(Def("cmd.exe", "/c echo x"), clock, NoSecrets()).WorkingDir);
+        var env = CommandSource.FromDef(Def(@"%SystemRoot%\System32\cmd.exe", "/c echo x", ("workingDir", "%SystemRoot%")), clock, NoSecrets());
+        Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), env.Command, ignoreCase: true);
+        Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.Windows), env.WorkingDir);
+    }
+
+    /// <summary>End to end: the process really does start in the runtime dir.</summary>
+    [Fact]
+    public async Task A_Runtime_WorkingDir_Is_Where_The_Process_Actually_Runs()
+    {
+        var v = await CommandSource.FromDef(Def("cmd.exe", "/c cd", ("workingDir", "runtime:")),
+            new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets()).RefreshAsync(default);
+        Assert.Equal(DeskWall.Core.Paths.RuntimeDir.TrimEnd('\\'),
+            ((TextValue)v.Get("text")!).Text.Trim().TrimEnd('\\'), ignoreCase: true);
+    }
 }

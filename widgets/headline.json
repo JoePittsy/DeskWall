@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Headline",
+  "description": "The latest item from an RSS or Atom feed, title only.",
+  "size": [172, 20],
+  "sources": [
+    { "name": "feed", "type": "rss", "every": 900, "settings": {
+        "url": "https://feeds.bbci.co.uk/news/rss.xml", "max": "1" } }
+  ],
+  "components": [
+    { "type": "text", "id": "headline", "rect": [0, 0, 172, 20], "z": 1,
+      "text": { "bind": "feed.items[0].title" }, "size": 13, "align": "right" }
+  ],
+  "knobs": [
+    { "id": "url", "label": "Feed URL", "type": "text", "default": "https://feeds.bbci.co.uk/news/rss.xml",
+      "sets": [ "sources.feed.settings.url" ] }
+  ]
+}

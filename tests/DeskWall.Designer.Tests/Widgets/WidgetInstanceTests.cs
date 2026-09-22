@@ -1,3 +1,4 @@
+﻿using System.IO;
 using DeskWall.Core;
 using DeskWall.Core.Layout;
 using DeskWall.Designer.Model.Widgets;
@@ -53,6 +54,25 @@ public class WidgetInstanceTests
         Sources = [new SourceDef { Name = "weather", Type = "http", Settings = new() { ["url"] = "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" } }],
         Components = [new TextDef { Id = "temp", Rect = new Rect(0, 0, 108, 52), Text = PropertyValue.Bound(DeskWall.Core.Bindings.Binding.Parse("weather.json.current.temperature_2m")) }],
         Knobs = [new Knob("town", "Town", KnobType.Town, "Leeds||53.8008||-1.5491", ["sources.weather.settings.url:{lat}", "sources.weather.settings.url:{lon}"], null, null, null)],
+    };
+
+    /// <summary>A drive widget: one knob substituting "{drive}" into two component <em>bindings</em>
+    /// rather than into two literals. Nothing shipped is shaped like this yet; the editor's Drive
+    /// knob writes exactly this.</summary>
+    private static WidgetTemplate DriveTemplate() => new()
+    {
+        Name = "Drive",
+        Key = "drive",
+        Description = "d",
+        Width = 172,
+        Height = 40,
+        Sources = [new SourceDef { Name = "disks", Type = "disks" }],
+        Components =
+        [
+            new BarDef { Id = "bar", Rect = new Rect(0, 0, 172, 6), Fraction = PropertyValue.Bound(DeskWall.Core.Bindings.Binding.Parse("disks.drives[{drive}].usedFraction")) },
+            new TextDef { Id = "free", Rect = new Rect(0, 10, 172, 20), Text = PropertyValue.Bound(DeskWall.Core.Bindings.Binding.Parse("disks.drives[{drive}].freeGB | \"{0:N0} GB\"")) },
+        ],
+        Knobs = [new Knob("drive", "Drive", KnobType.Drive, "C", ["components.bar.fraction:{drive}", "components.free.text:{drive}"], null, null, null)],
     };
 
     // ---- Add: prefixing, offset, source add, instance id -----------------------------------
@@ -272,5 +292,218 @@ public class WidgetInstanceTests
         Assert.Equal("hardware.gpuPct | \"{0}%\"", value.Text.Binding!.ToString());
         Assert.False(label.Text.IsBound);
         Assert.Equal("gpu", label.Text.LiteralText);
+    }
+
+    /// <summary>A ":{token}" knob whose target is a <em>binding</em>, not a literal. Before this
+    /// worked, ApplyTokenGroup read the template's LiteralText -- null for a bound property -- and
+    /// wrote an empty literal over the binding, so a drive-keyed widget lost both its bindings the
+    /// moment its knob was applied, which Add does for every knob's default.</summary>
+    [Fact]
+    public void SetKnob_Substitutes_Into_A_Bound_Property_And_Leaves_It_Bound()
+    {
+        var layout = NewLayout();
+        var template = DriveTemplate();
+        var id = WidgetInstance.Add(layout, template, new Rect(0, 0, 0, 0));
+
+        WidgetInstance.SetKnob(layout, template, id, "drive", "D");
+
+        var bar = (BarDef)layout.Components.Single(c => c.Id == $"{id}.bar");
+        var free = (TextDef)layout.Components.Single(c => c.Id == $"{id}.free");
+        Assert.True(bar.Fraction.IsBound);
+        Assert.Equal("disks.drives[D].usedFraction", bar.Fraction.Binding!.ToString());
+        Assert.True(free.Text.IsBound);
+        Assert.Equal("disks.drives[D].freeGB | \"{0:N0} GB\"", free.Text.Binding!.ToString());
+    }
+
+    /// <summary>And again: the substitution comes from the template, so a second edit still finds
+    /// a placeholder even though the instance no longer has one.</summary>
+    [Fact]
+    public void SetKnob_Re_Edited_Drive_Repoints_Both_Bindings()
+    {
+        var layout = NewLayout();
+        var template = DriveTemplate();
+        var id = WidgetInstance.Add(layout, template, new Rect(0, 0, 0, 0));
+
+        WidgetInstance.SetKnob(layout, template, id, "drive", "D");
+        WidgetInstance.SetKnob(layout, template, id, "drive", "E");
+
+        var bar = (BarDef)layout.Components.Single(c => c.Id == $"{id}.bar");
+        var free = (TextDef)layout.Components.Single(c => c.Id == $"{id}.free");
+        Assert.Equal("disks.drives[E].usedFraction", bar.Fraction.Binding!.ToString());
+        Assert.Equal("disks.drives[E].freeGB | \"{0:N0} GB\"", free.Text.Binding!.ToString());
+        Assert.Equal("E", layout.Widgets![id].Knobs["drive"]);
+    }
+
+    // ---- The shipped templates' own knobs -----------------------------------------------------
+    //
+    // Everything above builds its template in code, which cannot catch the one mistake a template
+    // author actually makes: a "sets" path naming a component, property or setting that is not
+    // there. Such a knob throws when it is applied (or, for a setting nothing reads, quietly does
+    // nothing), so these load widgets/*.json exactly as shipped and drive the real knobs.
+
+    private static WidgetTemplate Shipped(string key)
+        => TestRepo.Widgets().FirstOrDefault(t => t.Key == key) ?? throw new InvalidOperationException($"no shipped widget \"{key}\"");
+
+    public static TheoryData<string> ShippedKeys()
+    {
+        var data = new TheoryData<string>();
+        foreach (var t in TestRepo.Widgets()) data.Add(t.Key);
+        return data;
+    }
+
+    /// <summary>Every knob of every shipped widget re-stamps: its default (applied by Add and
+    /// again by hand) and, for a choice knob, every one of its choices. A typo in a "sets" path
+    /// throws out of SetKnob, so this is the template-wide guard.</summary>
+    [Theory]
+    [MemberData(nameof(ShippedKeys))]
+    public void Every_Shipped_Knob_Default_And_Choice_Applies(string key)
+    {
+        var t = Shipped(key);
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));   // Add applies every default
+
+        foreach (var knob in t.Knobs)
+        {
+            WidgetInstance.SetKnob(layout, t, id, knob.Id, knob.Default);
+            foreach (var choice in knob.Choices ?? []) WidgetInstance.SetKnob(layout, t, id, knob.Id, choice);
+            Assert.True(layout.Widgets![id].Knobs.ContainsKey(knob.Id));
+        }
+    }
+
+    [Fact]
+    public void Text_Widget_Knobs_Set_The_Words_The_Size_And_The_Alignment()
+    {
+        var t = Shipped("text");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+        var label = (TextDef)layout.Components.Single(c => c.Id == $"{id}.label");
+        Assert.Equal("Your text here", label.Text.LiteralText);
+        Assert.Empty(layout.Sources);   // the primitive: no source at all
+
+        WidgetInstance.SetKnob(layout, t, id, "text", "Render box");
+        WidgetInstance.SetKnob(layout, t, id, "size", "28");
+        WidgetInstance.SetKnob(layout, t, id, "align", "Left");
+
+        Assert.Equal("Render box", label.Text.LiteralText);
+        Assert.Equal("28", label.Size.LiteralText);
+        Assert.Equal("Left", label.Align.LiteralText);
+    }
+
+    [Fact]
+    public void Image_Widget_Knobs_Set_The_File_And_The_Fit()
+    {
+        var t = Shipped("image");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+        var picture = (ImageDef)layout.Components.Single(c => c.Id == $"{id}.picture");
+        // Empty by default: the renderer's missing-image plate is the "put a file here" affordance,
+        // and no path exists on every machine that would not draw the same plate anyway.
+        Assert.Equal("", picture.Source.LiteralText);
+
+        WidgetInstance.SetKnob(layout, t, id, "path", @"C:\pictures\view.png");
+        WidgetInstance.SetKnob(layout, t, id, "fit", "Cover");
+
+        Assert.Equal(@"C:\pictures\view.png", picture.Source.LiteralText);
+        Assert.Equal("Cover", picture.Fit.LiteralText);
+    }
+
+    [Theory]
+    [InlineData("Numeric (yyyy-MM-dd)||time.date", "time.date")]
+    [InlineData("Weekday only||time.weekday", "time.weekday")]
+    [InlineData("Day and month||time.now | \"d MMMM\"", "time.now | \"d MMMM\"")]
+    public void Date_Widget_Wording_Knob_Rebinds_The_Line(string choice, string expected)
+    {
+        var t = Shipped("date");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+        var date = (TextDef)layout.Components.Single(c => c.Id == $"{id}.date");
+        Assert.Equal("time.now | \"dddd d MMMM\"", date.Text.Binding!.ToString());
+
+        WidgetInstance.SetKnob(layout, t, id, "format", choice);
+
+        Assert.True(date.Text.IsBound);
+        Assert.Equal(expected, date.Text.Binding!.ToString());
+    }
+
+    [Fact]
+    public void Uptime_Widget_Binds_The_Ready_Formatted_System_Field()
+    {
+        var t = Shipped("uptime");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+        var uptime = (TextDef)layout.Components.Single(c => c.Id == $"{id}.uptime");
+        Assert.Equal("system.uptimeText | \"up {0}\"", uptime.Text.Binding!.ToString());
+        Assert.Equal("system", Assert.Single(layout.Sources).Type);
+    }
+
+    [Fact]
+    public void Command_Widget_Knobs_Set_The_Command_Its_Arguments_And_Its_Timeout()
+    {
+        var t = Shipped("command");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+
+        WidgetInstance.SetKnob(layout, t, id, "command", @"C:\tools\status.exe");
+        WidgetInstance.SetKnob(layout, t, id, "args", "--one-line");
+        WidgetInstance.SetKnob(layout, t, id, "timeout", "5");
+
+        var source = layout.Sources.Single(s => s.Name == "command");
+        Assert.Equal(@"C:\tools\status.exe", source.Settings["command"]);
+        Assert.Equal("--one-line", source.Settings["args"]);
+        Assert.Equal("5", source.Settings["timeout"]);
+        // stdout only -- layouts/README.md "Command source stderr".
+        var line = (TextDef)layout.Components.Single(c => c.Id == $"{id}.line");
+        Assert.Equal("command.text", line.Text.Binding!.ToString());
+    }
+
+    [Fact]
+    public void Headline_Widget_Url_Knob_Sets_The_Feed_And_The_Line_Is_The_First_Items_Title()
+    {
+        var t = Shipped("headline");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+        var headline = (TextDef)layout.Components.Single(c => c.Id == $"{id}.headline");
+        Assert.Equal("feed.items[0].title", headline.Text.Binding!.ToString());
+
+        WidgetInstance.SetKnob(layout, t, id, "url", "https://example.invalid/atom.xml");
+
+        var source = layout.Sources.Single(s => s.Name == "feed");
+        Assert.Equal("rss", source.Type);
+        Assert.Equal("https://example.invalid/atom.xml", source.Settings["url"]);
+    }
+
+    /// <summary>The volume widget replaces the owner's PowerShell stopgap, so it has to stand on
+    /// the `audio` source alone: no script, no file, nothing to install.</summary>
+    [Fact]
+    public void Volume_Widget_Is_A_Dial_On_The_Audio_Source_That_Turns_Red_When_Muted()
+    {
+        var t = Shipped("volume");
+        var layout = NewLayout();
+        var id = WidgetInstance.Add(layout, t, new Rect(0, 0, 0, 0));
+
+        var source = Assert.Single(layout.Sources);
+        Assert.Equal("audio", source.Type);
+        Assert.Empty(source.Settings);
+
+        var dial = (DialDef)layout.Components.Single(c => c.Id == $"{id}.dial");
+        Assert.Equal("audio.volume", dial.Fraction.Binding!.ToString());
+        // The mute colour rides the map format on an ordinary bindable property: no component
+        // knows what a bool is, and the same one expression paints the arc and both labels.
+        Assert.Equal("audio.muted | \"?true=#FFD13438,*=#EBFFFFFF\"", dial.Fill.Binding!.ToString());
+
+        var value = (TextDef)layout.Components.Single(c => c.Id == $"{id}.value");
+        Assert.Equal("audio.volumePct | \"{0}%\"", value.Text.Binding!.ToString());
+        var label = (TextDef)layout.Components.Single(c => c.Id == $"{id}.label");
+        Assert.Equal("audio.muted | \"?true=muted,*=vol\"", label.Text.Binding!.ToString());
+    }
+
+    /// <summary>A command source publishes stderr verbatim, so a CLI that fails and echoes its own
+    /// argument list back can put a substituted {secret:} on the wallpaper (layouts/README.md
+    /// "Command source stderr"). No shipped widget may bind it.</summary>
+    [Fact]
+    public void No_Shipped_Widget_Binds_A_Commands_Stderr()
+    {
+        foreach (var file in Directory.EnumerateFiles(TestRepo.WidgetsDir, "*.json"))
+            Assert.DoesNotContain(".stderr", File.ReadAllText(file), StringComparison.OrdinalIgnoreCase);
     }
 }

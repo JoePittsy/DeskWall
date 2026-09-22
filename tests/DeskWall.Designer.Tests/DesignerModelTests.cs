@@ -43,15 +43,58 @@ public class DesignerModelTests
     }
 
     [Fact]
-    public void Z_Order_And_Align()
+    public void Z_Order()
     {
         var m = Model();
         m.BringToFront("clock");
         Assert.True(m.Find("clock")!.Z > m.Find("bar")!.Z);
         m.SendToBack("clock");
         Assert.True(m.Find("clock")!.Z < m.Find("bar")!.Z);
-        m.Align(["clock", "bar"], AlignEdge.Right);
-        Assert.Equal(m.Find("clock")!.Rect.Right, m.Find("bar")!.Rect.Right);
+    }
+
+    /// <summary>The align/distribute/drag/nudge path. The offsets are Placement's answer (tested
+    /// on their own in PlacementTests); this is the half that writes them, and the thing worth
+    /// asserting here is that however many groups move, it is ONE undo entry.</summary>
+    [Fact]
+    public void MoveGroups_Writes_Every_Group_As_One_Undo_Entry()
+    {
+        var m = Model();
+        m.MoveGroups("Align right", [(["clock"], 10, 0), (["bar"], -4, 6)]);
+        Assert.Equal(new Rect(110, 100, 200, 50), m.Find("clock")!.Rect);
+        Assert.Equal(new Rect(96, 206, 200, 6), m.Find("bar")!.Rect);
+
+        m.Undo();
+        Assert.Equal(new Rect(100, 100, 200, 50), m.Find("clock")!.Rect);
+        Assert.Equal(new Rect(100, 200, 200, 6), m.Find("bar")!.Rect);
+        Assert.False(m.CanUndo);
+    }
+
+    [Fact]
+    public void MoveGroups_With_Nothing_To_Do_Is_Not_An_Edit()
+    {
+        var m = Model();
+        m.MoveGroups("Nudge", [(["clock"], 0, 0), (["bar"], 0, 0)]);
+        Assert.False(m.CanUndo);
+        Assert.False(m.Dirty);
+    }
+
+    /// <summary>A resize gesture, however many components and mouse moves it took, is one entry.
+    /// The maths itself is ResizeTests' job.</summary>
+    [Fact]
+    public void Scale_Moves_Everything_In_The_Box_As_One_Undo_Entry()
+    {
+        var m = Model();
+        var from = new Rect(100, 100, 200, 106);        // the two components' bounding box
+        m.Scale("Scale", ["clock", "bar"], from, new Rect(100, 100, 400, 212), scaleSizes: true);
+
+        Assert.Equal(new Rect(100, 100, 400, 100), m.Find("clock")!.Rect);
+        Assert.Equal(new Rect(100, 300, 400, 12), m.Find("bar")!.Rect);
+        // 16 is TextDef's default size, doubled by the doubled height.
+        Assert.Equal("32", ((TextDef)m.Find("clock")!).Size.LiteralText);
+
+        m.Undo();
+        Assert.Equal(new Rect(100, 100, 200, 50), m.Find("clock")!.Rect);
+        Assert.False(m.CanUndo);
     }
 
     [Fact]

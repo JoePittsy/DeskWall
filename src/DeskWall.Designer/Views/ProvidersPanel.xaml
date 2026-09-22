@@ -1,0 +1,37 @@
+<UserControl x:Class="DeskWall.Designer.Views.ProvidersPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DockPanel Margin="16,8,16,12">
+    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
+      <TextBlock DockPanel.Dock="Left" Text="Pushed" FontSize="12" FontWeight="SemiBold"
+                 VerticalAlignment="Center"
+                 ToolTip="Values another program sends DeskWall. Nothing to declare: bind to one and it appears."
+                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+      <Button x:Name="ForgetButton" DockPanel.Dock="Right" Content="Forget" Click="Forget_Click"
+              Padding="8,2" FontSize="11" Margin="4,0,0,0" IsEnabled="False"
+              ToolTip="Stop remembering what this provider last sent" />
+      <Button x:Name="DescribeButton" DockPanel.Dock="Right" Content="Describe" Click="Describe_Click"
+              Padding="8,2" FontSize="11" IsEnabled="False"
+              ToolTip="Write a manifest seeded from what it has sent, so you can name its fields" />
+    </DockPanel>
+
+    <TextBlock x:Name="EmptyNote" DockPanel.Dock="Top" FontSize="11" TextWrapping="Wrap"
+               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+               Text="Nothing has been pushed yet. Write one JSON line to \\.\pipe\DeskWall.Events and it shows up here." />
+
+    <ComboBox x:Name="Chooser" DockPanel.Dock="Top" Margin="0,0,0,6"
+              SelectionChanged="Chooser_SelectionChanged" Visibility="Collapsed" />
+
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="True">
+      <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send" Click="Send_Click"
+              Padding="8,2" FontSize="11" Margin="4,0,0,0"
+              ToolTip="Publish this into the designer only, to design against an event that has not happened yet" />
+      <TextBox x:Name="TestJson" FontSize="11" FontFamily="Consolas, Cascadia Mono, monospace" />
+    </DockPanel>
+
+    <ListBox x:Name="Fields" BorderThickness="1" MinHeight="60"
+             HorizontalContentAlignment="Stretch"
+             MouseDoubleClick="Fields_DoubleClick"
+             ToolTip="Double-click a row to copy its binding path" />
+  </DockPanel>
+</UserControl>

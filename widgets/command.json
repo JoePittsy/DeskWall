@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "Command output",
+  "description": "Runs a command of your own and draws what it prints.",
+  "size": [172, 20],
+  "requires": "Needs a command that prints to stdout; keep secrets out of its arguments (layouts/README.md \"Command source stderr\")",
+  "sources": [
+    { "name": "command", "type": "command", "every": 300, "settings": {
+        "command": "cmd.exe", "args": "/c echo Hello from DeskWall", "parse": "text", "timeout": "10" } }
+  ],
+  "components": [
+    { "type": "text", "id": "line", "rect": [0, 0, 172, 20], "z": 1,
+      "text": { "bind": "command.text" }, "size": 13, "align": "right" }
+  ],
+  "knobs": [
+    { "id": "command", "label": "Command", "type": "text", "default": "cmd.exe",
+      "sets": [ "sources.command.settings.command" ] },
+    { "id": "args", "label": "Arguments", "type": "text", "default": "/c echo Hello from DeskWall",
+      "sets": [ "sources.command.settings.args" ] },
+    { "id": "timeout", "label": "Timeout (s)", "type": "number", "default": "10", "min": 1, "max": 60,
+      "sets": [ "sources.command.settings.timeout" ] }
+  ]
+}
