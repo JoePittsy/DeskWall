@@ -62,8 +62,8 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   shape list is `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`.
 - **The installed build is self-contained JIT, not AOT.** `%LOCALAPPDATA%\Programs\DeskWall\`
   (the HKCU Run entry's `deskwall.exe run`) holds both executables in one folder; the designer is
-  WPF and cannot be AOT, and a machine without the MSVC linker (JOES-XPS-17) cannot publish an AOT
-  daemon either. Update it with `scripts/publish.ps1` (`-Aot` where the linker exists), never by
+  WPF and cannot be AOT, and a machine without the MSVC linker cannot publish an AOT daemon either
+  (both JOES-PC and JOES-XPS-17 have it since 2026-09-28, so pass `-Aot` on both). Update it with `scripts/publish.ps1` (`-Aot` where the linker exists), never by
   hand: it carries the merge rule (designer's `WindowsBase.dll`, daemon's EventLog pair), stops the
   daemon with `deskwall stop`, and restarts it. Exercise it with a scratch `-InstallDir` and
   `-Home`, not the real install.
