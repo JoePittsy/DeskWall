@@ -12,6 +12,9 @@
          The designer is a desktop editor, not the daemon, so it carries the globalization data. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The same mark the daemon uses. WPF falls back to the exe's icon for the window and the
+         taskbar button, so this is all the designer needs. -->
+    <ApplicationIcon>..\..\assets\deskwall.ico</ApplicationIcon>
     <!-- ThemeMode (the Fluent theme) is still marked experimental in .NET 10. It is the whole point
          of this window's look, so the diagnostic is answered once, here. -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>

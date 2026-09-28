@@ -8,8 +8,8 @@
   ],
   "components": [
     { "type": "dial", "id": "dial", "rect": [0, 0, 80, 80], "z": 1, "fraction": { "bind": "hardware.cpu" }, "threshold": 0.9 },
-    { "type": "text", "id": "value", "rect": [0, 26, 80, 28], "z": 2, "text": { "bind": "hardware.cpuPct | \"{0}%\"" }, "size": 18, "align": "center", "effect": "none" },
-    { "type": "text", "id": "label", "rect": [0, 62, 80, 16], "z": 2, "text": "cpu", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none" }
+    { "type": "text", "id": "value", "rect": [0, 26, 80, 28], "z": 2, "text": { "bind": "hardware.cpuPct | \"{0}%\"" }, "size": 18, "align": "center", "effect": "none", "effectRadius": 6 },
+    { "type": "text", "id": "label", "rect": [0, 62, 80, 16], "z": 2, "text": "cpu", "size": 11, "align": "center", "color": "#A0FFFFFF", "effect": "none", "effectRadius": 6 }
   ],
   "knobs": [
     { "id": "metric", "label": "Metric", "type": "choice",

@@ -10,7 +10,7 @@
   ],
   "components": [
     { "type": "text", "id": "vpn", "rect": [0, 0, 172, 20], "z": 1,
-      "text": { "bind": "tailscale.json.BackendState | \"VPN {0}\"" }, "size": 13, "align": "right" }
+      "text": { "bind": "tailscale.json.BackendState | \"VPN {0}\"" }, "size": 13, "align": "right", "effectRadius": 6 }
   ],
   "knobs": []
 }

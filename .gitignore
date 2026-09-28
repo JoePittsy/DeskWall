@@ -15,4 +15,6 @@ poc/*.png
 poc/*.ico
 .superpowers/
 .scratch/
+# a throwaway DESKWALL_HOME for a live check, made in a worktree and never committed
+.scratch-home/
 .claude/

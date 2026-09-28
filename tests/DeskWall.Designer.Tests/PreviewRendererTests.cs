@@ -97,6 +97,28 @@ public class PreviewRendererTests
         Assert.Equal(new Rect(40, 120, 200, 8), frame.Resolved.Single(c => c.Id == "bar").Rect);
     }
 
+    /// <summary>The widget editor's canvas: no photograph on purpose, so no error plate either.</summary>
+    [Fact]
+    public void No_Base_Image_Renders_On_Flat_Grey_Without_An_Error()
+    {
+        using var r = new PreviewRenderer(() => ValueTree.Empty);
+        PreviewFrame? frame = null;
+        var done = new ManualResetEventSlim();
+        r.Rendered += f => { frame = f; done.Set(); };
+
+        r.Request(Model(""));
+
+        Assert.True(done.Wait(10_000), "no frame arrived");
+        Assert.NotNull(frame);
+        Assert.Equal(2, frame!.Resolved.Count);
+        // The flat fill is (32, 32, 32) everywhere the two components are not; an error plate is
+        // drawn at (32, 32) in a strong red, so its absence is the thing being asserted.
+        var i = ((10 * 320) + 300) * 4;
+        Assert.Equal(32, frame.Bgra[i]);
+        Assert.Equal(32, frame.Bgra[i + 1]);
+        Assert.Equal(32, frame.Bgra[i + 2]);
+    }
+
     [Fact]
     public void A_Bad_Base_Image_Still_Produces_A_Frame_And_A_Hit_Map()
     {

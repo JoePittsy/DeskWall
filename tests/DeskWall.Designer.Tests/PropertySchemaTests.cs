@@ -63,6 +63,43 @@ public class PropertySchemaTests
         Assert.Equal(3, def.Slot);
     }
 
+    // ---- "a number, or let the renderer decide" --------------------------------------------------
+
+    /// <summary>The two properties Core lets you leave to it: a text shadow's radius follows the
+    /// font size, a repeater cell's height follows its first image. Both are the string "auto" in
+    /// the JSON, so both need the editor that does not show the owner that word.</summary>
+    [Theory]
+    [InlineData("EffectRadius")]
+    [InlineData("CellHeight")]
+    public void The_Auto_Capable_Sizes_Get_The_Auto_Number_Editor(string name)
+    {
+        ComponentDef def = name == "EffectRadius"
+            ? new TextDef { Id = "t", Rect = R, Text = PropertyValue.Literal("x") }
+            : new RepeaterDef { Id = "r", Rect = R, Items = PropertyValue.Literal(""), Template = [] };
+        Assert.Equal(PropertySchema.Editor.AutoNumber, PropertySchema.For(def).Single(p => p.Name == name).Editor);
+    }
+
+    [Fact]
+    public void An_Auto_Value_Shows_As_An_Empty_Box_And_A_Number_Shows_Itself()
+    {
+        Assert.Equal("", PropertySchema.AutoNumberText(PropertyValue.Literal("auto")));
+        Assert.Equal("", PropertySchema.AutoNumberText(PropertyValue.Literal("AUTO")));
+        Assert.Equal("6", PropertySchema.AutoNumberText(PropertyValue.Literal(6)));
+        // A bound value is shown by the bound display, not by this box.
+        Assert.Equal("", PropertySchema.AutoNumberText(PropertyValue.Bound(Binding.Parse("cfg.radius"))));
+    }
+
+    [Theory]
+    [InlineData("", "6", "auto")]            // cleared: hand it back to the renderer
+    [InlineData("   ", "6", "auto")]
+    [InlineData("auto", "6", "auto")]        // typed out in full, same answer
+    [InlineData("12", "auto", "12")]
+    [InlineData("0.5", "auto", "0.5")]
+    [InlineData("12px", "6", "6")]           // a typo keeps what was there
+    [InlineData("nonsense", "auto", "auto")]
+    public void What_Is_Typed_Into_An_Auto_Number_Box_Becomes(string typed, string current, string expected)
+        => Assert.Equal(expected, PropertySchema.AutoNumberLiteral(typed, current));
+
     [Fact]
     public void Geometry_Sets_Rect_Fields()
     {

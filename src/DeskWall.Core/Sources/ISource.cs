@@ -1,4 +1,4 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
@@ -25,6 +25,32 @@ public interface ISource
 
     /// <summary>Produce the current values. Throwing marks the source failed (spec 3.2).</summary>
     ValueTask<RecordValue> RefreshAsync(CancellationToken ct);
+}
+
+/// <summary>A source that knows when it has something new, rather than waiting to be asked.
+/// <para>One event for what used to be four bespoke wakes: an async fetch landing after its tick
+/// gave up, an image arriving, a watched file changing, a streaming command printing a line. The
+/// host attaches <see cref="Events.SourceSignals"/> to every one of these, the bus coalesces, and
+/// the whole lot costs one repaint.</para>
+/// <para>Raising <see cref="Changed"/> is a claim that the source is due, so an implementation's
+/// <see cref="ISource.NextDue"/> must answer <c>now</c> while it holds something unharvested. The
+/// wake is not forced: the tick still asks the scheduler which sources to refresh, and a source
+/// that signals but says it is not due wakes the machine for nothing.</para>
+/// <para>Changed is raised on whatever thread noticed - a pool thread, a watcher thread, a reader
+/// thread - so a handler must be thread safe and must not block.</para></summary>
+public interface ISignalSource
+{
+    event Action<ISource>? Changed;
+
+    /// <summary>True while the source is holding something no refresh has published yet.
+    /// <para>The scheduler asks, because a failing source is otherwise scheduled from its back-off
+    /// and its own NextDue is ignored (finding 1, which must stay true). A push saying "due now" is
+    /// not a request to retry a failure, it is a statement that the answer is already in hand, and
+    /// without this a volume change or a file save is swallowed for the whole back-off.</para>
+    /// <para>Every implementation must clear it when a refresh is <em>attempted</em>, not when one
+    /// succeeds. That is what stops a source that keeps failing being due forever and pinning the
+    /// daemon at <see cref="Scheduling.Scheduler.MinDelay"/>: one signal buys one attempt.</para></summary>
+    bool HasPending { get; }
 }
 
 /// <summary>Helper for the common "every N" schedule.</summary>

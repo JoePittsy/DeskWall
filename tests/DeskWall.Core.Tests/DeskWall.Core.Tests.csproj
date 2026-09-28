@@ -15,6 +15,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeskWall.Core\DeskWall.Core.csproj" />
+    <!-- The pipe server lives in the daemon, because two processes cannot own one pipe name, and
+         there is no daemon test project; referencing the exe is how its host types get tested. -->
+    <ProjectReference Include="..\..\src\DeskWall.Daemon\DeskWall.Daemon.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Golden PNGs, the checked-in cover image and the layout JSONs the golden-image tests

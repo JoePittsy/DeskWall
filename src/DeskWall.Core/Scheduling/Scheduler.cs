@@ -1,4 +1,4 @@
-using DeskWall.Core.Sources;
+﻿using DeskWall.Core.Sources;
 
 namespace DeskWall.Core.Scheduling;
 
@@ -17,6 +17,11 @@ public sealed class Scheduler(IReadOnlyList<ISource> sources, SourceRegistry reg
     public static DateTimeOffset DueAt(ISource source, SourceSnapshot snapshot, DateTimeOffset now)
     {
         if (snapshot.ConsecutiveFailures == 0) return source.NextDue(snapshot.LastRefresh, now);
+        // A push that has already happened is not a retry. Holding it back for the whole back-off
+        // swallowed a volume change and a file save outright, which is what the push work found.
+        // Safe against finding 1 because the flag is cleared by the attempt, not by success: one
+        // signal buys one refresh, and a source that keeps failing is straight back on the delay.
+        if (source is ISignalSource { HasPending: true }) return now;
         var anchor = snapshot.LastAttempt ?? snapshot.LastRefresh;
         return anchor is null ? now : anchor.Value + BackOff(source.Interval(now), snapshot.ConsecutiveFailures);
     }

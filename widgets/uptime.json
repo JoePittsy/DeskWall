@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "Uptime",
+  "description": "How long Windows has been up, as days and hours.",
+  "size": [172, 20],
+  "sources": [
+    { "name": "system", "type": "system" }
+  ],
+  "components": [
+    { "type": "text", "id": "uptime", "rect": [0, 0, 172, 20], "z": 1,
+      "text": { "bind": "system.uptimeText | \"up {0}\"" }, "size": 13, "align": "right" }
+  ],
+  "knobs": []
+}

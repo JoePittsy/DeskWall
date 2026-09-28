@@ -21,7 +21,8 @@ public static class WidgetCatalog
             foreach (var file in Directory.EnumerateFiles(dir, "*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 var template = WidgetTemplate.Load(file);
-                if (!byKey.ContainsKey(template.Key)) order.Add(template.Key);
+                if (byKey.ContainsKey(template.Key)) template.OverridesShipped = true;
+                else order.Add(template.Key);
                 byKey[template.Key] = template;
             }
         }
@@ -33,4 +34,17 @@ public static class WidgetCatalog
 
     /// <summary>A user's own templates, read after the shipped ones so they can override a key.</summary>
     public static string UserDir => Paths.InRuntime("widgets");
+
+    /// <summary>Whether this template is one of the owner's own files rather than one that ships
+    /// beside the exe. Only his own may be edited in place or deleted; a shipped one is duplicated
+    /// into <see cref="UserDir"/> first. Decided by the folder the file came from, not by the key,
+    /// because a user file may deliberately override a shipped key.</summary>
+    public static bool IsUserTemplate(WidgetTemplate template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        if (template.Path is null) return false;
+        var dir = Path.GetDirectoryName(Path.GetFullPath(template.Path));
+        return dir is not null && string.Equals(dir.TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(UserDir).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+    }
 }

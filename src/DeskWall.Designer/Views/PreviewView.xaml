@@ -4,15 +4,33 @@
              Focusable="True"
              FocusVisualStyle="{x:Null}"
              Background="Transparent">
-  <Grid>
-    <!-- The surface is added as this border's child in code: it draws the frame, the column and the
-         selection, and nothing about it is worth expressing as a visual tree. -->
+  <Grid x:Name="Root">
+    <!-- The surface is added as this border's child in code: it draws the frame, the grid, the
+         selection and its grips, and nothing about it is worth expressing as a visual tree. The
+         align strip is added to this Grid in code too, because it exists only some of the time. -->
     <Border x:Name="Host" ClipToBounds="True" Background="Transparent" />
 
-    <!-- One control over the preview, bottom right, because "show me the column full size" is the
-         only thing anyone wants to do to a picture of a wallpaper. -->
-    <Button x:Name="ZoomToggle" Content="Column at 1:1"
-            HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16"
-            Padding="12,6" Click="ZoomToggle_Click" />
+    <!-- The canvas's own settings, in one strip so they read as chrome rather than as part of the
+         wallpaper: whether the grid is drawn, what it (and Shift-snapping) steps by, and whether
+         the wallpaper is fitted to the pane or shown at its real size. The spacing is here even
+         when the grid is not drawn, because snapping uses it either way. -->
+    <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16"
+            CornerRadius="6" Padding="4" BorderThickness="1"
+            Background="{DynamicResource SolidBackgroundFillColorBaseAltBrush}"
+            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+      <StackPanel Orientation="Horizontal">
+        <ToggleButton x:Name="GridToggle" Content="Grid" Click="GridToggle_Click"
+                      ToolTip="Draw the grid over the wallpaper"
+                      AutomationProperties.Name="Draw the grid"
+                      MinWidth="52" Height="28" Padding="8,0" />
+        <ComboBox x:Name="GridSpacing" SelectionChanged="GridSpacing_Changed"
+                  Width="76" Height="28" Margin="4,0,0,0"
+                  ToolTip="Grid spacing. Hold Shift while dragging to snap to it."
+                  AutomationProperties.Name="Grid spacing" />
+        <Button x:Name="ZoomToggle" Content="100%" Click="ZoomToggle_Click"
+                ToolTip="Show the wallpaper at its real size"
+                MinWidth="56" Height="28" Margin="4,0,0,0" Padding="8,0" />
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>

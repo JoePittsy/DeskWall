@@ -16,7 +16,11 @@ public sealed class WidgetRecord
     /// re-applied without recomputing anything.</summary>
     public Dictionary<string, string> Knobs { get; set; } = new();
 
-    /// <summary>True exempts this instance from <c>Arranger.Arrange</c>: its rect is free-placed
-    /// and the arranger never moves it.</summary>
+    /// <summary>Retained for backwards compatibility and ignored by the designer. It used to
+    /// exempt an instance from the designer's fixed right-hand column (<c>Arranger.Arrange</c>,
+    /// which still honours it and still generates the starter layouts). The designer's canvas has
+    /// no column any more - every widget is free-placed - so nothing sets or reads this any more;
+    /// it stays a property only so a layout written with <c>"unlocked": true/false</c> in it still
+    /// parses.</summary>
     public bool Unlocked { get; set; }
 }

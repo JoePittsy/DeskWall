@@ -42,6 +42,14 @@ public sealed class FrameRenderer(int width, int height)
     /// frame. Paint bounds, not rects: text paints its shadow outside its rect and the clip in
     /// <see cref="Surface.DrawText"/> is set to exactly the same bounds.
     /// </para>
+    /// <para>
+    /// The old-bounds pass is not belt and braces. Text paint bounds are measured
+    /// (<see cref="TextMeasure"/>), so they are content-dependent: "100%" becoming "9%" makes them
+    /// narrower without the component moving at all. Dirtying only the new, smaller bounds would
+    /// never restore the base under what the longer string painted, and the leftover glyphs would
+    /// stay on the wallpaper until the next forced tick. Both bounds go in the dirty set, so the
+    /// area restored is always the union.
+    /// </para>
     /// </summary>
     /// <param name="drawn">Finding 13: how many components were actually painted, which is not the
     /// number of changed ids - a dirty rect drags every component that overlaps it back onto the

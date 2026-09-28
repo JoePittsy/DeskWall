@@ -87,15 +87,56 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   console desktop are impossible from that session.
 - **Content keys must quantise noisy values.** Disk free space wobbles below a pixel between
   reads; `ResolvedBar` keys the fraction at 0.1 percent or the skip path never fires.
-- **Text paints outside its rect** (shadow ring, descenders). Incremental redraw uses
-  `Resolved.PaintBounds`, not `Rect`, and `Surface.DrawText` clips to the same margin
-  (`TextStyle.PaintMargin`). Keep those two in step.
+- **Text paints outside its rect** (shadow ring, descenders, a trailing-aligned run wider than its
+  box). Both the clip `Surface.DrawText` pushes and `ResolvedText.PaintBounds` are the *same call*
+  into `Render/TextMeasure.cs` -- measured glyph ink inflated by `TextStyle.PaintMargin` (the effect
+  ring only) -- so they cannot drift apart. Do not reintroduce a second derivation of either. The
+  measurement is cached on (text, font, size, weight, align, box), deliberately not on colour.
+- **`PaintBounds` is content-dependent and shrinks.** `"100%"` -> `"9%"` makes it smaller, so a
+  changed component's dirty area is the union of its previous and current bounds --
+  `FrameRenderer.RenderIncremental` adds `previousRects` for exactly this reason, and that line is
+  load-bearing, not defensive. `TickRunner` also redraws a component whose measured bounds moved
+  even when its content key did not, which is what catches a font being installed or updated.
+- **`effectRadius` defaults to `"auto"`** = `max(1, round(size * 0.10))`. A fixed radius is wrong at
+  both ends: 6 px is a drop shadow on a 64 px clock and a dark crust that closes the counters on a
+  13 px label. An explicit number still wins, and `"auto"` must never be scaled by `LayoutScaler`
+  or the factor lands twice -- once on the radius, once on the `size` it derives from.
+- **Downscaled bitmaps need `HIGH_QUALITY_CUBIC`, not `CUBIC`.** Measured against a bicubic
+  reference on a 96->56 icon, mean error per channel: bilinear 0.71, plain `CUBIC` **1.06** (its 4x4
+  kernel rings at this ratio), `HIGH_QUALITY_CUBIC` 0.20. `BaseCache` is the deliberate exception
+  and passes `Resample.Fast`: the base photo is only a ~1.12x downscale, and the good filter costs
+  +163 ms of cold start (draw 236 -> 399 ms) against a 500 ms budget.
 - **The previous frame is never held in memory** by the daemon: it is 20 MB at 3440x1440 against
   a 10 MB budget. `frame.raw` is one read per tick.
 - **POC and v1 both name desktop slots with non-breaking spaces.** They must not both own the
   same slot; v1's starter layouts claim slot 8 upward so they never collide with the POC's
   0..3. See the POC section below for the commands to disable/re-enable the POC task when a live
   check genuinely needs it isolated.
+- **The single-instance lock is per runtime dir, not per session.** `Local\DeskWall.Daemon` for
+  the default home (so the installed daemon and a bare `deskwall run` behave exactly as before)
+  and `Local\DeskWall.Daemon.<hash>` for any `--home`. That is what lets a scratch daemon, and
+  the budget tests, run beside the owner's live one -- before this they silently collapsed into
+  "already running; asked it to refresh" and measured nothing.
+- **Two daemons can share one pipe name.** Windows lets a second process create another instance
+  of an existing named pipe when the ACL allows it, so two daemons on two homes both listen on
+  `DeskWall.Events` and a producer's connection lands on whichever is next. Only reachable with a
+  deliberate second `--home`, but do not assume a scratch daemon is the one that got your event.
+- **A named-pipe client can beat `ConnectNamedPipe` and its data is not lost, only unreadable.**
+  An instance is connectable the moment `CreateNamedPipe` returns; a producer that connects,
+  writes and disconnects before the server asks for a connection makes the connect fail with
+  ERROR_NO_DATA ("the pipe is being closed"). Measured: one or two lines lost in every 20
+  connect-write-disconnect sends. The bytes are still in the instance's buffer, and the way to
+  reach them is to wrap the handle in a second `NamedPipeServerStream` with `isConnected: true`
+  -- which is only legal on a **non-overlapped** handle, because an asynchronous one is already
+  bound to the completion port and binding it twice throws. That is why `EventPipeServer` is
+  synchronous with its own thread. Pre-arming more instances does not fix it; Windows will hand
+  a client to a listening-but-not-yet-connected instance.
+- **Providers cross into `SourceRegistry` on the tick thread only.** The registry is not
+  synchronised; `EventBus` is. `DaemonLoop.SyncProviders` is the one crossing point, called just
+  before the resolve. Never call `SetProvider` from the pipe thread or a bus callback.
+- **`deskwall run` always paints the real wallpaper** -- there is no `--no-apply` for it, only for
+  `tick`. A scratch `run` therefore takes the desktop over until the live daemon's next
+  content change (the clock, so within a minute). Budget-style checks restore it explicitly.
 
 ## Verifying a v1 change
 
@@ -215,8 +256,10 @@ Enable-ScheduledTask -TaskName "DeskWall Tick"
 - Playnite last-played not importing from Steam (see above). Check Add-ons > Steam for an
   authentication prompt. Moot for v1's Steam-`http`-source path; still relevant if/when a
   Playnite-backed `file` source recipe is built (see "Widget ideas" below).
-- Text over the photo has only a 1 px shadow; legibility on bright areas is marginal. (v1's
-  default text style is the same 6 px shadow blur; not yet reassessed.)
+- Text over the photo has only a 1 px shadow; legibility on bright areas is marginal. (Reassessed
+  for v1 on 2026-09-21 and fixed there: the cause was a *fixed* 6 px blur applied at every font
+  size, which on a 13 px label is a crust rather than a shadow. v1's radius is now proportional --
+  see "v1 gotchas". The POC keeps its 1 px shadow.)
 - Steam VDF is regex-parsed; a nested block before `LastPlayed` would break it.
 - The 37 pre-existing desktop icons (game .url files, tool shortcuts) were catalogued but
   **not** deleted; owner was going to. Public-desktop ones need admin.

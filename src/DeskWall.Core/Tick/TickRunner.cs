@@ -66,7 +66,7 @@ public sealed class TickRunner(
         var resolved = MapRemoteImages(LayoutResolver.Resolve(layout, registry.Tree(sources, now), images is null ? null : images.Lookup));
         LastShortcuts = resolved.OfType<ResolvedShortcut>().ToList();
         var state = FrameState.Load(_statePath);
-        var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey).ToList();
+        var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey || PaintBoundsMoved(state, c)).ToList();
         var liveIds = resolved.Select(c => c.Id).ToHashSet();
         var removed = state.KeysById.Keys.Any(id => !liveIds.Contains(id));
         // Finding 12: BaseCache.KeyFor only stats the file (no decode), so this stays cheap enough
@@ -160,6 +160,30 @@ public sealed class TickRunner(
         t.TotalMs = sw.ElapsedMilliseconds;
         t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
         return t;
+    }
+
+    /// <summary>
+    /// True when this component's paint bounds are not the ones persisted for it last tick, which
+    /// makes it dirty however unchanged its content key is.
+    /// <para>
+    /// Text paint bounds are measured (<see cref="TextMeasure"/>), so unlike every other
+    /// component's they depend on the string and can shrink. The content key covers the text, the
+    /// style and the rect, so in normal running a measurement cannot move without the key moving
+    /// too, and this test never fires. It exists for the cases where that reasoning does not hold:
+    /// a font installed, removed or updated under a layout that names it, so the same string in the
+    /// same style measures differently; and the first tick after an upgrade that changes how bounds
+    /// are derived, where the persisted rects are the old shape and everything must repaint once to
+    /// replace them. Getting this wrong leaves residue on the wallpaper until the next forced tick,
+    /// which on the owner's layout can be a very long time.
+    /// </para>
+    /// <para>Cheap: for everything but text PaintBounds is just Rect, and for text it is a lookup in
+    /// the measurement cache.</para>
+    /// </summary>
+    private static bool PaintBoundsMoved(FrameState state, Resolved c)
+    {
+        if (!state.RectsById.TryGetValue(c.Id, out var r)) return false;   // never drawn: the key test already has it
+        var b = c.PaintBounds;
+        return r.Length != 4 || r[0] != b.X || r[1] != b.Y || r[2] != b.W || r[3] != b.H;
     }
 
     /// <summary>Stage 6: make the desktop icons match <see cref="LastShortcuts"/>. Skipped unless the

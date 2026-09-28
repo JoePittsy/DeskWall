@@ -27,7 +27,10 @@ public static class BaseCache
         using var src = Surface.Load(imagePath);
         using var dst = Surface.Create(w, h);
         dst.Clear(new Color(255, 0, 0, 0));
-        dst.DrawSurface(src, new Rect(0, 0, w, h), fit);
+        // Resample.Fast: the base is a mild downscale of a very large image, and the
+        // high-quality filter measured +163 ms here against a 500 ms cold-start budget for no
+        // visible gain at that ratio. See Resample.
+        dst.DrawSurface(src, new Rect(0, 0, w, h), fit, resample: Resample.Fast);
         dst.SaveRaw(path);
         // Keep the cache dir tidy: drop other .raw files older than a day. Best-effort - a file
         // locked by a concurrent tick or the Phase 5 designer must not fail a tick that has

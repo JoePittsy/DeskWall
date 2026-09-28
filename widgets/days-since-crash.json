@@ -8,7 +8,7 @@
   ],
   "components": [
     { "type": "text", "id": "crash", "rect": [0, 0, 172, 20], "z": 1,
-      "text": { "bind": "system.daysSinceCrash | \"{0}d since crash\"" }, "size": 13, "align": "right" }
+      "text": { "bind": "system.daysSinceCrash | \"{0}d since crash\"" }, "size": 13, "align": "right", "effectRadius": 6 }
   ],
   "knobs": []
 }

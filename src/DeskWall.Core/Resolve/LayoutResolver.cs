@@ -1,4 +1,4 @@
-using DeskWall.Core.Bindings;
+﻿using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Values;
@@ -46,12 +46,14 @@ public static class LayoutResolver
                     Color: PropertyReader.Color(t.Color, scope) ?? Color.White,
                     Align: PropertyReader.Enum<Align>(t.Align, scope) ?? Align.Left,
                     Effect: PropertyReader.Enum<TextEffect>(t.Effect, scope) ?? TextEffect.Shadow,
-                    EffectRadius: (float)(PropertyReader.Number(t.EffectRadius, scope) ?? 6),
+                    // Null, not a constant: an unreadable or "auto" radius leaves TextStyle to derive
+                    // one from the size it was given, so the proportional default follows the font.
+                    EffectRadius: (float?)PropertyReader.Number(t.EffectRadius, scope),
                     EffectColor: PropertyReader.Color(t.EffectColor, scope) ?? new Color(160, 0, 0, 0))));
                 break;
 
             case ImageDef i:
-                result.Add(new ResolvedImage(id, rect, def.Z, ExpandRuntime(PropertyReader.Text(i.Source, scope) ?? ""),
+                result.Add(new ResolvedImage(id, rect, def.Z, Paths.ExpandRuntime(PropertyReader.Text(i.Source, scope) ?? ""),
                     PropertyReader.Enum<Fit>(i.Fit, scope) ?? Fit.Cover,
                     (float)(PropertyReader.Number(i.Radius, scope) ?? 0),
                     (float)(PropertyReader.Number(i.Opacity, scope) ?? 1)));
@@ -111,17 +113,6 @@ public static class LayoutResolver
         }
     }
 
-    /// <summary>"runtime:assets/weather/61.png" -> %LOCALAPPDATA%\DeskWall\assets\weather\61.png. Lets a
-    /// committed starter name a per-user file without a per-user absolute path. Braces are not used
-    /// for the token because a composite format string would swallow them.</summary>
-    private static string ExpandRuntime(string source)
-    {
-        const string prefix = "runtime:";
-        if (!source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return source;
-        var rest = source[prefix.Length..].Replace('/', '\\').TrimStart('\\');
-        return Paths.InRuntime(rest.Split('\\', StringSplitOptions.RemoveEmptyEntries));
-    }
-
     private static bool IsAuto(PropertyValue p) => !p.IsBound && string.Equals(p.LiteralText, "auto", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -152,7 +143,7 @@ public static class LayoutResolver
         // Expand before the remote check and File.Exists, exactly as the ImageDef case does: a
         // "runtime:" source measured as written never exists, and every cover silently fell back
         // to the 2:3 placeholder.
-        var path = PropertyReader.Text(img.Source, item) is { } src ? ExpandRuntime(src) : null;
+        var path = PropertyReader.Text(img.Source, item) is { } src ? Paths.ExpandRuntime(src) : null;
         if (path is not null && RemoteImageCache.IsRemote(path)) path = remote?.Invoke(path);
         if (path is null || !File.Exists(path))
             return vertical ? (int)Math.Round(img.Rect.W * 1.5) : (int)Math.Round(img.Rect.H / 1.5);   // 2:3 placeholder, as the POC did

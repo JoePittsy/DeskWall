@@ -151,7 +151,10 @@ public sealed class PreviewRenderer : IDisposable
         }
 
         string? baseRaw = null;
-        if (layout is not null && error is null)
+        // No base image at all is not a fault: a widget document has none on purpose, and it draws
+        // on the same flat grey a broken one falls back to. Only a path that was given and did not
+        // work is worth a message painted over the canvas, once per render.
+        if (layout is not null && error is null && layout.BaseImage.Length > 0)
         {
             try { baseRaw = BaseCache.Ensure(layout.BaseImage, w, h, layout.BaseFit); }
             catch (Exception ex) { error = Describe("base image", ex); }

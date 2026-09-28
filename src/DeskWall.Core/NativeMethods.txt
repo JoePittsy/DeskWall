@@ -5,6 +5,8 @@ CoTaskMemFree
 D2D1CreateFactory
 ID2D1Factory
 ID2D1RenderTarget
+ID2D1DeviceContext
+D2D1_INTERPOLATION_MODE
 ID2D1SolidColorBrush
 ID2D1Brush
 ID2D1Bitmap
@@ -43,6 +45,7 @@ IDWriteFactory
 IDWriteTextFormat
 IDWriteTextLayout
 DWRITE_TEXT_METRICS
+DWRITE_OVERHANG_METRICS
 DWRITE_FACTORY_TYPE
 DWRITE_FONT_WEIGHT
 DWRITE_FONT_STYLE
@@ -136,3 +139,17 @@ GetSystemTimes
 GlobalMemoryStatusEx
 MEMORYSTATUSEX
 FILETIME
+IMMDeviceEnumerator
+MMDeviceEnumerator
+IMMDevice
+IAudioEndpointVolume
+IAudioEndpointVolumeCallback
+AUDIO_VOLUME_NOTIFICATION_DATA
+EDataFlow
+ERole
+IPropertyStore
+PROPERTYKEY
+PROPVARIANT
+PropVariantClear
+PKEY_Device_FriendlyName
+CLSCTX

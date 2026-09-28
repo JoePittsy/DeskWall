@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Text",
+  "description": "A line of your own words: a label, a note, a name for the machine.",
+  "size": [172, 24],
+  "sources": [],
+  "components": [
+    { "type": "text", "id": "label", "rect": [0, 0, 172, 24], "z": 1,
+      "text": "Your text here", "size": 16, "align": "right" }
+  ],
+  "knobs": [
+    { "id": "text", "label": "Text", "type": "text", "default": "Your text here",
+      "sets": [ "components.label.text" ] },
+    { "id": "size", "label": "Size", "type": "number", "default": "16", "min": 8, "max": 96,
+      "sets": [ "components.label.size" ] },
+    { "id": "align", "label": "Align", "type": "choice", "default": "Right",
+      "choices": [ "Left", "Center", "Right" ],
+      "sets": [ "components.label.align" ] }
+  ]
+}

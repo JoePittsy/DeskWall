@@ -46,8 +46,22 @@ public static class BindingParser
     private static string ReadName(string s, ref int i)
     {
         var start = i;
-        if (i >= s.Length || !(char.IsAsciiLetter(s[i]) || s[i] == '_')) throw new FormatException($"expected name at {i}");
-        while (i < s.Length && (char.IsAsciiLetterOrDigit(s[i]) || s[i] is '_' or '-')) i++;
+        if (i >= s.Length || !IsNameStart(s[i])) throw new FormatException($"expected name at {i}");
+        while (i < s.Length && IsNameChar(s[i])) i++;
         return s[start..i];
+    }
+
+    private static bool IsNameStart(char c) => char.IsAsciiLetter(c) || c == '_';
+
+    private static bool IsNameChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '_' or '-';
+
+    /// <summary>Whether the whole string is one path segment, so it can be the first segment of a
+    /// binding. An event's source name has to pass this or nothing could ever bind to it, and the
+    /// rule lives here rather than being copied beside the character class it has to agree with.</summary>
+    public static bool IsName(string? s)
+    {
+        if (string.IsNullOrEmpty(s) || !IsNameStart(s[0])) return false;
+        for (var i = 1; i < s.Length; i++) if (!IsNameChar(s[i])) return false;
+        return true;
     }
 }

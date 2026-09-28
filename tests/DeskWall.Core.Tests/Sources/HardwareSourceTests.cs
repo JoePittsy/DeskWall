@@ -1,4 +1,4 @@
-using DeskWall.Core.Sources.Hardware;
+﻿using DeskWall.Core.Sources.Hardware;
 using DeskWall.Core.Values;
 using Xunit;
 
@@ -171,6 +171,35 @@ public class HardwareSourceTests
         Assert.True(N(rec, "samples") >= 2, $"samples was {N(rec, "samples")}");
     }
 
+    /// <summary>Found rendering a verification layout with `deskwall tick`: the very first refresh
+    /// published `samples: 0` and no ram, so a one-shot tick drew nothing where the hardware values
+    /// should be. The sampler timer fires at once now, but its callback takes the same lock this
+    /// refresh already holds, so it can only land after the record has been built. A one-shot tick
+    /// never gets a second chance. The first refresh therefore takes its own reading inline.</summary>
+    [Fact]
+    public async Task The_Very_First_Refresh_Already_Has_Numbers()
+    {
+        var r = new FakeReader { HasGpu = false };
+        for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
+        using var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: true);
+
+        var rec = await s.RefreshAsync(default);     // the FIRST one, with no delay and no second tick
+        Assert.Equal(0.25, N(rec, "ram"));
+        Assert.Equal(25, N(rec, "ramPct"));
+        Assert.True(N(rec, "samples") >= 1, $"samples was {N(rec, "samples")}");
+    }
+
+    /// <summary>The inline reading belongs to the sampler, so a source whose sampler the caller
+    /// drives by hand (every other test here, and the designer's own probe) is not changed by it.</summary>
+    [Fact]
+    public async Task A_Hand_Driven_Source_Still_Samples_Only_When_Told()
+    {
+        var r = new FakeReader { HasGpu = false };
+        r.Mem.Enqueue(new MemoryReading(1, 4));
+        var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: false);
+        Assert.Equal(0, N(await s.RefreshAsync(default), "samples"));
+    }
+
     [Fact]
     public void Dispose_Disposes_A_Reader_That_Holds_Resources()
     {
@@ -270,5 +299,84 @@ public class HardwareSourceTests
 
         var fiveMin = new HardwareSource("hw", TimeSpan.FromSeconds(300), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(300), new FakeReader(), autoStart: false);
         Assert.Equal(new DateTimeOffset(2026, 9, 21, 9, 30, 0, TimeSpan.FromHours(1)), fiveMin.NextDue(last, last));
+    }
+
+    /// <summary>Adding a hardware source in the editor showed an empty value tree for up to 60 s,
+    /// which reads as broken. The first refresh can only start the sampler, so it publishes nothing;
+    /// the source says "due now" once so the very next wake paints real numbers.</summary>
+    [Fact]
+    public async Task A_First_Refresh_That_Published_Nothing_Is_Due_Again_Immediately()
+    {
+        var r = new FakeReader();
+        r.Mem.Enqueue(new MemoryReading(1, 4));
+        var s = Make(r);
+        var last = new DateTimeOffset(2026, 9, 21, 9, 28, 30, 258, TimeSpan.FromHours(1));
+
+        var first = await s.RefreshAsync(default);
+        Assert.Equal(0, N(first, "samples"));
+        Assert.Equal(last, s.NextDue(last, last));
+
+        s.SampleOnce();                                  // what the sampler does a moment later
+        var second = await s.RefreshAsync(default);
+        Assert.Equal(0.25, N(second, "ram"), 3);
+    }
+
+    /// <summary>The ruling NextDue exists for: once warm the source shares the clock's wake and the
+    /// daemon paints once a minute. A reading of any kind ends the cold-start exception.</summary>
+    [Fact]
+    public async Task Once_Any_Ring_Has_Data_NextDue_Is_The_Whole_Minute_Again()
+    {
+        var r = new FakeReader();
+        r.Mem.Enqueue(new MemoryReading(1, 4));
+        var s = Make(r);
+        s.SampleOnce();
+        await s.RefreshAsync(default);
+        var last = new DateTimeOffset(2026, 9, 21, 9, 28, 30, 258, TimeSpan.FromHours(1));
+        Assert.Equal(new DateTimeOffset(2026, 9, 21, 9, 29, 0, TimeSpan.FromHours(1)), s.NextDue(last, last));
+    }
+
+    /// <summary>Finding 1 again: a source that says "due now" forever pins the daemon's wake at
+    /// MinDelay, four ticks a second. A reader that never produces a reading is a *successful*
+    /// refresh publishing samples: 0, so the back-off never applies and only this bound protects the
+    /// daemon. The cold-start exception is spent after one refresh, whatever the reader did.</summary>
+    [Fact]
+    public async Task A_Reader_That_Never_Reads_Does_Not_Pin_The_Daemon_Awake()
+    {
+        var s = Make(new FakeReader());                  // nothing queued: every reading is null
+        var last = new DateTimeOffset(2026, 9, 21, 9, 28, 30, 258, TimeSpan.FromHours(1));
+        var minute = new DateTimeOffset(2026, 9, 21, 9, 29, 0, TimeSpan.FromHours(1));
+
+        await s.RefreshAsync(default);
+        Assert.Equal(last, s.NextDue(last, last));       // one free wake
+        await s.RefreshAsync(default);
+        Assert.Equal(minute, s.NextDue(last, last));     // and no more
+        await s.RefreshAsync(default);
+        Assert.Equal(minute, s.NextDue(last, last));
+    }
+
+    /// <summary>A source the scheduler has never refreshed keeps its old answer: due now when
+    /// lastRefresh is null, the whole minute otherwise. The cold-start exception is about a refresh
+    /// that published nothing, not about the absence of one.</summary>
+    [Fact]
+    public void An_Unrefreshed_Source_Is_Unchanged()
+    {
+        var s = Make(new FakeReader());
+        var last = new DateTimeOffset(2026, 9, 21, 9, 28, 30, 258, TimeSpan.FromHours(1));
+        Assert.Equal(last, s.NextDue(null, last));
+        Assert.Equal(new DateTimeOffset(2026, 9, 21, 9, 29, 0, TimeSpan.FromHours(1)), s.NextDue(last, last));
+    }
+
+    /// <summary>The first reading exists as soon as the source has been refreshed once, however
+    /// long `sample` is; the refresh takes it inline. The sampler must not also take one of its own
+    /// at the same moment, so the count is still exactly 1 half a second later.</summary>
+    [Fact]
+    public async Task The_First_Reading_Is_Taken_Straight_Away_And_Only_Once()
+    {
+        var r = new FakeReader();
+        for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
+        using var s = Make2(r, TimeSpan.FromSeconds(30), autoStart: true);   // far longer than the wait
+        Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));
+        await Task.Delay(500);
+        Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));
     }
 }

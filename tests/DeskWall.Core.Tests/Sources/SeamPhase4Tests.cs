@@ -28,7 +28,7 @@ public class AsyncSourceTests
     {
         var s = new SlowSource(TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(50));
         var completed = new TaskCompletionSource();
-        s.Completed += _ => completed.TrySetResult();
+        s.Changed += _ => completed.TrySetResult();
         await Assert.ThrowsAsync<TimeoutException>(async () => await s.RefreshAsync(default));
         await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var v = await s.RefreshAsync(default);        // returns the finished result without a second run
@@ -36,7 +36,7 @@ public class AsyncSourceTests
         Assert.Equal(1, s.Runs);
     }
 
-    /// <summary>Finding 11: Completed used to be decided in a continuation that raced with RefreshAsync
+    /// <summary>Finding 11: the late-landing notification used to be decided in a continuation that raced with RefreshAsync
     /// clearing _inFlight, so an ordinary on-time refresh could report itself as a late one - which the
     /// daemon turns into a spurious extra tick.</summary>
     [Fact]
@@ -46,12 +46,35 @@ public class AsyncSourceTests
         for (var i = 0; i < 40; i++)
         {
             var s = new SlowSource(TimeSpan.Zero, TimeSpan.FromSeconds(5));
-            s.Completed += _ => Interlocked.Increment(ref raised);
+            s.Changed += _ => Interlocked.Increment(ref raised);
             await s.RefreshAsync(default);
             await Task.Yield();
         }
         await Task.Delay(50);
         Assert.Equal(0, raised);
+    }
+
+    /// <summary>A fetch that overran is sitting there finished, so the source is due now. The wake
+    /// its Changed raised has to land on a tick that actually harvests it; on the ordinary periodic
+    /// schedule an http source with every=600 would wait out ten minutes for a result it already
+    /// holds. The daemon is unaffected either way (a timed-out refresh is a failure, and the
+    /// scheduler puts a failing source on its back-off rather than asking NextDue), so this is the
+    /// designer's live panel that it fixes.</summary>
+    [Fact]
+    public async Task A_Late_Fetch_That_Has_Landed_Makes_The_Source_Due_Now()
+    {
+        var s = new SlowSource(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(50));
+        var landed = new TaskCompletionSource();
+        s.Changed += _ => landed.TrySetResult();
+        var t0 = new DateTimeOffset(2026, 9, 22, 9, 0, 0, TimeSpan.Zero);
+        Assert.Equal(t0.AddMinutes(1), s.NextDue(t0, t0));
+
+        await Assert.ThrowsAsync<TimeoutException>(async () => await s.RefreshAsync(default));
+        await landed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(t0, s.NextDue(t0, t0));
+
+        await s.RefreshAsync(default);                       // harvested
+        Assert.Equal(t0.AddMinutes(1), s.NextDue(t0, t0));   // and back on its own schedule
     }
 }
 

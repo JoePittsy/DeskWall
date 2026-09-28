@@ -10,9 +10,16 @@ public abstract record Resolved(string Id, Rect Rect, int Z)
 
     /// <summary>
     /// Every pixel this component may touch. Identical to <see cref="Rect"/> for everything that
-    /// paints inside its box; text inflates it by the effect margin. The incremental renderer
-    /// restores the base over this, not over Rect, so nothing survives a redraw. The content key
-    /// deliberately stays on Rect: PaintBounds is derived from it and adds no information.
+    /// paints inside its box; text is measured, because it does not. The incremental renderer
+    /// restores the base over this, not over Rect, so nothing survives a redraw.
+    /// <para>
+    /// The content key deliberately stays on <see cref="Rect"/>. For everything but text PaintBounds
+    /// is derived from it and adds no information; for text it is a pure function of the text, the
+    /// style and the rect, all of which the key already covers, so keying on it as well would only
+    /// make the key more expensive to compute. <c>TickRunner</c> instead compares the measured
+    /// bounds against the ones it persisted last tick, which catches the one case the key cannot:
+    /// the same string in the same style measuring differently because the font behind it changed.
+    /// </para>
     /// </summary>
     public virtual Rect PaintBounds => Rect;
 
@@ -24,16 +31,23 @@ public sealed record ResolvedText(string Id, Rect Rect, int Z, string Text, Text
 {
     public override IEnumerable<string> KeyParts() => [Text, Style.ToString()];
 
-    /// <summary>Rect plus the margin <see cref="Surface.DrawText"/> clips to. One shared helper
-    /// (<see cref="TextStyle.PaintMargin"/>) so the clip and the dirty rect cannot drift apart.</summary>
-    public override Rect PaintBounds
-    {
-        get
-        {
-            var m = Style.PaintMargin();
-            return new Rect(Rect.X - m, Rect.Y - m, Rect.W + 2 * m, Rect.H + 2 * m);
-        }
-    }
+    /// <summary>
+    /// The measured glyph ink plus the effect margin -- what the text actually covers, not the box
+    /// it was authored in. <see cref="Surface.DrawText"/> clips to the same call, so the clip and
+    /// the dirty rect are one value rather than two that have to be kept in step.
+    /// <para>
+    /// Computed on demand off <see cref="TextMeasure"/>'s cache rather than carried as a field: a
+    /// <c>ResolvedText</c> built anywhere -- the resolver, the designer, a test -- then has correct
+    /// bounds with nothing to remember, and a <c>with</c> expression cannot leave a stale
+    /// measurement behind. The cost is a dictionary lookup.
+    /// </para>
+    /// <para>
+    /// Unlike every other component's, this can <em>shrink</em> between ticks: "100%" becoming "9%"
+    /// returns a narrower rect. Anything comparing it across ticks must dirty the union of the old
+    /// and the new, or the base is never restored over what the longer string painted.
+    /// </para>
+    /// </summary>
+    public override Rect PaintBounds => TextMeasure.PaintBounds(Text, Style, Rect);
 }
 
 public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit Fit, float Radius, float Opacity) : Resolved(Id, Rect, Z)
