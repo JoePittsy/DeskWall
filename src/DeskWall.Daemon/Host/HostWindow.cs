@@ -16,7 +16,38 @@ internal sealed unsafe class HostWindow : IDisposable
 
     private const string ClassName = "DeskWallHost";
 
-    private static HostWindow? s_instance;        // one per process; the WndProc is a static function pointer
+    /// <summary>One daemon per runtime directory. What the single-instance lock actually protects is
+    /// the runtime dir - two daemons on one home race on frame.raw and restore.json - and two on
+    /// different homes do not share any of it. The default home keeps the old name byte for byte,
+    /// so an installed daemon is unaffected and a bare `deskwall run` still means "refresh the one
+    /// that is running"; only a scratch `deskwall --home &lt;dir&gt; run` gets a lock of its own, which
+    /// is what makes a live check of a development build possible without stopping the user's
+    /// daemon.</summary>
+    internal static string LockName()
+    {
+        var home = Path.GetFullPath(global::DeskWall.Core.Paths.RuntimeDir).TrimEnd('\\');
+        var standard = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeskWall")).TrimEnd('\\');
+        if (string.Equals(home, standard, StringComparison.OrdinalIgnoreCase)) return @"Local\DeskWall.Daemon";
+        // A path cannot be a kernel object name: the backslash is the namespace separator. Hash it.
+        var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.Unicode.GetBytes(home.ToUpperInvariant()));
+        return @"Local\DeskWall.Daemon." + Convert.ToHexString(digest, 0, 8);
+    }
+
+    /// <summary>The window title is how another process finds the daemon for *its* runtime dir: the
+    /// class name is the same for every daemon, so FindWindow by class alone would let
+    /// `deskwall --home &lt;scratch&gt; stop` close the user's real daemon. The default home keeps the
+    /// title it always had (the class name), so a new `stop` still finds a daemon from an older
+    /// build and the designer's class-only lookup is unchanged.</summary>
+    private static string Title()
+    {
+        var name = LockName();
+        return name == @"Local\DeskWall.Daemon" ? ClassName : name;
+    }
+
+    /// <summary>The running daemon's host window for this process's runtime dir, or null.</summary>
+    internal static HWND Find() => PInvoke.FindWindow(ClassName, Title());
+
+    private static HostWindow? s_instance;       // one per process; the WndProc is a static function pointer
     private readonly List<WakeReason> _pending = new();
     private ushort _atom;
     private uint _taskbarCreated;                 // the registered "TaskbarCreated" broadcast, 0 if it failed
@@ -40,6 +71,7 @@ internal sealed unsafe class HostWindow : IDisposable
         global::DeskWall.Core.Com.EnsureInitialized();
         var hinst = (HINSTANCE)PInvoke.GetModuleHandle((PCWSTR)null);
         fixed (char* cls = ClassName)
+        fixed (char* title = Title())
         {
             var wc = new WNDCLASSEXW
             {
@@ -51,7 +83,7 @@ internal sealed unsafe class HostWindow : IDisposable
             _atom = PInvoke.RegisterClassEx(&wc);
             if (_atom == 0) throw new InvalidOperationException($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}");
             // WS_EX_TOOLWINDOW keeps it off the taskbar and out of Alt+Tab; it is never shown either way.
-            Handle = PInvoke.CreateWindowEx(WINDOW_EX_STYLE.WS_EX_TOOLWINDOW, cls, cls, WINDOW_STYLE.WS_OVERLAPPED,
+            Handle = PInvoke.CreateWindowEx(WINDOW_EX_STYLE.WS_EX_TOOLWINDOW, cls, title,WINDOW_STYLE.WS_OVERLAPPED,
                 0, 0, 0, 0, HWND.Null, HMENU.Null, hinst, null);
             if (Handle.IsNull) throw new InvalidOperationException($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
         }

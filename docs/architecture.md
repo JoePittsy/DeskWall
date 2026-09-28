@@ -22,7 +22,10 @@ Three things run, never more than two at once on an idle machine:
   shutdown, the one-shot commands, the designer's live panel) disposes the set it replaces
   (`SourceFactory.DisposeAll`). Its measured cost is in the budget section. A second `deskwall run`
   while one is already running does not start a second daemon; it posts that daemon a "refresh
-  now" message and exits (`Program.Run`, the `Local\DeskWall.Daemon` named mutex).
+  now" message and exits (`Program.Run`, the `Local\DeskWall.Daemon` named mutex) -- one lock, and
+  one window title, per runtime dir: `HostWindow.LockName` hashes a non-default `--home` into both,
+  so `deskwall --home <scratch> stop` or `run` only ever reaches the daemon for that home; the
+  default home keeps the title `DeskWallHost`, which is what older builds used too.
 - **`DeskWall.Designer.exe`** -- WPF, normal JIT runtime, exists only while the window is open.
   It never opens a channel to the daemon: it reads and writes the same files the daemon reads
   (the layout store, layout files, `secrets.json`, `settings.json`) and the daemon's hot-reload
@@ -56,6 +59,10 @@ path the resident daemon uses, useful for scripting and for this documentation's
 5. **After every tick:** log the outcome, update the tray tooltip, compute the next wake,
    `Footprint.Trim()` (`SetProcessWorkingSetSize`, giving freed pages back so Task Manager shows
    the idle number rather than the render peak).
+6. **Stop.** `WM_CLOSE` (or the session ending, or tray Exit) is a Shutdown wake: the tick in
+   flight finishes and the loop exits. `deskwall stop` posts `WM_CLOSE` to this runtime dir's host
+   window and waits up to 10 s for the process to exit (exit 0 when it stopped or none was
+   running, 1 on timeout); `deskwall uninstall` calls the same thing first.
 
 A tick never takes the daemon down: exceptions are caught at the `DaemonLoop.Tick` boundary,
 logged (`RollingLog.Error`), and the wallpaper already on screen stays (spec 3.2). The failure

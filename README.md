@@ -29,7 +29,17 @@ layout JSON file (`docs/layout-format.md`), not in code. The three "starter" lay
 
 ## Install and first run
 
-There is no installer. From a build or a published `deskwall.exe`:
+There is no installer. Get a published folder first -- both executables, self-contained, merged
+into `%LOCALAPPDATA%\Programs\DeskWall` -- with the update script (see "Updating" below; with
+nothing installed yet there is nothing to stop, and `-NoRestart` leaves the first start to
+`deskwall install`):
+
+```powershell
+pwsh scripts\publish.ps1 -NoRestart
+cd $env:LOCALAPPDATA\Programs\DeskWall
+```
+
+Then, from that folder:
 
 ```powershell
 deskwall install     # HKCU Run entry, records the current wallpaper for uninstall, starts the daemon
@@ -44,6 +54,37 @@ leaves the wallpaper alone (spec 3.2: no layout means no frame, never a blank ca
 No admin rights are needed anywhere in this flow. `deskwall` never creates a scheduled task; it is
 a resident process started once at sign-in (`HKCU\...\Run`), which is the opposite of the proof of
 concept's model -- see "The proof of concept" below for why that changed.
+
+`deskwall stop` stops the running daemon and nothing else (the Run entry, the wallpaper and the
+desktop are left as they are); `deskwall run` starts it again.
+
+## Updating
+
+```powershell
+pwsh scripts\publish.ps1                 # publish, stop the daemon, copy over the install, restart it
+pwsh scripts\publish.ps1 -Aot            # the same, with a native AOT deskwall.exe
+pwsh scripts\publish.ps1 -InstallDir <dir> -Home <dir> -NoRestart   # a scratch install, stopped afterwards
+```
+
+The script (PowerShell 7) publishes `DeskWall.Designer` and `DeskWall.Daemon` for win-x64 into a
+staging folder under `%TEMP%`, merges them into one folder, stops the daemon with the installed
+`deskwall.exe stop`, copies the files over `-InstallDir` (default
+`%LOCALAPPDATA%\Programs\DeskWall`, which is where the Run entry points) and starts `deskwall run`
+again, printing the new version and PID. It refuses to run while `DeskWall.Designer.exe` is open
+from the install folder, and it never touches the runtime dir (`%LOCALAPPDATA%\DeskWall`), so
+layouts, secrets and settings survive an update. An install from before `deskwall stop` existed
+is stopped with the newly built exe's `stop` instead, which finds it the same way.
+
+**JIT or AOT.** By default both executables are self-contained JIT builds, and that is what the
+installed copy is today. The designer is WPF and cannot be native AOT at all; the daemon can, and
+the budget numbers in this file are measured against an AOT daemon, but publishing one needs the
+MSVC linker (Visual Studio's "Desktop development with C++" workload). `-Aot` checks for it first
+and stops with that message when it is missing, rather than failing deep in the link step. The
+merge rule is what makes one folder work for both: the designer's output goes in first and the
+daemon's over it, except that the designer's full WPF `WindowsBase.dll` must win over the daemon's
+facade of the same name, and the daemon's newer `System.Diagnostics.EventLog` pair wins over the
+runtime-pack copies. Any other file the two publish differently stops the script instead of being
+guessed at.
 
 ### The designer
 

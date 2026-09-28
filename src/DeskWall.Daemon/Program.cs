@@ -19,10 +19,6 @@ namespace DeskWall.Daemon;
 
 internal static class Program
 {
-    /// <summary>The hidden host window's class name, which is also how a second process finds a
-    /// running daemon: there is no other handle on it (no taskbar entry, no main window).</summary>
-    private const string HostClass = "DeskWallHost";
-
     private static int Main(string[] argv)
     {
         var args = argv.ToList();
@@ -46,6 +42,8 @@ internal static class Program
                     return Install();
                 case "uninstall":
                     return Uninstall();
+                case "stop":
+                    return Stop();
                 case "layouts":
                     return Layouts(opts);
                 case "paths":
@@ -84,6 +82,7 @@ internal static class Program
         w.WriteLine("                             --no-tray wins; otherwise settings.json trayIcon decides");
         w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply] [--no-shortcuts]");
         w.WriteLine("  install                    start at sign-in, and start now");
+        w.WriteLine("  stop                       stop the running daemon for this runtime dir, and wait for it to exit");
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
         w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
         w.WriteLine("  layouts set <path>         register a layout for this display");
@@ -101,13 +100,13 @@ internal static class Program
     /// DaemonSettings (the designer's settings.json) at start.</para></summary>
     private static int Run(List<string> opts)
     {
-        using var single = new Mutex(initiallyOwned: true, SingleInstanceName(), out var mine);
+        using var single = new Mutex(initiallyOwned: true, HostWindow.LockName(), out var mine);
         if (!mine)
         {
             // The winner may still be between `new Mutex` and CreateWindowEx, so give the window a
             // second to appear rather than claim a refresh nobody was asked for (finding 10).
             var hwnd = HWND.Null;
-            for (var i = 0; i < 20 && (hwnd = PInvoke.FindWindow(HostClass, null)).IsNull; i++) Thread.Sleep(50);
+            for (var i = 0; i < 20 && (hwnd = HostWindow.Find()).IsNull; i++) Thread.Sleep(50);
             if (hwnd.IsNull)
             {
                 Console.Error.WriteLine("deskwall: another instance holds the lock but has no window yet; nothing refreshed");
@@ -125,25 +124,6 @@ internal static class Program
         { Shortcuts = !opts.Contains("--no-shortcuts") }.Run();
     }
 
-    /// <summary>One daemon per runtime directory. What the single-instance lock actually protects is
-    /// the runtime dir - two daemons on one home race on frame.raw and restore.json - and two on
-    /// different homes do not share any of it. The default home keeps the old name byte for byte,
-    /// so an installed daemon is unaffected and a bare `deskwall run` still means "refresh the one
-    /// that is running"; only a scratch `deskwall --home &lt;dir&gt; run` gets a lock of its own, which
-    /// is what makes a live check of a development build possible without stopping the user's
-    /// daemon. Two daemons on two homes both paint the wallpaper, and the second `run` on a home
-    /// that is already taken finds the host window by class name, so with two up it may hand the
-    /// refresh to either; both are the price of asking for a second home explicitly.</summary>
-    private static string SingleInstanceName()
-    {
-        var home = Path.GetFullPath(Paths.RuntimeDir).TrimEnd('\\');
-        var standard = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeskWall")).TrimEnd('\\');
-        if (string.Equals(home, standard, StringComparison.OrdinalIgnoreCase)) return @"Local\DeskWall.Daemon";
-        // A path cannot be a kernel object name: the backslash is the namespace separator. Hash it.
-        var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.Unicode.GetBytes(home.ToUpperInvariant()));
-        return @"Local\DeskWall.Daemon." + Convert.ToHexString(digest, 0, 8);
-    }
-
     /// <summary>deskwall install: HKCU Run entry, a restore point for the wallpaper we are about to
     /// replace, and the daemon started now so the user does not have to sign out to see it work.</summary>
     private static int Install()
@@ -152,7 +132,7 @@ internal static class Program
         Startup.Install(exe);
         WallpaperSetter.RecordRestorePoint();
         Console.WriteLine($"installed: {Startup.Installed()}");
-        if (!PInvoke.FindWindow(HostClass, null).IsNull)
+        if (!HostWindow.Find().IsNull)
         {
             Console.WriteLine("already running");
             return 0;
@@ -167,19 +147,44 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>deskwall stop: close the daemon for this runtime dir (so `--home` picks which one) and
+    /// wait for the process itself to exit, not just its window: a caller about to overwrite the exe
+    /// or restore the wallpaper needs the process gone. 0 when it stopped or nothing was running,
+    /// 1 when it did not exit in time.</summary>
+    private static int Stop()
+    {
+        const int TimeoutMs = 10_000;   // a tick in flight finishes first; ticks are well under a second
+        var hwnd = HostWindow.Find();
+        if (hwnd.IsNull)
+        {
+            Console.WriteLine($"deskwall: not running ({Paths.RuntimeDir})");
+            return 0;
+        }
+        uint pid;
+        unsafe { _ = PInvoke.GetWindowThreadProcessId(hwnd, &pid); }
+        System.Diagnostics.Process? p = null;
+        try { p = System.Diagnostics.Process.GetProcessById((int)pid); }
+        catch (ArgumentException) { /* exited between FindWindow and here */ }
+        PInvoke.PostMessage(hwnd, PInvoke.WM_CLOSE, 0, 0);
+        using (p)
+        {
+            if (p is not null && !p.WaitForExit(TimeoutMs))
+            {
+                Console.Error.WriteLine($"deskwall: pid {pid} did not exit within {TimeoutMs / 1000} s");
+                return 1;
+            }
+        }
+        Console.WriteLine($"deskwall: stopped pid {pid}");
+        return 0;
+    }
+
     /// <summary>deskwall uninstall: stop the daemon, drop the Run entry, put the old wallpaper back.
     /// Also removes the slot shortcuts and restores the desktop folder flags (Phase 3).</summary>
     private static int Uninstall()
     {
-        var hwnd = PInvoke.FindWindow(HostClass, null);
-        if (!hwnd.IsNull)
-        {
-            PInvoke.PostMessage(hwnd, PInvoke.WM_CLOSE, 0, 0);
-            // Restoring the wallpaper while the daemon is still awake would just get overwritten by
-            // the tick it is in the middle of, so give it a moment to actually go.
-            for (var i = 0; i < 50 && !PInvoke.FindWindow(HostClass, null).IsNull; i++) Thread.Sleep(100);
-            Console.WriteLine(PInvoke.FindWindow(HostClass, null).IsNull ? "stopped the running daemon" : "the running daemon did not stop; restoring anyway");
-        }
+        // Restoring the wallpaper while the daemon is still awake would just get overwritten by the
+        // tick it is in the middle of, hence stop first and wait for it to go.
+        if (Stop() != 0) Console.WriteLine("the running daemon did not stop; restoring anyway");
         Startup.Uninstall();
         try
         {

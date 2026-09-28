@@ -68,3 +68,4 @@ NIN_POPUPOPEN
 IMAGE_FLAGS
 GDI_IMAGE_TYPE
 FindWindow
+GetWindowThreadProcessId

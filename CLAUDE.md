@@ -60,6 +60,13 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   (`Com.EnsureInitialized`). Callbacks need `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]`.
   Target `net10.0-windows10.0.19041.0` or CA1416 errors on Windows 8+ APIs. The full verified
   shape list is `docs/superpowers/plans/2026-09-20-phase1-spike-results.md`.
+- **The installed build is self-contained JIT, not AOT.** `%LOCALAPPDATA%\Programs\DeskWall\`
+  (the HKCU Run entry's `deskwall.exe run`) holds both executables in one folder; the designer is
+  WPF and cannot be AOT, and a machine without the MSVC linker cannot publish an AOT daemon either
+  (both JOES-PC and JOES-XPS-17 have it since 2026-09-28, so pass `-Aot` on both). Update it with `scripts/publish.ps1` (`-Aot` where the linker exists), never by
+  hand: it carries the merge rule (designer's `WindowsBase.dll`, daemon's EventLog pair), stops the
+  daemon with `deskwall stop`, and restarts it. Exercise it with a scratch `-InstallDir` and
+  `-Home`, not the real install.
 - **Native AOT publish needs the MSVC linker** (VS "Desktop development with C++"). Installed on
   JOES-PC on 2026-09-21 (VS Community 2026 18.9, MSVC 14.51, Windows SDK 10.0.26100), so budget
   numbers are now real: `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` "Phase 6
