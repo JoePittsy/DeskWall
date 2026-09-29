@@ -7,6 +7,7 @@ using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Values;
+using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model;
 using Xunit;
 
@@ -133,5 +134,53 @@ public class PreviewRendererTests
         Assert.NotNull(frame);
         Assert.Equal(320 * 200 * 4, frame!.Bgra.Length);
         Assert.Equal(2, frame.Resolved.Count);
+    }
+
+    private static PreviewFrame RenderOnce(DesignerModel model)
+    {
+        using var r = new PreviewRenderer(() => ValueTree.Empty);
+        PreviewFrame? frame = null;
+        var done = new ManualResetEventSlim();
+        r.Rendered += f => { frame = f; done.Set(); };
+        r.Request(model);
+        Assert.True(done.Wait(10_000), "no frame arrived");
+        return frame!;
+    }
+
+    /// <summary>The render expands before it resolves, as the daemon does: the hit map holds the
+    /// copy's parts under their expanded ids, offset to the copy's origin. The shipped dial is used
+    /// (not the clock) so no other test's user-dir widget can stand in for it.</summary>
+    [Fact]
+    public void A_Copy_Is_Expanded_Before_Resolve()
+    {
+        var model = Model("");
+        model.Layout.Version = 2;
+        model.Layout.Copies = [new WidgetCopy { Id = "dial-1", Widget = "dial", X = 200, Y = 100 }];
+
+        var frame = RenderOnce(model);
+
+        Assert.Empty(frame.Problems);
+        var dial = frame.Resolved.Single(c => c.Id == "dial-1.dial");
+        Assert.Equal(200, dial.Rect.X);
+        Assert.Equal(100, dial.Rect.Y);
+        Assert.Contains(frame.Resolved, c => c.Id == "clock");   // the loose components still draw
+    }
+
+    /// <summary>A copy whose widget file is gone is a problem in the frame, never an exception, and
+    /// the rest of the layout still draws.</summary>
+    [Fact]
+    public void A_Missing_Widget_Is_A_Problem_Not_An_Exception()
+    {
+        var model = Model("");
+        model.Layout.Version = 2;
+        model.Layout.Copies = [new WidgetCopy { Id = "gone-1", Widget = "no-such-widget", X = 10, Y = 10 }];
+
+        var frame = RenderOnce(model);
+
+        var problem = Assert.Single(frame.Problems);
+        Assert.Equal(ExpandProblemKind.MissingWidget, problem.Kind);
+        Assert.Equal("gone-1", problem.CopyId);
+        Assert.Equal(2, frame.Resolved.Count);
+        Assert.Contains(frame.Bgra, b => b != 0);
     }
 }
