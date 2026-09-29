@@ -68,10 +68,13 @@ public partial class SettingsPage : Window
         // `shortcuts` reads a layout file, and the only one this page can name is the open model's.
         VerifyButton.IsEnabled = exeFound && _model?.Path is not null;
 
-        var procs = Process.GetProcessesByName("deskwall");
-        try
+        // This home's daemon (host window class plus per-home title), not the first deskwall process.
+        Process? p = null;
+        try { if (RuntimeInstance.FindDaemonProcessId() is { } pid) p = Process.GetProcessById(pid); }
+        catch (ArgumentException) { /* exited between the lookup and here */ }
+        using (p)
         {
-            if (procs.Length == 0)
+            if (p is null)
             {
                 // The section header already says "Daemon"; the line says what it is doing.
                 DaemonStatusText.Text = "not running";
@@ -79,7 +82,6 @@ public partial class SettingsPage : Window
             }
             else
             {
-                var p = procs[0];
                 DaemonStatusText.Text = $"running (pid {p.Id}), up {Uptime(p)}";
                 // Handles and threads are budget-test facts, not owner facts; spec 8 asks for
                 // working set, per-tick timings and uptime.
@@ -87,7 +89,6 @@ public partial class SettingsPage : Window
                     $"{p.WorkingSet64 / 1048576.0:0.0} MB working set . {p.PrivateMemorySize64 / 1048576.0:0.0} MB private";
             }
         }
-        finally { foreach (var p in procs) p.Dispose(); }
 
         var lines = LogTail(5);
         LastTickText.Text = lines.LastOrDefault(IsTickLine) is { } tick ? TickSummary(tick) : "";
@@ -146,7 +147,7 @@ public partial class SettingsPage : Window
     /// handles (see HostWindow.WndProc).</summary>
     private unsafe void Stop_Click(object sender, RoutedEventArgs e)
     {
-        var hwnd = PInvoke.FindWindow("DeskWallHost", (string?)null);
+        var hwnd = (Windows.Win32.Foundation.HWND)RuntimeInstance.FindDaemonWindow();
         if (hwnd.IsNull)
         {
             ActionOutputText.Text = "DeskWall Host window not found; the daemon is not running.";
@@ -168,7 +169,7 @@ public partial class SettingsPage : Window
     {
         var exe = FindDaemonExe();
         if (exe is null) return;
-        var running = !PInvoke.FindWindow("DeskWallHost", (string?)null).IsNull;
+        var running = RuntimeInstance.FindDaemonWindow() != 0;
         RunDaemonCommand(exe, running ? "run" : "tick");
     }
 

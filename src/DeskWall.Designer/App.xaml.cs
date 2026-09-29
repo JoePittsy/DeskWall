@@ -1,5 +1,6 @@
 ﻿using System.Windows;
 using System.Windows.Threading;
+using DeskWall.Core;
 using DeskWall.Core.Diagnostics;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
@@ -49,8 +50,10 @@ public partial class App : Application
     private bool ClaimSingleInstance()
     {
         // Local\ rather than Global\: the runtime directory is per-user, so the thing being guarded
-        // is one interactive session, not the machine.
-        _instance = new Mutex(initiallyOwned: true, @"Local\DeskWall.Designer", out var mine);
+        // is one interactive session, not the machine. Per runtime dir, like the daemon's lock: two
+        // designers on different homes edit different files, so a scratch one beside the owner's is
+        // allowed; the default home keeps the plain name.
+        _instance = new Mutex(initiallyOwned: true, RuntimeInstance.DesignerLockName(Paths.RuntimeDir), out var mine);
         if (mine) return true;
         _instance.Dispose();
         _instance = null;

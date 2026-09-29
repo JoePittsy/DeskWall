@@ -402,10 +402,9 @@ public partial class MainWindow : Window
             : _model.Path is { } p && File.Exists(p) ? $"Applied {File.GetLastWriteTime(p):HH:mm}"
             : "Not applied yet";
 
-        var running = false;
-        var procs = Process.GetProcessesByName("deskwall");
-        try { running = procs.Length > 0; }
-        finally { foreach (var proc in procs) proc.Dispose(); }
+        // This home's daemon, not any deskwall process: a scratch designer must not report the
+        // owner's live daemon as its own.
+        var running = RuntimeInstance.FindDaemonWindow() != 0;
 
         var error = LastDaemonError();
         StatusText.Text = error is not null
