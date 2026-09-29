@@ -189,6 +189,10 @@ public partial class PreviewView : UserControl
 
     private void OnModelChanged()
     {
+        // Someone else changed the document (an undo, a knob) while a drop's options were open: the
+        // drop stays as it is and its popover goes, so a later pick cannot undo their change.
+        if (_inserting) _insertChanged = true;
+        else ClosePopover();
         _targets = null;
         RequestFrame();
         Redraw();
@@ -368,6 +372,8 @@ public partial class PreviewView : UserControl
     /// keys, or the knobs panel's Details.</summary>
     private void OnDepthChanged()
     {
+        ClosePopover();
+        CommitTextEdit();
         _targets = null;
         if (_model is null) return;
         if (_model.Depth.Kind == DepthKind.Layout)
@@ -528,6 +534,7 @@ public partial class PreviewView : UserControl
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
         base.OnMouseDown(e);
+        ClosePopover();
         Focus();
         if (_model is null || e.ChangedButton != MouseButton.Left) return;
         _downScreen = e.GetPosition(_surface);
@@ -756,6 +763,336 @@ public partial class PreviewView : UserControl
         Redraw();
     }
 
+    // ---- inserting from the Insert panel (plan Task 4.4) --------------------------------------------
+
+    /// <summary>A drop or an insert the canvas could not do, or the one thing worth knowing about one,
+    /// in a sentence for the shell's status line.</summary>
+    public event Action<string>? Status;
+
+    private const string CopyCannotGainParts = "A copy cannot gain parts: Ctrl+Alt+K edits its widget.";
+
+    private DropPlan? _plan;          // the drop whose options the popover shows
+    private int _planIndex;           // which of them is on the canvas now
+    private Border? _popover;
+    private TextBox? _editor;         // typing into a text part just inserted
+    private string? _editing;
+    private bool _inserting;          // this canvas is editing the document itself
+    private bool _insertChanged;      // ... and the edit changed it (one undo entry to take back)
+
+    protected override void OnDragEnter(DragEventArgs e) { base.OnDragEnter(e); DragEffect(e); }
+
+    protected override void OnDragOver(DragEventArgs e) { base.OnDragOver(e); DragEffect(e); }
+
+    private void DragEffect(DragEventArgs e)
+    {
+        e.Effects = e.Data.GetData(InsertPanel.DataFormat) is { } payload && CanDrop(payload, e.GetPosition(_surface))
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    protected override void OnDrop(DragEventArgs e)
+    {
+        base.OnDrop(e);
+        if (e.Data.GetData(InsertPanel.DataFormat) is not { } payload) return;
+        DropAt(payload, e.GetPosition(_surface));
+        e.Handled = true;
+    }
+
+    /// <summary>Whether <paramref name="payload"/> would do anything dropped at <paramref name="screen"/>
+    /// (pane coordinates): a part anywhere but at copy depth, a widget at layout depth, a value
+    /// wherever its <see cref="DropPlan"/> has an option.</summary>
+    public bool CanDrop(object payload, Point screen)
+    {
+        if (_model is null) return false;
+        return payload switch
+        {
+            PartKind => Insert.CanAddPart(_model),
+            WidgetTemplate => _model.Depth.Kind == DepthKind.Layout,
+            ValueEntry value => Plan(value, screen).Options.Count > 0,
+            _ => false,
+        };
+    }
+
+    /// <summary>The keyboard's insert (Enter in the Insert panel): as if dropped at the middle of the pane.</summary>
+    public bool InsertAtCentre(object payload) => DropAt(payload, new Point(_view.Width / 2, _view.Height / 2));
+
+    /// <summary>Put <paramref name="payload"/> (an <see cref="InsertPanel.DataFormat"/> payload) on the
+    /// canvas at <paramref name="screen"/>, as one undo entry, and select it:
+    /// <list type="bullet">
+    /// <item>a part, centred there; a text part then takes what is typed (Enter keeps it, Esc leaves "Text");</item>
+    /// <item>a copy of a widget, centred there (layout depth only);</item>
+    /// <item>a value, through <see cref="DropPlan"/>: the default option goes on at once, and when
+    /// there are others a popover lists them beside it. Picking another swaps it (still one entry),
+    /// Enter keeps the default, Esc takes the drop back, and anything else done meanwhile keeps
+    /// it.</item>
+    /// </list>
+    /// Public so the harness can drive a drop without a real pointer. Returns false when nothing was done.</summary>
+    public bool DropAt(object payload, Point screen)
+    {
+        if (_model is null) return false;
+        ClosePopover();
+        CommitTextEdit();
+        var (cx, cy) = _view.ToCanvas(screen.X, screen.Y);
+        int x = (int)Math.Round(cx), y = (int)Math.Round(cy);
+        switch (payload)
+        {
+            case WidgetTemplate template:
+                if (Insert.Widget(_model, template, x, y) is not { } copy)
+                {
+                    Status?.Invoke("A widget goes on the layout: Esc climbs back to it.");
+                    return false;
+                }
+                _model.Select([copy]);
+                Focus();
+                return true;
+
+            case PartKind kind:
+                if (Insert.Part(_model, kind, x, y) is not { } id)
+                {
+                    Status?.Invoke(CopyCannotGainParts);
+                    return false;
+                }
+                _model.Select([id]);
+                if (kind == PartKind.Text) BeginTextEdit(id);
+                else Focus();
+                return true;
+
+            case ValueEntry value:
+                var plan = Plan(value, screen);
+                if (plan.Options.Count == 0)
+                {
+                    Status?.Invoke(_model.Depth.Kind == DepthKind.Copy ? CopyCannotGainParts : $"Nothing here can show {value.Label}.");
+                    return false;
+                }
+                var applied = ApplyOption(plan, 0);
+                if (plan.Options.Count > 1) OpenPopover(plan, applied);
+                else Focus();
+                return true;
+        }
+        return false;
+    }
+
+    private DropPlan Plan(ValueEntry value, Point screen)
+    {
+        var (cx, cy) = _view.ToCanvas(screen.X, screen.Y);
+        return DropPlan.For(_model!, value, new DropTarget((int)Math.Round(cx), (int)Math.Round(cy), Insert.PartAt(_model!, cx, cy)));
+    }
+
+    /// <summary>Apply one option as the canvas's own edit, and select what it made or bound.</summary>
+    private string ApplyOption(DropPlan plan, int index)
+    {
+        _insertChanged = false;
+        string id;
+        _inserting = true;
+        try { id = plan.Apply(_model!, plan.Options[index]); }
+        finally { _inserting = false; }
+        _model!.Select([id]);
+        return id;
+    }
+
+    /// <summary>Take back the option on the canvas, if it changed anything (a bind to what a copy
+    /// already shows makes no undo entry, and then there is nothing to take back).</summary>
+    private void TakeBack()
+    {
+        if (!_insertChanged || _model is null) return;
+        _insertChanged = false;
+        _inserting = true;
+        try { _model.Undo(); }
+        finally { _inserting = false; }
+    }
+
+    // ---- the options popover ---------------------------------------------------------------------
+
+    private void OpenPopover(DropPlan plan, string appliedId)
+    {
+        _plan = plan;
+        _planIndex = 0;
+        var panel = new StackPanel { MinWidth = 150 };
+        KeyboardNavigation.SetDirectionalNavigation(panel, KeyboardNavigationMode.Cycle);
+        KeyboardNavigation.SetTabNavigation(panel, KeyboardNavigationMode.Cycle);
+        var title = new TextBlock { Text = plan.Value.Label, Margin = new Thickness(8, 4, 8, 6), FontSize = 12 };
+        title.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+        panel.Children.Add(title);
+        Button? first = null;
+        for (var i = 0; i < plan.Options.Count; i++)
+        {
+            var index = i;
+            var b = new Button
+            {
+                Content = LiveLabel(plan.Value, plan.Options[i]),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(10, 4, 10, 5),
+                Margin = new Thickness(0, 0, 0, 2),
+            };
+            // The one on the canvas now is the accent: at first the default, which Enter keeps.
+            if (i == 0) b.SetResourceReference(StyleProperty, "AccentButtonStyle");
+            System.Windows.Automation.AutomationProperties.SetName(b, $"{plan.Value.Label} as {LiveLabel(plan.Value, plan.Options[i])}");
+            b.Click += (_, _) => Pick(index);
+            panel.Children.Add(b);
+            first ??= b;
+        }
+        var popover = new Border
+        {
+            Child = panel,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(4),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        popover.SetResourceReference(Border.BackgroundProperty, "SolidBackgroundFillColorBaseAltBrush");
+        popover.SetResourceReference(Border.BorderBrushProperty, "ControlStrokeColorDefaultBrush");
+        System.Windows.Automation.AutomationProperties.SetName(popover, $"Show {plan.Value.Label} as");
+        popover.KeyDown += Popover_KeyDown;
+        popover.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false) ClosePopover(); };
+        _popover = popover;
+        Root.Children.Add(popover);
+        PlacePopover(popover, appliedId);
+        InputManager.Current.PreProcessInput += OnPreProcessInput;
+        first!.Loaded += (_, _) => first.Focus();
+    }
+
+    /// <summary>A format option on the value as it is now ("Show as 464 GB free"), not on the preset's
+    /// fixed example ("64 GB free"), which reads as a wrong number next to a drive with 464 free.</summary>
+    private static string LiveLabel(ValueEntry value, DropOption option)
+    {
+        foreach (var prefix in new[] { "Text ", "Show as " })
+            if (option.Label.StartsWith(prefix, StringComparison.Ordinal) && option.Value.Binding is { } b)
+                return prefix + value.Sample.ToText(b.Format);
+        return option.Label;
+    }
+
+    /// <summary>Beside what the drop made or bound, on the right unless that runs off the pane.</summary>
+    private void PlacePopover(Border popover, string id)
+    {
+        popover.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = popover.DesiredSize;
+        var near = _model?.Find(id) is { } part ? _surface.ToScreen(part.Rect) : new Rect(_view.Width / 2, _view.Height / 2, 0, 0);
+        var left = near.Right + 8;
+        if (left + size.Width > _view.Width - 8) left = near.Left - size.Width - 8;
+        var top = Math.Clamp(near.Top, 8, Math.Max(8, _view.Height - size.Height - 8));
+        popover.Margin = new Thickness(Math.Max(8, left), top, 0, 0);
+    }
+
+    /// <summary>Another option: the one on the canvas is taken back and this one applied, still one
+    /// undo entry. The default (or the one already on) just closes.</summary>
+    private void Pick(int index)
+    {
+        if (_plan is not { } plan) return;
+        if (index != _planIndex)
+        {
+            TakeBack();
+            ApplyOption(plan, index);
+        }
+        ClosePopover();
+        Focus();
+    }
+
+    /// <summary>Esc, and Tab kept inside: the window's own key handling runs before anything on the
+    /// canvas sees a key (Esc climbs a depth, Tab picks a sibling), so while the popover has the
+    /// focus those two are taken before they are routed at all.</summary>
+    private void OnPreProcessInput(object sender, PreProcessInputEventArgs e)
+    {
+        if (_popover is not { IsKeyboardFocusWithin: true } popover
+            || e.StagingItem.Input is not KeyEventArgs { RoutedEvent: var routed } key
+            || routed != Keyboard.PreviewKeyDownEvent) return;
+        if (key.Key == Key.Escape)
+        {
+            e.Cancel();
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                TakeBack();
+                ClosePopover();
+                Focus();
+            }));
+        }
+        else if (key.Key == Key.Tab)
+        {
+            e.Cancel();
+            var back = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+            (Keyboard.FocusedElement as UIElement)?.MoveFocus(new TraversalRequest(back ? FocusNavigationDirection.Previous : FocusNavigationDirection.Next));
+            if (!popover.IsKeyboardFocusWithin) popover.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+        }
+    }
+
+    /// <summary>The arrow keys move between the options (they would otherwise nudge the selection).</summary>
+    private void Popover_KeyDown(object sender, KeyEventArgs e)
+    {
+        var direction = e.Key switch
+        {
+            Key.Up or Key.Left => FocusNavigationDirection.Up,
+            Key.Down or Key.Right => FocusNavigationDirection.Down,
+            _ => (FocusNavigationDirection?)null,
+        };
+        if (direction is not { } d) return;
+        (Keyboard.FocusedElement as UIElement)?.MoveFocus(new TraversalRequest(d));
+        e.Handled = true;
+    }
+
+    /// <summary>Close the popover, keeping what is on the canvas.</summary>
+    private void ClosePopover()
+    {
+        if (_popover is not { } popover) return;
+        _popover = null;
+        _plan = null;
+        InputManager.Current.PreProcessInput -= OnPreProcessInput;
+        Root.Children.Remove(popover);
+    }
+
+    /// <summary>The options open after the last drop, as their labels (the harness reads it).</summary>
+    public IReadOnlyList<string> OpenOptions => _popover is null || _plan is null ? [] : _plan.Options.Select(o => LiveLabel(_plan.Value, o)).ToList();
+
+    // ---- typing into a new text part -------------------------------------------------------------
+
+    private void BeginTextEdit(string id)
+    {
+        if (_model?.Find(id) is not TextDef part) return;
+        var box = _surface.ToScreen(part.Rect);
+        var size = double.TryParse(part.Size.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 16;
+        var editor = new TextBox
+        {
+            Text = part.Text.LiteralText ?? "",
+            FontSize = Math.Clamp(size * _view.Zoom, 12, 48),
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Width = Math.Max(120, box.Width),
+            Margin = new Thickness(Math.Max(0, box.Left + box.Width / 2 - Math.Max(120, box.Width) / 2), Math.Max(0, box.Top), 0, 0),
+        };
+        System.Windows.Automation.AutomationProperties.SetName(editor, "Text of the new part");
+        editor.ToolTip = "Enter keeps it, Esc leaves it as it is";
+        editor.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { CommitTextEdit(); Focus(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { CloseTextEdit(); Focus(); e.Handled = true; }
+        };
+        editor.LostKeyboardFocus += (_, _) => CommitTextEdit();
+        _editor = editor;
+        _editing = id;
+        Root.Children.Add(editor);
+        editor.Loaded += (_, _) => { editor.Focus(); editor.SelectAll(); };
+    }
+
+    private void CommitTextEdit()
+    {
+        if (_editor is not { } editor || _editing is not { } id || _model is null) return;
+        CloseTextEdit();
+        Insert.SetText(_model, id, editor.Text);
+    }
+
+    private void CloseTextEdit()
+    {
+        if (_editor is not { } editor) return;
+        _editor = null;
+        _editing = null;
+        Root.Children.Remove(editor);
+    }
+
+    /// <summary>Whether a new text part is waiting for its text (the harness reads it).</summary>
+    public bool IsTyping => _editor is not null;
+
     // ---- keyboard ------------------------------------------------------------------------------
 
     /// <summary>Arrow keys nudge whatever is selected, one pixel a press and
@@ -766,7 +1103,8 @@ public partial class PreviewView : UserControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Handled || _model is null) return;
+        // The text box laid over the canvas keeps its own arrow keys.
+        if (e.Handled || _model is null || e.OriginalSource is TextBox) return;
         var mods = Keyboard.Modifiers;
         var ctrl = (mods & ModifierKeys.Control) != 0;
         var step = (mods & CoarseNudgeModifier) != 0 ? CoarseNudge : 1;
