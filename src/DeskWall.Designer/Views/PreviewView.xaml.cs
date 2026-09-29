@@ -30,6 +30,10 @@ namespace DeskWall.Designer.Views;
 /// smart guides only while a drag is snapping to one.
 /// </para>
 /// <para>
+/// Depth (plan Task 3.4): at layout depth a copy is one thing; double-click it and the canvas goes to
+/// copy depth, zoomed to fit it, where its parts are picked, moved and scaled one by one (every change
+/// an override); double-click a part there and it goes to widget depth, where the rest of the layout
+/// is dimmed and every copy follows. Double-clicking empty wallpaper outside the widget climbs back.
 /// Zoom (Task 3.1) is continuous from 1/8 to 16, and above 1 the renderer draws the pane at the zoom
 /// rather than this view upscaling a bitmap.
 /// </para>
@@ -99,6 +103,7 @@ public partial class PreviewView : UserControl
 
     private Viewport _view = new(1, 0, 0, 0, 0);
     private bool _fitted = true;          // the view is "fit all", and follows the pane when it resizes
+    private (Viewport View, bool Fitted)? _layoutView;   // the layout-depth view, while a copy or widget is open
     private int _spacing = Placement.DefaultSpacing;
     private string? _hover;
 
@@ -146,6 +151,17 @@ public partial class PreviewView : UserControl
     /// <summary>Raised after the zoom or pan changes (for a zoom readout elsewhere in the shell).</summary>
     public event Action? ViewChanged;
 
+    /// <summary>The canvas wants to change depth: a double-click on a copy (to
+    /// <see cref="DepthKind.Copy"/>), or on empty wallpaper outside the open widget (to
+    /// <see cref="Depth.Layout"/>). With no subscriber the canvas goes there itself
+    /// (<see cref="GoToDepth"/>); the shell subscribes when it wants to route depth changes through
+    /// its own navigation, and then calls <see cref="GoToDepth"/> (or <c>SetDepth</c>) itself.</summary>
+    public event Action<Depth>? DepthRequested;
+
+    /// <summary>The canvas wants to edit a copy's widget: a double-click on a part at copy depth.
+    /// The argument is the copy's id. With no subscriber the canvas goes to widget depth itself.</summary>
+    public event Action<string>? EditWidgetRequested;
+
     public void Attach(DesignerModel model, PreviewRenderer renderer)
     {
         if (_model is not null)
@@ -163,6 +179,7 @@ public partial class PreviewView : UserControl
         _renderer.Rendered += OnRendered;
         _targets = null;
         _fitted = true;
+        _layoutView = null;
         PlaceView();
         RequestFrame();
         Redraw();
@@ -237,6 +254,15 @@ public partial class PreviewView : UserControl
             : null;
     }
 
+    /// <summary>Everything the open widget covers: its frame and its parts. What depth zooms to and
+    /// what widget depth leaves undimmed.</summary>
+    private CRect? OpenBounds()
+    {
+        if (_model is null || OpenCopy() is not { } copy) return null;
+        var parts = Copies.Bounds(copy, _model.Expanded(), _model.Finder());
+        return WidgetFrame() is { } frame ? Placement.Bounds([parts, frame]) : parts;
+    }
+
     /// <summary>Where a widget added from the gallery lands, and - while the layout is empty - the
     /// only thing drawn on the canvas besides the photograph. Still the right-hand margin, because
     /// that is the part of the wallpaper windows leave visible (CLAUDE.md); it is a hint about the
@@ -251,12 +277,13 @@ public partial class PreviewView : UserControl
     /// <summary>Fit the whole wallpaper in the pane (Shift+1). Keeps fitting as the pane resizes.</summary>
     public void FitAll() => SetView(_view.Fit(CanvasRect()), fitted: true);
 
-    /// <summary>Fit the selection in the pane (Shift+2), else the whole wallpaper. Capped at
-    /// <see cref="FitCap"/>.</summary>
+    /// <summary>Fit the selection in the pane (Shift+2), else the open widget, else the whole
+    /// wallpaper. Capped at <see cref="FitCap"/>.</summary>
     public void FitSelection()
     {
         var selected = SelectedTargets();
         if (selected.Count > 0) SetView(_view.Fit(Placement.Bounds(selected.Select(t => t.Bounds)), FitCap));
+        else if (OpenBounds() is { } open) SetView(_view.Fit(open, FitCap));
         else FitAll();
     }
 
@@ -268,6 +295,14 @@ public partial class PreviewView : UserControl
 
     /// <summary>An exact zoom (1 is 100%, Ctrl+0), about the pane's centre.</summary>
     public void ZoomTo(double zoom) => SetView(_view.ZoomAbout(zoom, _view.Width / 2, _view.Height / 2));
+
+    /// <summary>Go to <paramref name="depth"/> as the canvas does on a double-click: set it on the
+    /// model, which zooms the canvas to the open copy (or back to the layout view it left).</summary>
+    public void GoToDepth(Depth depth)
+    {
+        ArgumentNullException.ThrowIfNull(depth);
+        _model?.SetDepth(depth);
+    }
 
     private void ZoomIn_Click(object sender, RoutedEventArgs e) => ZoomIn();
 
@@ -326,11 +361,64 @@ public partial class PreviewView : UserControl
         e.Handled = true;
     }
 
-    /// <summary>What a click can land on depends on the depth, whatever changed it.</summary>
+    // ---- depth (plan Task 3.4) -----------------------------------------------------------------------
+
+    /// <summary>Going into a copy or widget zooms to it, and remembers the layout view; coming back
+    /// to layout depth puts that view back. Whatever changed the depth: this canvas, the shell's
+    /// keys, or the knobs panel's Details.</summary>
     private void OnDepthChanged()
     {
         _targets = null;
+        if (_model is null) return;
+        if (_model.Depth.Kind == DepthKind.Layout)
+        {
+            if (_layoutView is { } saved)
+            {
+                _layoutView = null;
+                SetView(saved.Fitted ? saved.View.Fit(CanvasRect()) : saved.View, saved.Fitted);
+            }
+        }
+        else
+        {
+            _layoutView ??= (_view, _fitted);
+            if (OpenBounds() is { } open) SetView(_view.Fit(open, FitCap));
+        }
         Redraw();
+    }
+
+    private void RequestDepth(Depth depth)
+    {
+        if (DepthRequested is { } handler) handler(depth);
+        else GoToDepth(depth);
+    }
+
+    /// <summary>The second press of a double-click, which the first press has already treated as a
+    /// select: go down into what it landed on, or up out of the open widget when it landed outside it.</summary>
+    private void OnDoubleClick(Point screen)
+    {
+        if (_model is null) return;
+        var (cx, cy) = _view.ToCanvas(screen.X, screen.Y);
+        var hit = Targets.Hit(AllTargets(), cx, cy);
+        switch (_model.Depth.Kind)
+        {
+            case DepthKind.Layout when hit is { IsWidget: true } && Copies.Find(_model.Layout, hit.Id) is { } copy:
+                RequestDepth(Depth.Copy(copy.Id, copy.Widget));
+                // Figma's instance double-click: the part under the pointer is what gets selected.
+                if (_model.Depth.Kind == DepthKind.Copy && Targets.Hit(AllTargets(), cx, cy) is { } part) SelectTargets([part]);
+                break;
+            case DepthKind.Copy when hit is not null && OpenCopy() is { } open:
+                if (EditWidgetRequested is { } handler) handler(open.Id);
+                else GoToDepth(Depth.Widget(open.Widget, open.Id));
+                break;
+            case DepthKind.Copy or DepthKind.Widget when hit is null && !Inside(OpenBounds(), cx, cy):
+                var was = OpenCopy()?.Id;
+                RequestDepth(Depth.Layout);
+                if (was is not null && _model.Depth.Kind == DepthKind.Layout) _model.Select([was]);
+                break;
+        }
+
+        static bool Inside(CRect? r, double x, double y)
+            => r is { } b && x >= b.X && x < b.Right && y >= b.Y && y < b.Bottom;
     }
 
     // ---- the grid ---------------------------------------------------------------------------------
@@ -444,6 +532,12 @@ public partial class PreviewView : UserControl
         if (_model is null || e.ChangedButton != MouseButton.Left) return;
         _downScreen = e.GetPosition(_surface);
         e.Handled = true;
+        if (e.ClickCount == 2)
+        {
+            Reset();
+            OnDoubleClick(_downScreen);
+            return;
+        }
         BeginGesture(_downScreen);
     }
 
@@ -765,10 +859,31 @@ public partial class PreviewView : UserControl
         _surface.Handles = _resizing is null && !_dragging && SelectionScreenBox() is { } box
             ? VisibleHandles(box).Select(h => HandleCentre(box, h)).ToList()
             : [];
+        _surface.OpenFrame = depth == DepthKind.Layout ? null : OpenBounds();
+        _surface.Dimmed = depth == DepthKind.Widget;
+        _surface.Broken = BrokenLinks();
 
         _alignBar.Visibility = selected.Count >= 2 ? Visibility.Visible : Visibility.Collapsed;
         _alignBar.SetSelectionCount(selected.Count);
         _surface.InvalidateVisual();
+    }
+
+    /// <summary>Every copy whose widget the last frame could not expand, as a box and a sentence
+    /// (brief section 5: a visible broken link, never a silent blank).</summary>
+    private IReadOnlyList<(CRect Box, string Text)> BrokenLinks()
+    {
+        if (_model is null || _frame is null) return [];
+        var list = new List<(CRect, string)>();
+        foreach (var p in _frame.Problems)
+        {
+            if (p.Kind is not (ExpandProblemKind.MissingWidget or ExpandProblemKind.BrokenWidget)) continue;
+            if (Copies.Find(_model.Layout, p.CopyId) is not { } copy) continue;
+            var box = Copies.Bounds(copy, _model.Expanded(), _model.Finder());
+            list.Add((box, p.Kind == ExpandProblemKind.MissingWidget
+                ? $"Widget '{copy.Widget}' is missing"
+                : $"Widget '{copy.Widget}' could not be read"));
+        }
+        return list;
     }
 
     private static Rect Inflate(Rect r, double by)
@@ -802,6 +917,13 @@ public partial class PreviewView : UserControl
         public bool Empty { get; set; }
         public IReadOnlyList<Snap.Guide> Guides { get; set; } = [];
 
+        /// <summary>The open copy's or widget's bounds at copy and widget depth; null at layout depth.</summary>
+        public CRect? OpenFrame { get; set; }
+
+        /// <summary>Widget depth: everything outside <see cref="OpenFrame"/> is dimmed.</summary>
+        public bool Dimmed { get; set; }
+        public IReadOnlyList<(CRect Box, string Text)> Broken { get; set; } = [];
+
         public Point ToCanvas(Point screen) => new((screen.X - Origin.X) / Zoom, (screen.Y - Origin.Y) / Zoom);
 
         public Rect ToScreen(CRect r) => new(Origin.X + r.X * Zoom, Origin.Y + r.Y * Zoom, r.W * Zoom, r.H * Zoom);
@@ -825,6 +947,22 @@ public partial class PreviewView : UserControl
             // photograph is the one thing this surface is guaranteed to be.
             var halo = Stroke(Color.FromArgb(150, 0, 0, 0), 3.5);
             var outline = new Pen(accent, 1.75);
+
+            foreach (var (box, text) in Broken) DrawBroken(dc, ToScreen(box), text);
+
+            if (OpenFrame is { } open)
+            {
+                var box = ToScreen(open);
+                if (Dimmed)
+                {
+                    var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(frame), new RectangleGeometry(box));
+                    dc.DrawGeometry(DimBrush, null, outside);
+                }
+                var dashed = new Pen(new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), 1) { DashStyle = new DashStyle([4, 4], 0) };
+                dc.DrawRectangle(null, Stroke(Color.FromArgb(120, 0, 0, 0), 2.5), Inflate(box, OutlineInset + 6));
+                dc.DrawRectangle(null, dashed, Inflate(box, OutlineInset + 6));
+            }
+
             if (Empty && Hint is { } hint) DrawEmptyState(dc, frame, hint);
 
             if (Hover is { } h)
@@ -910,6 +1048,42 @@ public partial class PreviewView : UserControl
                 }
             }
         }
+
+        /// <summary>A copy whose widget is missing or unreadable: an amber-hatched box where it sits,
+        /// with the reason in it when the box is big enough on screen to hold a line of text.</summary>
+        private void DrawBroken(DrawingContext dc, Rect box, string text)
+        {
+            dc.DrawRectangle(BrokenFill, null, box);
+            dc.DrawRectangle(HatchBrush, null, box);
+            dc.DrawRectangle(null, Stroke(Color.FromArgb(230, 0, 0, 0), 3), box);
+            dc.DrawRectangle(null, Stroke(Color.FromRgb(255, 176, 32), 1.5), box);
+            if (box.Width < 40 || box.Height < 14) return;
+            var label = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+                Math.Clamp(box.Height * 0.3, 11, 16), Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip)
+            { MaxTextWidth = Math.Max(1, box.Width - 12), MaxTextHeight = Math.Max(1, box.Height - 6), Trimming = TextTrimming.CharacterEllipsis };
+            var at = new Point(box.X + 6, box.Y + Math.Max(3, (box.Height - label.Height) / 2));
+            var plate = new Rect(at.X - 3, at.Y - 1, label.Width + 6, label.Height + 2);
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(200, 0, 0, 0)), null, plate, 3, 3);
+            dc.DrawText(label, at);
+        }
+
+        private static readonly Brush DimBrush = Frozen(new SolidColorBrush(Color.FromArgb(150, 0, 0, 0)));
+        private static readonly Brush BrokenFill = Frozen(new SolidColorBrush(Color.FromArgb(150, 40, 24, 0)));
+
+        /// <summary>Diagonal amber stripes, 8 screen pixels apart whatever the zoom.</summary>
+        private static readonly Brush HatchBrush = Frozen(new DrawingBrush(new GeometryDrawing(null,
+            new Pen(new SolidColorBrush(Color.FromArgb(170, 255, 176, 32)), 2),
+            Geometry.Parse("M0,8 L8,0 M-2,2 L2,-2 M6,10 L10,6")))
+        {
+            TileMode = TileMode.Tile,
+            Viewport = new Rect(0, 0, 8, 8),
+            ViewportUnits = BrushMappingMode.Absolute,
+            Viewbox = new Rect(0, 0, 8, 8),
+            ViewboxUnits = BrushMappingMode.Absolute,
+        });
+
+        private static Brush Frozen(Brush b) { b.Freeze(); return b; }
 
         /// <summary>The grid, in canvas pixels, at a coarser multiple when the zoom would otherwise
         /// pack the lines into a haze. Only how many lines are drawn changes - what snapping rounds
