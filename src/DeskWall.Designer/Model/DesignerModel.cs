@@ -1,6 +1,7 @@
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model;
 
@@ -44,6 +45,50 @@ public sealed class DesignerModel
     public event Action? Changed;
     public event Action? SelectionChanged;
 
+    /// <summary>Raised by <see cref="SetDepth"/> when the depth actually changes.</summary>
+    public event Action? DepthChanged;
+
+    // ---- widgets and depth (the Phase 2 seam) ------------------------------------------------
+
+    private readonly Dictionary<string, WidgetTemplate> _widgetEdits = new(StringComparer.OrdinalIgnoreCase);
+    private Expansion? _expanded;
+
+    /// <summary>The widget overlay: widgets edited in this document and not yet applied, by key.
+    /// Apply writes each to <c>WidgetCatalog.UserDir\&lt;key&gt;.json</c> (the fork, plan D2). Empty
+    /// until <c>lane/p2-document</c> gives it mutators and puts it in the undo snapshot.</summary>
+    public IReadOnlyDictionary<string, WidgetTemplate> WidgetEdits => _widgetEdits;
+
+    /// <summary>A widget lookup by key: the overlay first, then <see cref="WidgetCatalog.UserDir"/>,
+    /// then <see cref="WidgetCatalog.ShippedDir"/>. The overlay is copied when this is called, so
+    /// the returned function is safe to hand to another thread (the preview renderer). Like
+    /// <see cref="WidgetCatalog.Finder"/>, it returns null for an unknown key and throws for a file
+    /// that fails to load.</summary>
+    public Func<string, WidgetTemplate?> Finder()
+    {
+        var overlay = new Dictionary<string, WidgetTemplate>(_widgetEdits, StringComparer.OrdinalIgnoreCase);
+        var disk = WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
+        return key => overlay.TryGetValue(key, out var edited) ? edited : disk(key);
+    }
+
+    /// <summary><see cref="Layout"/> with its copies expanded through <see cref="Finder"/>: what
+    /// the canvas draws and the daemon would paint. Cached until the next <see cref="Changed"/>.
+    /// Read-only: for a layout with no copies <c>Expansion.Layout</c> is <see cref="Layout"/>
+    /// itself, so mutate through <see cref="Edit"/>, never through this.</summary>
+    public Expansion Expanded() => _expanded ??= WidgetExpander.Expand(Layout, Finder());
+
+    /// <summary>The depth the canvas is editing at. Starts at <see cref="Depth.Layout"/>.</summary>
+    public Depth Depth { get; private set; } = Depth.Layout;
+
+    /// <summary>Go to <paramref name="depth"/>. Not an undo entry. Raises <see cref="DepthChanged"/>
+    /// when it differs from the current depth.</summary>
+    public void SetDepth(Depth depth)
+    {
+        ArgumentNullException.ThrowIfNull(depth);
+        if (depth == Depth) return;
+        Depth = depth;
+        DepthChanged?.Invoke();
+    }
+
     // ---- selection ------------------------------------------------------------------------
 
     public void Select(IEnumerable<string> ids)
@@ -65,6 +110,7 @@ public sealed class DesignerModel
         _redo.Clear();
         mutate(Layout);
         LastEditLabel = label;
+        _expanded = null;
         Changed?.Invoke();
     }
 
@@ -94,6 +140,7 @@ public sealed class DesignerModel
         Restore(_undo[^1]);
         _undo.RemoveAt(_undo.Count - 1);
         PruneSelection();
+        _expanded = null;
         Changed?.Invoke();
     }
 
@@ -103,6 +150,7 @@ public sealed class DesignerModel
         _undo.Add(Capture());
         Restore(_redo.Pop());
         PruneSelection();
+        _expanded = null;
         Changed?.Invoke();
     }
 
@@ -260,6 +308,7 @@ public sealed class DesignerModel
         if (Path is null) throw new InvalidOperationException("no path; use Save As");
         Layout.Save(Path);
         _savedJson = Layout.ToJson();
+        _expanded = null;
         Changed?.Invoke();
     }
 
