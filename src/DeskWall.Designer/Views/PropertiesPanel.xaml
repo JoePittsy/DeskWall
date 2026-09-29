@@ -6,7 +6,6 @@
        also loads where App.xaml is not (the tests). -->
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
     <StackPanel Margin="16">
-      <TextBlock x:Name="EmptyText" Text="No selection" Visibility="Collapsed" Style="{DynamicResource Hint}" />
       <StackPanel x:Name="Root" />
     </StackPanel>
   </ScrollViewer>

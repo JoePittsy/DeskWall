@@ -59,18 +59,6 @@ public partial class PropertiesPanel : UserControl
     /// <summary>Remove widget was pressed for this copy id. The host removes it.</summary>
     public event Action<string>? RemoveRequested;
 
-    /// <summary>The widget editor's hooks (<c>WidgetEditorWindow</c>, until Phase 6 retires it):
-    /// whether (component id, property) is one of the widget's knobs, and toggling it. When set,
-    /// the row menu offers Expose as knob through these, and an empty selection reads "No
-    /// selection" instead of the layout's settings. The main window leaves both null; its widget
-    /// depth exposes through the model.</summary>
-    public Func<string, string, bool>? IsAdjustable { get; set; }
-
-    /// <inheritdoc cref="IsAdjustable"/>
-    public Action<string, string>? ToggleAdjustable { get; set; }
-
-    private bool EditorHost => IsAdjustable is not null && ToggleAdjustable is not null;
-
     /// <summary>Also the way to say "the widget files changed": it re-renders from scratch, and a
     /// copy's template is always looked up afresh through <see cref="DesignerModel.Finder"/>.</summary>
     public void Attach(DesignerModel model)
@@ -169,7 +157,6 @@ public partial class PropertiesPanel : UserControl
         Root.Children.Clear();
         _chips.Clear();
         _layoutShown = false;
-        EmptyText.Visibility = Visibility.Collapsed;
         if (_model is null) return;
 
         if (CurrentFound() is { } found) BuildPart(found);
@@ -187,14 +174,7 @@ public partial class PropertiesPanel : UserControl
             Add(PartPicker());
             Add(Hint("Select a part to change it."));
         }
-        else if (_model.Depth is { Kind: DepthKind.Widget, WidgetKey: { } key })
-        {
-            Add(Header(Copies.TryFind(_model.Finder(), key)?.Name ?? key));
-            Add(Hint("Editing the widget: every copy that has not overridden a change follows it."));
-            Add(PartPicker());
-            Add(Hint("Select a part to change it."));
-        }
-        else if (EditorHost) EmptyText.Visibility = Visibility.Visible;
+        else if (_model.Depth is { Kind: DepthKind.Widget, WidgetKey: { } key }) BuildWidget(key);
         else BuildLayoutPanel();
 
         RestoreFocus(focus);
@@ -365,6 +345,137 @@ public partial class PropertiesPanel : UserControl
         catch (IOException) { return Array.Empty<string>(); }
     }
 
+    // ---- the widget itself, at widget depth ------------------------------------------------------
+
+    /// <summary>Widget depth with no part selected: the widget as a whole. What the retired widget
+    /// editor's header and knob list did: its name and description (what the Insert card shows),
+    /// its anchor, its size (read only: the frame hugs its parts), and its knobs. The key is not
+    /// here: it is fixed when the widget is made (plan D2). Each change is one edit to the widget
+    /// (<see cref="Lens.EditWidget"/>), which every copy follows, written by Apply.</summary>
+    private void BuildWidget(string key)
+    {
+        var model = _model!;
+        if (Copies.TryFind(model.Finder(), key) is not { } template)
+        {
+            Add(Header(key));
+            Add(Hint($"The widget '{key}' is missing or cannot be read."));
+            return;
+        }
+        Add(Header(template.Name));
+        Add(Hint("Editing the widget: every copy that has not overridden a change follows it. Apply saves it."));
+
+        Add(GroupHeader("Widget"));
+        Add(Shell("widget/name", "Name", WidgetText(key, "widget:name", "Name", template.Name, (d, v) => d.Name = v), false, null, null, null));
+        Add(Shell("widget/description", "Description", WidgetText(key, "widget:description", "Description", template.Description, (d, v) => d.Description = v), false, null, null, null));
+        var anchor = new ComboBox();
+        foreach (var (label, value) in new[] { ("Top", "top"), ("Bottom", "bottom") })
+            anchor.Items.Add(new ComboBoxItem { Content = label, Tag = value });
+        anchor.SelectedItem = anchor.Items.OfType<ComboBoxItem>().FirstOrDefault(i => string.Equals((string)i.Tag!, template.Anchor, StringComparison.OrdinalIgnoreCase));
+        anchor.SelectionChanged += (_, _) =>
+        {
+            if (anchor.SelectedItem is ComboBoxItem { Tag: string v }) Lens.EditWidget(model, key, "Set anchor", d => d.Anchor = v);
+        };
+        Identify(anchor, "Anchor", "widget:anchor");
+        anchor.ToolTip = "Which end of a column this stacks from";
+        Add(Shell("widget/anchor", "Anchor", anchor, false, null, null, null));
+        var size = Label(string.Format(CultureInfo.InvariantCulture, "{0} \u00d7 {1}", template.Width, template.Height));
+        size.ToolTip = "The frame hugs its parts: move or resize a part to change it";
+        Add(Shell("widget/size", "Size", size, false, null, null, null));
+
+        BuildWidgetKnobs(key);
+        Add(PartPicker());
+        Add(Hint("Select a part to change it. Its row menu exposes a property as a knob."));
+    }
+
+    /// <summary>A header box: blank is refused (Insert shows the name, and a widget file with no
+    /// description does not load), so the box goes back to what the widget has.</summary>
+    private TextBox WidgetText(string key, string id, string name, string value, Action<WidgetDocument, string> set)
+    {
+        var box = new TextBox { Text = value, TextWrapping = TextWrapping.Wrap };
+        Identify(box, name, id);
+        OnCommit(box, () =>
+        {
+            var text = box.Text.Trim();
+            if (text.Length == 0) { box.Text = value; return; }
+            if (_model is not null) Lens.EditWidget(_model, key, $"Set {name.ToLowerInvariant()}", d => set(d, text));
+        });
+        return box;
+    }
+
+    /// <summary>The widget's knobs: what a copy may change. A knob is made from its property's row
+    /// menu (Expose as knob) or a source setting's Knob toggle; here it is named, bounded and
+    /// removed. One a person wrote by hand in the file (a composite, a token splice) is listed and
+    /// kept as it is: nothing here could edit it without getting it wrong.</summary>
+    private void BuildWidgetKnobs(string key)
+    {
+        if (WidgetDoc() is not { } doc) return;
+        Add(GroupHeader("Knobs"));
+        if (doc.Adjustables.Count == 0 && doc.PassThroughKnobs.Count == 0)
+            Add(Hint("None yet. Expose a property as a knob from its row menu, or a source setting with its Knob toggle, to let each copy change it."));
+        foreach (var target in doc.Adjustables)
+        {
+            var id = target.Id;
+            AdjustableTarget Find(WidgetDocument d) => d.Adjustables.First(a => a.Id == id);
+            var label = new TextBox { Text = target.Label };
+            Identify(label, $"Knob {target.Label}, label", $"knob-label/{id}");
+            OnCommit(label, () =>
+            {
+                var text = label.Text.Trim();
+                if (text.Length == 0) { label.Text = target.Label; return; }
+                if (_model is not null) Lens.EditWidget(_model, key, "Rename knob", d => Find(d).Label = text);
+            });
+            var remove = new Button { Content = "\u2715", Width = 28, Padding = new Thickness(0), Margin = new Thickness(6, 0, 0, 0), ToolTip = "Stop letting a copy change this" };
+            Identify(remove, $"Remove the knob {target.Label}", $"knob-remove/{id}");
+            remove.Click += (_, _) => { if (_model is not null) Lens.EditWidget(_model, key, $"Remove {target.Label} knob", d => d.RemoveAdjustable(Find(d))); };
+            var line = new DockPanel();
+            DockPanel.SetDock(remove, Dock.Right);
+            line.Children.Add(remove);
+            line.Children.Add(label);
+
+            FrameworkElement? below = null;
+            if (Adjustable.ToKnob(doc, target)?.Type == KnobType.Number)
+            {
+                var range = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+                range.Children.Add(Bound("Min", target.Min, (d, v) => Find(d).Min = v));
+                range.Children.Add(Bound("Max", target.Max, (d, v) => Find(d).Max = v));
+                below = range;
+            }
+            Add(Shell($"knob-row/{id}", TargetLine(target), line, false, null, null, below));
+
+            FrameworkElement Bound(string caption, double? value, Action<WidgetDocument, double?> set)
+            {
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 12, 0) };
+                var text = Label(caption);
+                text.Margin = new Thickness(0, 0, 6, 0);
+                panel.Children.Add(text);
+                var box = new TextBox { Width = 64, Text = value?.ToString("R", CultureInfo.InvariantCulture) ?? "" };
+                Identify(box, $"Knob {target.Label}, {caption.ToLowerInvariant()}imum (blank for none)", $"knob-{caption.ToLowerInvariant()}/{id}");
+                OnCommit(box, () =>
+                {
+                    var t = box.Text.Trim();
+                    double? v = t.Length == 0 ? null
+                        : double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) ? n : value;
+                    if (_model is not null) Lens.EditWidget(_model, key, $"Set {target.Label} {caption.ToLowerInvariant()}", d => set(d, v));
+                });
+                panel.Children.Add(box);
+                return panel;
+            }
+        }
+        foreach (var knob in doc.PassThroughKnobs)
+        {
+            var kept = Label(knob.Label);
+            kept.ToolTip = "Written by hand in the widget file; kept as it is.";
+            Add(Shell($"knob-row/{knob.Id}", "By hand", kept, false, null, null, null));
+        }
+    }
+
+    /// <summary>What a knob writes, as the label of its row: the part (or source) it changes. A
+    /// Drive knob writes several places, which is the point of it.</summary>
+    private static string TargetLine(AdjustableTarget target)
+        => target.IsDrive ? "Drive"
+            : target.IsComponent ? $"{target.ComponentId} \u00b7 {PropertyRows.Label(target.Property!)}"
+            : $"{target.SourceName} \u00b7 {target.SettingKey}";
+
     // ---- a part ---------------------------------------------------------------------------------
 
     /// <summary>How a part's rows reach the document and what they annotate.</summary>
@@ -401,7 +512,6 @@ public partial class PropertiesPanel : UserControl
             Add(PartPicker());
             Add(SubHeader(TypeName(def) + " · " + Local(def.Id)));
         }
-        else if (EditorHost) Add(Header(TypeName(def)));
         else
         {
             Add(Header(TypeName(def)));
@@ -429,10 +539,7 @@ public partial class PropertiesPanel : UserControl
     private WidgetDocument? WidgetDoc()
     {
         if (_model is not { Depth: { Kind: DepthKind.Widget, WidgetKey: { } key } }) return null;
-        if (Copies.TryFind(_model.Finder(), key) is not { } template) return null;
-        var doc = WidgetDocument.FromTemplate(template, template.Path);
-        doc.EditingKey = template.Key;
-        return doc;
+        return Copies.TryFind(_model.Finder(), key) is { } template ? WidgetDocument.FromTemplate(template) : null;
     }
 
     /// <summary>Expose a part's property as a knob of the widget, or take it back, as one edit to
@@ -523,13 +630,7 @@ public partial class PropertiesPanel : UserControl
         Action? unbind = bound is not null && prop.Editor != PropertySchema.Editor.Binding
             ? () => EditCurrent($"Unbind {row.Label}", (_, d) => prop.Set(d, PropertyValue.Literal(""))) : null;
         (string, bool, Action)? expose = null;
-        if (EditorHost && ctx.LocalId is not null)
-        {
-            var drive = Adjustable.CanAdjustAsDrive(def, prop);
-            if (drive || Adjustable.CanAdjust(def, prop))
-                expose = (drive ? "Expose as drive picker" : "Expose as knob", IsAdjustable!(def.Id, prop.Name), () => { ToggleAdjustable!(def.Id, prop.Name); Render(); });
-        }
-        else if (ctx.Doc is { } doc && ctx.LocalId is { } local && doc.Model.Find(local) is { } docPart)
+        if (ctx.Doc is { } doc && ctx.LocalId is { } local && doc.Model.Find(local) is { } docPart)
         {
             var drive = Adjustable.CanAdjustAsDrive(docPart, prop);
             if (drive || Adjustable.CanAdjust(docPart, prop))

@@ -19,7 +19,7 @@ public sealed record SourceField(
     string? Hint = null);
 
 /// <summary>
-/// What the widget editor asks for when a source is added, as a table rather than three
+/// What the sources panel asks for when a source is added to a widget, as a table rather than three
 /// hand-written panels: the fields per type, their defaults, and the conversion both ways between
 /// a form's values and a <see cref="SourceDef"/>.
 /// <para>

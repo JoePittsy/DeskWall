@@ -44,7 +44,7 @@ public class AdjustableTests
     [Fact]
     public void A_Bound_Property_Cannot_Be_Made_Adjustable()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.Model.Edit("Bind", l => ((TextDef)l.Components[0]).Text = PropertyValue.Bound(Binding.Parse("time.now")));
 
@@ -71,7 +71,7 @@ public class AdjustableTests
     [Fact]
     public void The_Label_Is_The_Property_Name_Until_Two_Parts_Share_It()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var first = doc.AddPart(PartKind.Text);
         var second = doc.AddPart(PartKind.Text);
 
@@ -85,7 +85,7 @@ public class AdjustableTests
     [Fact]
     public void Toggling_Twice_Takes_The_Knob_Back_Off()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         Assert.True(doc.ToggleAdjustable(part.Id, "Text"));
         Assert.False(doc.ToggleAdjustable(part.Id, "Text"));
@@ -98,7 +98,7 @@ public class AdjustableTests
     [Fact]
     public void The_Default_Is_Read_At_Save_Time_Not_At_Expose_Time()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.ToggleAdjustable(part.Id, "Text");
         Assert.Equal("Text", Assert.Single(doc.ToTemplate().Knobs).Default);
@@ -110,7 +110,7 @@ public class AdjustableTests
     [Fact]
     public void A_Choice_Default_Comes_Back_In_The_Choice_Lists_Own_Spelling()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.ToggleAdjustable(part.Id, "Align");
 
@@ -123,7 +123,7 @@ public class AdjustableTests
     [Fact]
     public void A_Number_Knob_Carries_The_Range_The_Author_Set()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.ToggleAdjustable(part.Id, "Size");
         var target = Assert.Single(doc.Adjustables);
@@ -141,7 +141,7 @@ public class AdjustableTests
     [Fact]
     public void A_Component_Knob_Writes_The_Property_In_Lower_Case()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.ToggleAdjustable(part.Id, "EffectRadius");
         Assert.Equal(["components.text.effectradius"], Assert.Single(doc.ToTemplate().Knobs).Sets);
@@ -150,7 +150,7 @@ public class AdjustableTests
     [Fact]
     public void A_Source_Setting_Knob_Writes_Its_Settings_Path()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.AddSource(new SourceDef { Name = "feed", Type = "http", Settings = { ["url"] = "https://example.com/x" } });
         Assert.True(doc.ToggleSettingAdjustable("feed", "url"));
 
@@ -165,7 +165,7 @@ public class AdjustableTests
     [Fact]
     public void An_Every_Knob_Writes_The_Sources_Own_Field()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.AddSource(new SourceDef { Name = "feed", Type = "http", EverySeconds = 900, Settings = { ["url"] = "https://example.com/x" } });
         doc.ToggleSettingAdjustable("feed", "every");
 
@@ -178,7 +178,7 @@ public class AdjustableTests
     [Fact]
     public void Setting_An_Every_Knob_On_A_Placed_Instance_Changes_The_Refresh_Interval()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.AddSource(new SourceDef { Name = "feed", Type = "http", EverySeconds = 900, Settings = { ["url"] = "https://example.com/x" } });
         doc.AddPart(PartKind.Text);
         doc.ToggleSettingAdjustable("feed", "every");
@@ -197,7 +197,7 @@ public class AdjustableTests
     [Fact]
     public void Deleting_The_Part_Drops_Its_Knob()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.ToggleAdjustable(part.Id, "Text");
         Assert.Single(doc.Adjustables);
@@ -210,7 +210,7 @@ public class AdjustableTests
     [Fact]
     public void Removing_The_Source_Drops_Its_Knob()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.AddSource(new SourceDef { Name = "feed", Type = "http", Settings = { ["url"] = "https://example.com/x" } });
         doc.ToggleSettingAdjustable("feed", "url");
         Assert.Single(doc.Adjustables);
@@ -222,7 +222,7 @@ public class AdjustableTests
     [Fact]
     public void Binding_An_Exposed_Property_Drops_Its_Knob()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         var part = doc.AddPart(PartKind.Text);
         doc.ToggleAdjustable(part.Id, "Text");
 

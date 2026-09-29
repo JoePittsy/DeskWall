@@ -16,11 +16,8 @@ public sealed class DesignerModel
 {
     private const int UndoCap = 100;
 
-    /// <summary>What an undo entry holds. The canvas size is in here and not in a parallel stack
-    /// because the widget editor's <c>Fit to parts</c> moves the components AND changes the size in
-    /// one <see cref="Edit"/>: two stacks would let a single Ctrl+Z put back one and not the
-    /// other. The widget overlay is in here for the same reason: Make widget adds a copy AND a
-    /// widget in one edit, and its undo has to take both away.</summary>
+    /// <summary>What an undo entry holds. The widget overlay is in here, not in a parallel stack:
+    /// Make widget adds a copy AND a widget in one edit, and its undo has to take both away.</summary>
     private readonly record struct Snapshot(string Json, DisplaySignature Signature, string WidgetEditsJson);
 
     private readonly List<Snapshot> _undo = new();
@@ -39,8 +36,8 @@ public sealed class DesignerModel
 
     public LayoutFile Layout { get; private set; }
 
-    /// <summary>The canvas this document is authored on. A layout's is the display's and never
-    /// changes; a widget document's is the widget's own size, which <see cref="ResizeCanvas"/> edits.</summary>
+    /// <summary>The canvas this document is authored on: the display's (a layout), or the widget's
+    /// own size (a <see cref="WidgetDocument"/>'s draft).</summary>
     public DisplaySignature Signature { get; private set; }
     public string? Path { get; set; }
     public bool Dirty => Layout.ToJson() != _savedJson || WidgetEditsJson() != _savedEditsJson;
@@ -167,13 +164,29 @@ public sealed class DesignerModel
 
     private bool HasCopies => Layout.Copies is { Count: > 0 };
 
-    /// <summary>The widget files on disk changed (the widget editor saved, or one was deleted): drop
+    /// <summary>The widget files on disk changed (Apply wrote a fork, or one was deleted): drop
     /// the cached expansion and projection so every copy of them redraws, and tell listeners. Not an
     /// undo entry: the document did not change, what it links to did.</summary>
     public void WidgetsChanged()
     {
         PruneSelection();
         AfterChange();
+    }
+
+    /// <summary>The widget file behind <paramref name="key"/> was deleted (Reset, or Delete of one of
+    /// the owner's own): the overlay's entry for it goes too, edits not yet applied included, so its
+    /// copies follow what is on disk now. Not an undo entry, like the deletion itself; an undo to a
+    /// state that held the entry brings it back, and the next Apply writes it again.</summary>
+    public void ForgetWidget(string key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (_widgetEdits.Remove(key))
+        {
+            var saved = ParseWidgetEdits(_savedEditsJson);
+            saved.Remove(key);
+            _savedEditsJson = EditsJson(saved);
+        }
+        WidgetsChanged();
     }
 
     public void ClearSelection() { if (_selection.Count == 0) return; _selection.Clear(); SelectionChanged?.Invoke(); }
@@ -224,23 +237,6 @@ public sealed class DesignerModel
     }
 
     public string? LastEditLabel { get; private set; }
-
-    /// <summary>Change the canvas the document is authored on, undoably. Only the widget editor
-    /// calls this: a layout's canvas is the display's, and the store scales between displays.
-    /// <para>Not named Resize, for the same reason <see cref="SetRect"/> is not: the canvas's own
-    /// <see cref="Model.Resize"/> maths has to stay reachable by name from in here.</para></summary>
-    public void ResizeCanvas(int width, int height)
-    {
-        var w = Math.Max(1, width);
-        var h = Math.Max(1, height);
-        if (Signature.Width == w && Signature.Height == h) return;
-        Edit("Resize canvas", _ => SetSignatureSize(w, h));
-    }
-
-    /// <summary>The size change on its own, with no undo entry of its own, for a caller already
-    /// inside an <see cref="Edit"/> that moves the components at the same time (Fit to parts).</summary>
-    internal void SetSignatureSize(int width, int height)
-        => Signature = Signature with { Width = Math.Max(1, width), Height = Math.Max(1, height) };
 
     public void Undo()
     {
@@ -637,15 +633,40 @@ public sealed class DesignerModel
     /// <summary>Write every overlay widget to <c>WidgetCatalog.UserDir\&lt;key&gt;.json</c> (a shipped
     /// key is forked, plan D2: every copy of it on the machine follows), then the layout. Each is a
     /// temp file then a rename. Widgets first, so a layout is never on disk ahead of the widgets
-    /// it was drawn with.</summary>
+    /// it was drawn with.
+    /// <para>Every widget file is read back with <see cref="WidgetTemplate.Load"/> before any is
+    /// renamed into place: one that would not load (no name, no description, more than five knobs)
+    /// throws <see cref="InvalidOperationException"/> naming it, and nothing is written. A file the
+    /// daemon cannot read is every copy of that widget turned into a broken link.</para></summary>
     public void Save()
     {
         if (Path is null) throw new InvalidOperationException("no path; use Save As");
         var disk = WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         var before = _widgetEdits.Keys.ToDictionary(k => k, k => TryFind(disk, k), StringComparer.OrdinalIgnoreCase);
         if (_widgetEdits.Count > 0) Directory.CreateDirectory(WidgetCatalog.UserDir);
-        foreach (var (key, t) in _widgetEdits)
-            WriteAtomically(System.IO.Path.Combine(WidgetCatalog.UserDir, key + ".json"), WidgetTemplateWriter.ToJson(t));
+        var staged = new List<(string Tmp, string Dest)>();
+        try
+        {
+            foreach (var (key, t) in _widgetEdits)
+            {
+                var dest = System.IO.Path.Combine(WidgetCatalog.UserDir, key + ".json");
+                var tmp = dest + ".tmp";
+                staged.Add((tmp, dest));
+                File.WriteAllText(tmp, WidgetTemplateWriter.ToJson(t));
+                try { WidgetTemplate.Load(tmp); }
+                catch (FormatException ex)
+                {
+                    var why = ex.Message.StartsWith(tmp + ": ", StringComparison.Ordinal) ? ex.Message[(tmp.Length + 2)..] : ex.Message;
+                    throw new InvalidOperationException($"The widget '{t.Name}' cannot be saved: {why}.", ex);
+                }
+            }
+            foreach (var (tmp, dest) in staged) File.Move(tmp, dest, overwrite: true);
+        }
+        finally
+        {
+            foreach (var (tmp, _) in staged)
+                try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
         Layout.Save(Path);
         _savedJson = Layout.ToJson();
         _savedEditsJson = WidgetEditsJson();
@@ -667,21 +688,6 @@ public sealed class DesignerModel
                     if (was is not null && edits.TryAdd(key, was)) patched = true;
                 if (patched) stack[i] = stack[i] with { WidgetEditsJson = EditsJson(edits) };
             }
-    }
-
-    private static void WriteAtomically(string path, string text)
-    {
-        var tmp = path + ".tmp";
-        try
-        {
-            File.WriteAllText(tmp, text);
-            File.Move(tmp, path, overwrite: true);
-        }
-        catch
-        {
-            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-            throw;
-        }
     }
 
     /// <summary>Discard unsaved edits: the layout and the widget overlay as last saved. Keeps the

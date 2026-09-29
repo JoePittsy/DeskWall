@@ -6,9 +6,10 @@ using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 
-/// <summary>Editing a widget that ships beside the exe. The shipped folder is replaced by every
-/// install, so an edit is copy-on-write: it saves a file of the same key in the user's folder,
-/// which the catalog already prefers, in the shipped one's place in the gallery.
+/// <summary>The catalog's side of editing a widget that ships beside the exe. The shipped folder is
+/// replaced by every install, so an edit is copy-on-write: Apply saves a file of the same key in the
+/// user's folder (<c>DesignerModelDepthTests</c>), which the catalog prefers, in the shipped one's
+/// place in the Insert panel.
 /// <para>These write part-less widgets (a "clock" among them) into the shared test home's real
 /// <c>widgets\</c> folder, which every other test's <c>DesignerModel.Finder()</c> reads first.
 /// xUnit disposes the class after each test, and that empties the folder again, so no later test
@@ -76,92 +77,6 @@ public sealed class ShippedEditingTests : IDisposable
         var shipped = NewDir("shipped");
         Write(shipped, "clock.json", "Clock");
         Assert.False(WidgetCatalog.Load(shipped, NewDir("empty-user"))[0].OverridesShipped);
-    }
-
-    // ---- opening one for editing ---------------------------------------------------------------
-
-    [Fact]
-    public void Editing_A_Shipped_Widget_Is_Copy_On_Write()
-    {
-        var shipped = NewDir("shipped");
-        Write(shipped, "clock.json", "Clock");
-        var template = WidgetCatalog.Load(shipped)[0];
-
-        var doc = WidgetDocument.ForEditing(template);
-
-        // Null path: nothing may ever be written back beside the exe, and a rename must not
-        // delete the shipped file as "the previous one".
-        Assert.Null(doc.Path);
-        Assert.Equal("clock", doc.EditingKey);
-        Assert.Equal("Clock", doc.Name);
-    }
-
-    [Fact]
-    public void Editing_The_Owners_Own_Widget_Edits_The_File_In_Place()
-    {
-        var user = UserDir();
-        Write(user, "mine.json", "Mine");
-        var template = WidgetCatalog.Load(user)[0];
-
-        var doc = WidgetDocument.ForEditing(template);
-
-        Assert.Equal(template.Path, doc.Path);
-        Assert.Equal("mine", doc.EditingKey);
-    }
-
-    // ---- saving ----------------------------------------------------------------------------------
-
-    [Fact]
-    public void Saving_A_Shipped_Widget_Being_Edited_Lands_In_The_User_Folder()
-    {
-        var shipped = NewDir("shipped");
-        Write(shipped, "clock.json", "Clock");
-        var template = WidgetCatalog.Load(shipped)[0];
-        var doc = WidgetDocument.ForEditing(template);
-        doc.Description = "Changed.";
-
-        var userDir = UserDir();
-        var path = WidgetTemplateWriter.Save(doc, ["clock"], userDir);
-
-        Assert.Equal(Path.Combine(userDir, "clock.json"), path);
-        Assert.True(File.Exists(Path.Combine(shipped, "clock.json")));   // untouched
-
-        var reloaded = WidgetCatalog.Load(shipped, userDir);
-        Assert.Single(reloaded);
-        Assert.Equal("Changed.", reloaded[0].Description);
-        Assert.True(reloaded[0].OverridesShipped);
-    }
-
-    /// <summary>The refusal is about a <em>new</em> widget silently shadowing a shipped one, not
-    /// about the key itself, so it still fires for that and no longer fires for a deliberate edit.</summary>
-    [Fact]
-    public void A_New_Widget_Named_After_A_Shipped_One_Is_Still_Refused()
-    {
-        var doc = WidgetDocument.New();
-        doc.Name = "Clock";
-        doc.Description = "d";
-
-        var ex = Assert.Throws<InvalidOperationException>(() => WidgetTemplateWriter.Save(doc, ["clock"], UserDir()));
-        Assert.Contains("shipped widget", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Renaming_While_Editing_A_Shipped_Widget_Forks_Under_The_Same_Key()
-    {
-        // The key is fixed (plan D2): renaming a shipped widget forks it as <key>.json, so every
-        // placed copy of that key follows the fork, and the shipped file is untouched.
-        var shipped = NewDir("shipped");
-        Write(shipped, "clock.json", "Clock");
-        var doc = WidgetDocument.ForEditing(WidgetCatalog.Load(shipped)[0]);
-        doc.Description = "d";
-        doc.Name = "My clock";
-
-        var userDir = UserDir();
-        var path = WidgetTemplateWriter.Save(doc, ["clock"], userDir);
-
-        Assert.Equal(Path.Combine(userDir, "clock.json"), path);
-        Assert.Equal("My clock", WidgetTemplate.Load(path).Name);
-        Assert.Equal("Clock", WidgetTemplate.Load(Path.Combine(shipped, "clock.json")).Name);
     }
 
     // ---- the way back -----------------------------------------------------------------------------

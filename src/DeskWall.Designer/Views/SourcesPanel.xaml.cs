@@ -12,8 +12,9 @@ using DeskWall.Designer.Model.Widgets;
 namespace DeskWall.Designer.Views;
 
 /// <summary>
-/// The widget editor's left-hand bottom half: what this widget reads, and what it is reading right
-/// now.
+/// The right column at widget depth: what the widget being edited reads, and what it is reading
+/// right now. Hidden at the other depths (a copy's sources are its widget's; the layout's own are
+/// listed by the properties panel with nothing selected).
 /// <para>
 /// Job: get from "I want the CPU load" to a value on screen without knowing the word "source". The
 /// list is what the widget has, "+ Source" adds one (the four built-ins need no answers at all),
@@ -22,16 +23,16 @@ namespace DeskWall.Designer.Views;
 /// they come from the same running set.
 /// </para>
 /// <para>
-/// Binding a part to a value is not here: that is the properties panel's Bind toggle and its
-/// picker, which already lists every source. Clicking a path here copies it, which is what the
-/// owner wants it for when he is writing a format string by hand.
+/// Binding a part to a value is not here: that is the properties panel's binding chip, or a value
+/// dragged from Insert. Clicking a path here copies it. Every change is one edit to the widget
+/// (<see cref="Lens.EditWidget"/>), undone with everything else, written by Apply.
 /// </para>
 /// </summary>
 public partial class SourcesPanel : UserControl
 {
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
 
-    private WidgetDocument? _document;
+    private DesignerModel? _model;
     private LiveSources? _live;
     private string? _selected;
     private string _rowsKey = "";
@@ -47,20 +48,28 @@ public partial class SourcesPanel : UserControl
     /// <summary>Something worth putting on the window's status line.</summary>
     public event Action<string>? Status;
 
-    /// <summary>A setting was exposed or unexposed as a knob; the window's knob list is stale.</summary>
-    public event Action? AdjustablesChanged;
-
-    public void Attach(WidgetDocument document)
+    public void Attach(DesignerModel model)
     {
-        if (_document is not null) _document.Model.Changed -= OnChanged;
-        _document = document;
-        _document.Model.Changed += OnChanged;
+        ArgumentNullException.ThrowIfNull(model);
+        if (_model is not null) { _model.Changed -= OnChanged; _model.DepthChanged -= OnChanged; }
+        _model = model;
+        _model.Changed += OnChanged;
+        _model.DepthChanged += OnChanged;
         _rowsKey = "";
         Refresh();
     }
 
-    /// <summary>The running sources. Replaced by the window whenever the document's source list
-    /// changes, because a source's identity is its definition.</summary>
+    /// <summary>The widget open at widget depth, or null.</summary>
+    private string? OpenKey => _model?.Depth is { Kind: DepthKind.Widget, WidgetKey: { } key } ? key : null;
+
+    /// <summary>The open widget's sources (the projection's, which are the widget's own).</summary>
+    private IReadOnlyList<SourceDef> Defs => OpenKey is null ? [] : _model!.Parts.Sources;
+
+    private bool EditWidget(string label, Action<WidgetDocument> change)
+        => _model is not null && OpenKey is { } key && Lens.EditWidget(_model, key, label, change);
+
+    /// <summary>The window's running sources, which include the open widget's own at widget depth.
+    /// Replaced whenever the set changes, because a source's identity is its definition.</summary>
     public LiveSources? Live
     {
         get => _live;
@@ -85,12 +94,12 @@ public partial class SourcesPanel : UserControl
     /// typed into.</summary>
     private void Refresh()
     {
-        if (_document is null) return;
-        var sources = _document.Model.Layout.Sources;
+        if (_model is null) return;
+        var sources = Defs;
         if (_selected is not null && !sources.Any(s => s.Name == _selected)) _selected = null;
         _selected ??= sources.FirstOrDefault()?.Name;
 
-        var key = string.Join(";", sources.Select(s => s.Name + ":" + s.Type + ":" + Age(s.Name))) + "|" + _selected;
+        var key = OpenKey + "|" + string.Join(";", sources.Select(s => s.Name + ":" + s.Type + ":" + Age(s.Name))) + "|" + _selected;
         if (key == _rowsKey) { UpdateTree(); return; }
         _rowsKey = key;
 
@@ -154,7 +163,7 @@ public partial class SourcesPanel : UserControl
     /// three that open the form.</summary>
     private void Add_Click(object sender, RoutedEventArgs e)
     {
-        if (_document is null) return;
+        if (OpenKey is null) return;
         var menu = new ContextMenu { PlacementTarget = AddButton, Placement = PlacementMode.Bottom };
         foreach (var type in SourceForms.BuiltIn) menu.Items.Add(AddItem(type, Describe(type)));
         menu.Items.Add(new Separator());
@@ -183,21 +192,21 @@ public partial class SourcesPanel : UserControl
 
     private void Add(string type)
     {
-        if (_document is null) return;
-        var taken = _document.Model.Layout.Sources.Select(s => s.Name).ToList();
+        if (OpenKey is null) return;
+        var taken = Defs.Select(s => s.Name).ToList();
         if (SourceForms.BuiltIn.Contains(type))
         {
             // One instance of each: two "hardware" samplers read the same machine, and the second
             // costs a native library for nothing.
             if (taken.Contains(type, StringComparer.OrdinalIgnoreCase)) { Status?.Invoke($"This widget already reads {type}."); Select(type); return; }
-            _document.AddSource(new SourceDef { Name = type, Type = type });
+            EditWidget($"Add {type}", d => d.AddSource(new SourceDef { Name = type, Type = type }));
             Select(type);
             return;
         }
 
         var values = SourceForms.Defaults(type);
         values[SourceForms.NameKey] = FreeName(type, taken);
-        _document.AddSource(SourceForms.ToSourceDef(type, values));
+        EditWidget($"Add {type}", d => d.AddSource(SourceForms.ToSourceDef(type, values)));
         Select(values[SourceForms.NameKey]);
     }
 
@@ -218,12 +227,11 @@ public partial class SourcesPanel : UserControl
 
     private void Remove_Click(object sender, RoutedEventArgs e)
     {
-        if (_document is null || _selected is null) return;
+        if (OpenKey is null || _selected is null) return;
         var name = _selected;
         _selected = null;
-        _document.RemoveSource(name);
+        EditWidget($"Remove {name}", d => d.RemoveSource(name));
         Status?.Invoke($"Removed {name}.");
-        AdjustablesChanged?.Invoke();
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e)
@@ -236,7 +244,7 @@ public partial class SourcesPanel : UserControl
     // ---- the form -------------------------------------------------------------------------------
 
     private SourceDef? SelectedDef()
-        => _document?.Model.Layout.Sources.FirstOrDefault(s => s.Name == _selected);
+        => Defs.FirstOrDefault(s => s.Name == _selected);
 
     private void BuildForm()
     {
@@ -309,7 +317,7 @@ public partial class SourcesPanel : UserControl
     /// at something that is no longer there.</summary>
     private ToggleButton? BuildKnobToggle(SourceDef def, SourceField field)
     {
-        if (_document is null || field.Key == SourceForms.NameKey) return null;
+        if (OpenKey is null || field.Key == SourceForms.NameKey) return null;
         var name = def.Name;
         var toggle = new ToggleButton
         {
@@ -318,21 +326,26 @@ public partial class SourcesPanel : UserControl
             Padding = new Thickness(6, 1, 6, 1),
             Margin = new Thickness(6, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            IsChecked = _document.IsSettingAdjustable(name, field.Key),
+            IsChecked = IsSettingAdjustable(name, field.Key),
             ToolTip = "Let whoever places this widget change it",
         };
         toggle.Click += (_, _) =>
         {
-            toggle.IsChecked = _document.ToggleSettingAdjustable(name, field.Key);
-            AdjustablesChanged?.Invoke();
+            EditWidget($"Knob {field.Label}", d => d.ToggleSettingAdjustable(name, field.Key));
+            toggle.IsChecked = IsSettingAdjustable(name, field.Key);
         };
+        System.Windows.Automation.AutomationProperties.SetName(toggle, $"Knob: let a copy change {field.Label}");
         return toggle;
     }
 
+    private bool IsSettingAdjustable(string name, string settingKey)
+        => _model is not null && OpenKey is { } key && Copies.TryFind(_model.Finder(), key) is { } t
+           && WidgetDocument.FromTemplate(t).IsSettingAdjustable(name, settingKey);
+
     private void Commit(string name, string key, string value)
     {
-        if (_document is null) return;
-        var def = _document.Model.Layout.Sources.FirstOrDefault(s => s.Name == name);
+        if (OpenKey is null) return;
+        var def = Defs.FirstOrDefault(s => s.Name == name);
         if (def is null) return;
 
         var values = SourceForms.FromSourceDef(def);
@@ -340,7 +353,7 @@ public partial class SourcesPanel : UserControl
         values[key] = value;
 
         if (SourceForms.Validate(def.Type, values,
-                _document.Model.Layout.Sources.Where(s => s.Name != name).Select(s => s.Name)) is { } problem)
+                Defs.Where(s => s.Name != name).Select(s => s.Name)) is { } problem)
         {
             Status?.Invoke(problem);
             _rowsKey = ""; Refresh();                 // put the box back to what the document holds
@@ -348,8 +361,8 @@ public partial class SourcesPanel : UserControl
         }
 
         var replacement = SourceForms.ToSourceDef(def.Type, values, def);
-        _document.ReplaceSource(name, replacement);
-        if (key == SourceForms.NameKey) { _selected = replacement.Name; AdjustablesChanged?.Invoke(); }
+        if (key == SourceForms.NameKey) _selected = replacement.Name;
+        EditWidget($"Edit {name}", d => d.ReplaceSource(name, replacement));
         Status?.Invoke("");
     }
 

@@ -81,15 +81,21 @@
         <v:PreviewView x:Name="Preview" />
       </Border>
 
-      <!-- Knobs above, pushed values below: both answer "what can this widget say", and a pushed
-           provider has to be visible somewhere for a user to know it is arriving at all. -->
+      <!-- Properties above, pushed values below: both answer "what can this widget say", and a pushed
+           provider has to be visible somewhere for a user to know it is arriving at all. At widget
+           depth the widget's own sources sit between them: what it reads, and the live answer. -->
       <Grid Grid.Column="2">
         <Grid.RowDefinitions>
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <v:PropertiesPanel x:Name="Properties" Grid.Row="0" />
-        <Border Grid.Row="1" BorderThickness="0,1,0,0" MaxHeight="260"
+        <Border x:Name="SourcesHost" Grid.Row="1" BorderThickness="0,1,0,0" MaxHeight="420" Padding="16,12"
+                Visibility="Collapsed" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+          <v:SourcesPanel x:Name="Sources" AutomationProperties.Name="Widget sources" />
+        </Border>
+        <Border Grid.Row="2" BorderThickness="0,1,0,0" MaxHeight="260"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
           <v:ProvidersPanel x:Name="Providers" />
         </Border>

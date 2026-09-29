@@ -19,9 +19,9 @@ namespace DeskWall.Designer.Views;
 /// The Insert panel: what can go on the canvas. It replaces the widget gallery (brief section 3).
 /// <para>
 /// Job: put a part, a widget or a live value on the canvas in one gesture, without a dialog or a
-/// binding path. Three sections: <b>Parts</b> (text, image, bar, dial: the widget editor's palette),
-/// <b>Widgets</b> (the gallery's cards, unchanged, and still the only place to edit, duplicate, reset
-/// or start a widget) and <b>Data</b> (every live value, "CPU load · 27%", searchable). Anything in
+/// binding path. Three sections: <b>Parts</b> (text, image, bar, dial), <b>Widgets</b> (a card per
+/// widget; its menu edits, duplicates, resets or starts one, all on the main canvas at widget depth)
+/// and <b>Data</b> (every live value, "CPU load · 27%", searchable). Anything in
 /// it can be dragged onto the canvas (<see cref="PreviewView"/> is the drop target), or inserted from
 /// the keyboard: arrow keys move within a section and Enter puts a part or a value at the middle of
 /// the canvas, and a widget where a click puts it, in the right-hand margin.
@@ -65,19 +65,19 @@ public partial class InsertPanel : UserControl
         _rowView.Filter = o => o is DataRow r && r.Matches(SearchBox.Text);
     }
 
-    // ---- the gallery's hosting surface, unchanged -----------------------------------------------
+    // ---- the widget cards ------------------------------------------------------------------------
 
     /// <summary>The owner clicked a widget card (or pressed Enter on it). The shell owns the layout,
     /// so the panel only names the widget; the shell puts it in the right-hand margin.</summary>
     public event Action<WidgetTemplate>? AddRequested;
 
-    /// <summary>Build one from scratch.</summary>
+    /// <summary>Build one from scratch: an empty frame at widget depth.</summary>
     public event Action? NewRequested;
 
-    /// <summary>Open a template in the widget editor.</summary>
+    /// <summary>Edit the widget at widget depth; every copy follows.</summary>
     public event Action<WidgetTemplate>? EditRequested;
 
-    /// <summary>Open a copy of this template, shipped or not, as a new unsaved widget.</summary>
+    /// <summary>A new widget from this one, shipped or not, under a key of its own.</summary>
     public event Action<WidgetTemplate>? DuplicateRequested;
 
     /// <summary>Delete (or reset) one of the owner's own template files.</summary>
@@ -312,8 +312,8 @@ public partial class InsertPanel : UserControl
         public Visibility CountVisibility => _count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         /// <summary>Delete is for the owner's own files only: there is no file of his to remove
-        /// for a shipped template he has never edited. Edit is offered on everything (a shipped
-        /// one saves a copy under the same key, <see cref="WidgetDocument.ForEditing"/>).</summary>
+        /// for a shipped template he has never edited. Edit is offered on everything (Apply saves a
+        /// shipped one's edits as a fork under the same key, plan D2).</summary>
         public Visibility MineVisibility => WidgetCatalog.IsUserTemplate(Template) ? Visibility.Visible : Visibility.Collapsed;
 
         /// <summary>Deleting an override is undoing an edit, not losing a widget, and the menu

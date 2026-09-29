@@ -39,14 +39,14 @@ public class WidgetTemplateWriterTests
     public void And_So_Does_One_That_Went_Through_The_Editor(string key)
     {
         var original = TestRepo.Widgets().First(t => t.Key == key);
-        var edited = WidgetDocument.FromTemplate(original, null).ToTemplate();
+        var edited = WidgetDocument.FromTemplate(original).ToTemplate();
         WidgetDocumentTests.AssertSameTemplate(original, SaveAndLoad(edited, "edited-" + key));
     }
 
     [Fact]
     public void A_Top_Anchor_And_A_Null_Requires_Are_Left_Out_Of_The_File()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.Name = "Plain";
         doc.Description = "d";
         var json = WidgetTemplateWriter.ToJson(doc.ToTemplate());
@@ -59,7 +59,7 @@ public class WidgetTemplateWriterTests
     [Fact]
     public void A_Bottom_Anchor_And_A_Requires_Are_Written()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.Name = "Anchored";
         doc.Description = "d";
         doc.Anchor = "bottom";
@@ -67,112 +67,5 @@ public class WidgetTemplateWriterTests
         var written = SaveAndLoad(doc.ToTemplate(), "anchored");
         Assert.Equal("bottom", written.Anchor);
         Assert.Equal("Needs a thing", written.Requires);
-    }
-
-    // ---- saving -------------------------------------------------------------------------------
-
-    private static WidgetDocument Named(string name)
-    {
-        var doc = WidgetDocument.New();
-        doc.Name = name;
-        doc.Description = "Made in a test.";
-        doc.AddPart(PartKind.Text);
-        return doc;
-    }
-
-    [Fact]
-    public void Save_Writes_The_Key_Named_File_Into_The_User_Dir()
-    {
-        var dir = TempDir("save");
-        var doc = Named("My dial");
-
-        var path = WidgetTemplateWriter.Save(doc, [], dir);
-
-        Assert.Equal(Path.Combine(dir, "my-dial.json"), path);
-        Assert.Equal("My dial", WidgetTemplate.Load(path).Name);
-        Assert.Equal(path, doc.Path);
-        Assert.Equal("my-dial", doc.EditingKey);
-    }
-
-    [Fact]
-    public void Save_Creates_The_User_Dir()
-    {
-        var dir = Path.Combine(TempDir("makedir"), "widgets");
-        WidgetTemplateWriter.Save(Named("Fresh"), [], dir);
-        Assert.True(File.Exists(Path.Combine(dir, "fresh.json")));
-    }
-
-    [Fact]
-    public void A_New_Widget_May_Not_Take_A_Shipped_Widgets_Key()
-    {
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => WidgetTemplateWriter.Save(Named("Weather"), ["weather"], TempDir("clash")));
-        Assert.Equal("A shipped widget is already called 'Weather'. Pick another name.", ex.Message);
-    }
-
-    /// <summary>A user file that already overrides a shipped key keeps working: it is only a NEW
-    /// or a RENAMED document that may not land on one.</summary>
-    [Fact]
-    public void Re_Saving_A_User_File_That_Already_Overrides_A_Shipped_Key_Is_Allowed()
-    {
-        var dir = TempDir("override");
-        var doc = Named("Weather");
-        doc.EditingKey = "weather";
-        doc.Path = Path.Combine(dir, "weather.json");
-
-        var path = WidgetTemplateWriter.Save(doc, ["weather"], dir);
-        Assert.True(File.Exists(path));
-    }
-
-    [Fact]
-    public void A_Rename_Keeps_The_Key_And_The_File()
-    {
-        // Placed copies link to a widget by key (plan D2): a rename that moved the file would
-        // orphan every one of them.
-        var dir = TempDir("rename");
-        var doc = Named("First name");
-        var first = WidgetTemplateWriter.Save(doc, [], dir);
-        Assert.True(File.Exists(first));
-
-        doc.Name = "Second name";
-        var second = WidgetTemplateWriter.Save(doc, [], dir);
-
-        Assert.Equal(first, second);
-        Assert.Equal("first-name", doc.Key);
-        Assert.Equal("first-name", doc.EditingKey);
-        Assert.Equal("Second name", WidgetTemplate.Load(second).Name);
-        Assert.Single(Directory.GetFiles(dir, "*.json"));
-    }
-
-    [Fact]
-    public void A_New_Widget_May_Not_Overwrite_One_Of_The_Owners_Own()
-    {
-        var dir = TempDir("user-clash");
-        WidgetTemplateWriter.Save(Named("Mine"), [], dir);
-
-        var ex = Assert.Throws<InvalidOperationException>(() => WidgetTemplateWriter.Save(Named("Mine"), [], dir));
-        Assert.Equal("One of your widgets is already called 'Mine'. Pick another name.", ex.Message);
-    }
-
-    [Fact]
-    public void Six_Knobs_Are_Refused_Rather_Than_Written_Unreadable()
-    {
-        var doc = Named("Too many");
-        var part = doc.Model.Layout.Components[0].Id;
-        foreach (var prop in new[] { "Text", "Font", "Size", "Weight", "Color", "Align" })
-            doc.ToggleAdjustable(part, prop);
-
-        var ex = Assert.Throws<InvalidOperationException>(() => WidgetTemplateWriter.Save(doc, [], TempDir("knobs")));
-        Assert.Contains("5", ex.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_Widget_With_No_Description_Is_Refused()
-    {
-        var doc = WidgetDocument.New();
-        doc.Name = "Nameless";
-        doc.Description = "  ";
-        var ex = Assert.Throws<InvalidOperationException>(() => WidgetTemplateWriter.Save(doc, [], TempDir("nodesc")));
-        Assert.Contains("description", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

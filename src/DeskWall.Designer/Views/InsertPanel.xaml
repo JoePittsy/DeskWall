@@ -83,11 +83,11 @@
              editing your own widgets is a rarer thing you go looking for. -->
         <Button.ContextMenu>
           <ContextMenu>
-            <!-- Edit is offered on every widget. A shipped one is copy-on-write: saving writes a
+            <!-- Edit is offered on every widget. A shipped one is copy-on-write: Apply writes a
                  file of the same key in the owner's folder, which the catalog prefers, and Reset
                  deletes it again. -->
             <MenuItem Header="Edit" Click="Edit_Click" />
-            <MenuItem Header="Duplicate to mine" Click="Duplicate_Click" />
+            <MenuItem Header="Duplicate" Click="Duplicate_Click" />
             <MenuItem Header="{Binding DeleteHeader}" Click="Delete_Click" Visibility="{Binding MineVisibility}" />
             <Separator />
             <MenuItem Header="New widget" Click="New_Click" />

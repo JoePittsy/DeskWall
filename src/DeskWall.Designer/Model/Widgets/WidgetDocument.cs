@@ -6,44 +6,33 @@ using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model.Widgets;
 
-/// <summary>The four parts the widget editor offers. <c>shortcut</c> and <c>repeater</c> are not
+/// <summary>The four parts the Insert panel offers. <c>shortcut</c> and <c>repeater</c> are not
 /// here on purpose: a desktop slot and an items binding are layout-level concerns, not a shape you
 /// draw on a 172 px canvas.</summary>
 public enum PartKind { Text, Image, Bar, Dial }
 
 /// <summary>
-/// One widget being edited: a <see cref="DesignerModel"/> over a widget-sized canvas, plus the
-/// header fields and knobs a <see cref="WidgetTemplate"/> has and a layout does not.
-/// <para>
-/// The canvas side is deliberately the same code the layout window uses. A template already turns
-/// into a <c>LayoutFile</c>, and the preview, selection, move, resize, align, undo and the
-/// properties panel are all written against <c>DesignerModel</c> and the display signature, so a
-/// widget document is just that model over a signature of ("widget", width, height, 100) with no
-/// base image behind it.
-/// </para>
+/// One widget as an editable draft: its parts and sources as a <see cref="DesignerModel"/> over a
+/// widget-sized canvas, plus the header fields and knobs a <see cref="WidgetTemplate"/> has and a
+/// layout does not. The main window's widget-level edits (name, description, anchor, knobs, the
+/// widget's own sources) go <see cref="FromTemplate"/>, change, <see cref="ToTemplate"/>, through
+/// <see cref="Lens.EditWidget"/>: this is the one place that knows how a knob maps to what it sets
+/// (<see cref="Adjustable"/>).
 /// </summary>
 public sealed class WidgetDocument
 {
-    /// <summary>The smallest widget worth drawing, and the largest canvas any display here has.</summary>
-    public const int MinSide = 8;
-    public const int MaxWidth = 3440;
-    public const int MaxHeight = 1440;
-
-    /// <summary>A brand new widget is this wide and this tall: the shipped column's width, and
-    /// enough height for one line of text.</summary>
-    public const int NewWidth = 172;
-    public const int NewHeight = 40;
-
     /// <summary>Knobs in file order, each either the editor's own or one passing through. One list
     /// rather than two, so <see cref="ToTemplate"/> writes them back in the order they were read
     /// and a duplicated widget's file does not reshuffle itself.</summary>
     private sealed record Slot(AdjustableTarget? Target, Knob? PassThrough);
 
     private readonly List<Slot> _knobs = new();
+    private readonly string _key;
 
-    private WidgetDocument(DesignerModel model, string name, string description)
+    private WidgetDocument(DesignerModel model, string key, string name, string description)
     {
         Model = model;
+        _key = key;
         Name = name;
         Description = description;
         Model.Changed += Prune;
@@ -56,35 +45,21 @@ public sealed class WidgetDocument
     public string Anchor { get; set; } = "top";
     public string? Requires { get; set; }
 
-    /// <summary>The file being edited, or null for a widget that has never been saved.</summary>
-    public string? Path { get; set; }
-
-    /// <summary>The key the widget being edited is stored under. Null for a new widget and for
-    /// "Duplicate to mine" until their first save, which sets it.</summary>
-    public string? EditingKey { get; set; }
-
     public IReadOnlyList<AdjustableTarget> Adjustables => _knobs.Where(k => k.Target is not null).Select(k => k.Target!).ToList();
 
     /// <summary>Knobs this editor cannot express (a composite, a <c>{token}</c> splice, a binding
     /// write). Shown read-only and written back exactly as they were read.</summary>
     public IReadOnlyList<Knob> PassThroughKnobs => _knobs.Where(k => k.PassThrough is not null).Select(k => k.PassThrough!).ToList();
 
-    /// <summary>The file name (without ".json") this saves as. Fixed once the widget exists
-    /// (<see cref="EditingKey"/>): placed copies link to a widget by key, so a rename changes
-    /// <see cref="Name"/> only (plan D2). A widget never saved takes a slug of its name.</summary>
-    public string Key => EditingKey ?? Slug(Name);
-
-    public static WidgetDocument New()
-    {
-        var layout = new LayoutFile { BaseImage = "" };
-        var model = new DesignerModel(layout, Signature(NewWidth, NewHeight), null);
-        return new WidgetDocument(model, "New widget", "");
-    }
+    /// <summary>The template's key: fixed once the widget exists, because placed copies link to a
+    /// widget by key, so a rename changes <see cref="Name"/> only (plan D2). A template with no key
+    /// (a test's) takes a slug of its name.</summary>
+    public string Key => _key.Length > 0 ? _key : Slug(Name);
 
     /// <summary>Open a template for editing. Everything is deep-copied: the catalog's instances are
-    /// shared by the gallery and every placement, and an editor that wrote through to them would
+    /// shared by the Insert panel and every copy, and an edit that wrote through to them would
     /// change widgets already on the wallpaper.</summary>
-    public static WidgetDocument FromTemplate(WidgetTemplate template, string? path)
+    public static WidgetDocument FromTemplate(WidgetTemplate template)
     {
         ArgumentNullException.ThrowIfNull(template);
         var layout = new LayoutFile
@@ -94,12 +69,10 @@ public sealed class WidgetDocument
             Components = CloneComponents(template.Components),
         };
         var model = new DesignerModel(layout, Signature(template.Width, template.Height), null);
-        var doc = new WidgetDocument(model, template.Name, template.Description)
+        var doc = new WidgetDocument(model, template.Key, template.Name, template.Description)
         {
             Anchor = template.Anchor,
             Requires = template.Requires,
-            Path = path,
-            EditingKey = path is null ? null : template.Key,
         };
         foreach (var knob in template.Knobs)
         {
@@ -113,59 +86,12 @@ public sealed class WidgetDocument
         return doc;
     }
 
-    /// <summary>Open a template for editing, wherever it came from.
-    /// <para>One of the owner's own files is edited in place. A shipped one is <b>copy on
-    /// write</b>: <see cref="Path"/> stays null, so nothing can ever be written back beside the
-    /// exe (a publish would wipe it anyway), while <see cref="EditingKey"/> is the shipped key, so Save lands on
-    /// <c>&lt;userDir&gt;\&lt;key&gt;.json</c> and the catalog's override rule puts it in the
-    /// shipped widget's place in the gallery.</para></summary>
-    public static WidgetDocument ForEditing(WidgetTemplate template)
-    {
-        ArgumentNullException.ThrowIfNull(template);
-        var mine = WidgetCatalog.IsUserTemplate(template);
-        var doc = FromTemplate(template, mine ? template.Path : null);
-        if (!mine) doc.EditingKey = template.Key;
-        return doc;
-    }
-
     private static DisplaySignature Signature(int w, int h) => new("widget", w, h, 100);
-
-    // ---- size ------------------------------------------------------------------------------
-
-    public void Resize(int width, int height)
-        => Model.ResizeCanvas(Math.Clamp(width, MinSide, MaxWidth), Math.Clamp(height, MinSide, MaxHeight));
-
-    /// <summary>Shrink-wrap the widget round what is on it: every part moves so the bounding box
-    /// starts at (0, 0) and the canvas becomes that box. One undo entry, because half of it undone
-    /// is a widget whose parts hang off its own edge.</summary>
-    public void FitToParts()
-    {
-        var components = Model.Layout.Components;
-        if (components.Count == 0) return;
-        var minX = components.Min(c => c.Rect.X);
-        var minY = components.Min(c => c.Rect.Y);
-        var w = Math.Clamp(components.Max(c => c.Rect.Right) - minX, MinSide, MaxWidth);
-        var h = Math.Clamp(components.Max(c => c.Rect.Bottom) - minY, MinSide, MaxHeight);
-        Model.Edit("Fit to parts", l =>
-        {
-            foreach (var c in l.Components) c.Rect = c.Rect.Offset(-minX, -minY);
-            Model.SetSignatureSize(w, h);
-        });
-    }
 
     // ---- parts -----------------------------------------------------------------------------
 
-    /// <summary>Add a part of this kind and hand it back so the caller can select it. Each one
-    /// lands a step further down and right than the last, because a pile of parts at (0, 0) looks
-    /// like one part and the second click looks like it did nothing.</summary>
-    public ComponentDef AddPart(PartKind kind)
-    {
-        var step = 8 * Model.Layout.Components.Count;
-        var def = NewPart(kind, step);
-        Model.Add(def);
-        return def;
-    }
-
+    /// <summary>A new part of this kind, at (<paramref name="step"/>, <paramref name="step"/>): the
+    /// Insert panel's parts.</summary>
     public static ComponentDef NewPart(PartKind kind, int step = 0) => kind switch
     {
         PartKind.Text => new TextDef
@@ -338,10 +264,6 @@ public sealed class WidgetDocument
         };
     }
 
-    /// <summary>Write this widget into the user's own templates folder, refusing rather than
-    /// writing anything the gallery could not read back. Returns the file it landed in.</summary>
-    public string Save()
-        => WidgetTemplateWriter.Save(this, WidgetCatalog.Load(WidgetCatalog.ShippedDir).Select(t => t.Key).ToList(), WidgetCatalog.UserDir);
 
     /// <summary>Lower case, runs of letters and digits joined by hyphens, and never empty: what a
     /// name becomes as a file name and as a knob id.</summary>

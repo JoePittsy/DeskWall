@@ -111,6 +111,67 @@ public class DesignerModelDepthTests
         }
     }
 
+    /// <summary>Task 6.1: Apply refuses a widget the daemon could not read back (here, no
+    /// description), naming it, and writes nothing at all: no widget, no layout, no temp file.</summary>
+    [Fact]
+    public void Save_Refuses_A_Widget_That_Would_Not_Load_And_Writes_Nothing()
+    {
+        var fork = Path.Combine(WidgetCatalog.UserDir, "uptime.json");
+        var layoutPath = Path.Combine(Path.GetTempPath(), $"deskwall-depth-{Guid.NewGuid():N}.json");
+        try
+        {
+            var m = Model("""{ "id": "uptime-1", "widget": "uptime", "x": 0, "y": 0 }""");
+            m.Path = layoutPath;
+            Assert.True(Lens.EditWidget(m, "uptime", "Describe", d => d.Description = ""));
+
+            var ex = Assert.Throws<InvalidOperationException>(m.Save);
+            Assert.Contains("Uptime", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("description", ex.Message, StringComparison.Ordinal);
+            Assert.False(File.Exists(fork));
+            Assert.False(File.Exists(fork + ".tmp"));
+            Assert.False(File.Exists(layoutPath));
+            Assert.True(m.Dirty);
+        }
+        finally
+        {
+            File.Delete(fork);
+            File.Delete(layoutPath);
+        }
+    }
+
+    /// <summary>Task 6.1, Reset: once the fork's file is deleted, <see cref="DesignerModel.ForgetWidget"/>
+    /// drops its overlay entry without an undo entry and without making the document dirty, and the
+    /// copies draw the shipped widget again.</summary>
+    [Fact]
+    public void ForgetWidget_After_A_Reset_Puts_The_Copies_Back_On_The_Shipped_Widget()
+    {
+        var fork = Path.Combine(WidgetCatalog.UserDir, "uptime.json");
+        var layoutPath = Path.Combine(Path.GetTempPath(), $"deskwall-depth-{Guid.NewGuid():N}.json");
+        try
+        {
+            var m = Model("""{ "id": "uptime-1", "widget": "uptime", "x": 0, "y": 0 }""");
+            m.Path = layoutPath;
+            string Colour() => ((TextDef)m.Expanded().Layout.Components.Single()).Color.LiteralText!;
+            var shipped = Colour();
+            m.Edit("Edit widget", (_, edits) => edits["uptime"] = Recolour(m.Finder()("uptime")!, "uptime", "#FFABCDEF"));
+            m.Save();
+            Assert.Equal("#FFABCDEF", Colour());
+
+            File.Delete(fork);
+            var undo = m.CanUndo;
+            m.ForgetWidget("uptime");
+            Assert.Empty(m.WidgetEdits);
+            Assert.False(m.Dirty);
+            Assert.Equal(shipped, Colour());
+            Assert.Equal(undo, m.CanUndo);
+        }
+        finally
+        {
+            File.Delete(fork);
+            File.Delete(layoutPath);
+        }
+    }
+
     [Fact]
     public void An_Undo_While_At_The_Depth_Of_A_Removed_Copy_Climbs_To_Layout_Depth()
     {

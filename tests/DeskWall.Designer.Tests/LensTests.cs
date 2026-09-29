@@ -235,4 +235,47 @@ public class LensTests
         Assert.Equal((100, 50), (Copy(m, "dial-1").X, Copy(m, "dial-1").Y));
         Assert.Equal((300, 50), (Copy(m, "dial-2").X, Copy(m, "dial-2").Y));
     }
+
+    /// <summary>Task 6.1, Duplicate: a widget of its own under a new key, with one copy, at widget
+    /// depth; an edit to it leaves the widget it came from alone; one undo takes both away.</summary>
+    [Fact]
+    public void DuplicateWidget_Is_A_Widget_Of_Its_Own_Under_A_Free_Key()
+    {
+        var m = TwoDials();
+        var colour = Colour(m, "dial-1.label");
+        var copyId = Lens.DuplicateWidget(m, m.Finder()("dial")!, 500, 60);
+
+        var key = Copy(m, copyId).Widget;
+        Assert.Equal("hardware-dial-copy", key);
+        Assert.Equal("Hardware dial copy", m.WidgetEdits[key].Name);
+        Assert.Equal(Depth.Widget(key, copyId), m.Depth);
+        Assert.Equal(new Rect(500, 60, 80, 80), Part(m, copyId + ".dial").Rect);
+
+        m.EditAtDepth("Colour", l => ((TextDef)l.Components.Single(c => c.Id == copyId + ".label")).Color = PropertyValue.Literal("#FF0000FF"));
+        Assert.Equal("#FF0000FF", Colour(m, copyId + ".label"));
+        Assert.Equal(colour, Colour(m, "dial-1.label"));
+        Assert.False(m.WidgetEdits.ContainsKey("dial"));
+
+        m.Undo(); m.Undo();
+        Assert.Empty(m.WidgetEdits);
+        Assert.Equal(2, m.Layout.Copies!.Count);
+        Assert.Equal(Depth.Layout, m.Depth);
+    }
+
+    /// <summary>Task 6.1, the widget's own fields at widget depth: a rename is one undo entry into the
+    /// overlay, keeps the key (plan D2), and a second identical edit is not an entry at all.</summary>
+    [Fact]
+    public void EditWidget_Renames_Under_The_Same_Key_As_One_Undo_Entry()
+    {
+        var m = TwoDials();
+        Assert.True(Lens.EditWidget(m, "dial", "Rename", d => { d.Name = "CPU gauge"; d.Description = "Mine."; }));
+        var t = m.WidgetEdits["dial"];
+        Assert.Equal(("dial", "CPU gauge", "Mine."), (t.Key, t.Name, t.Description));
+        Assert.Equal(m.Finder()("dial")!.Components.Count, t.Components.Count);
+        Assert.All(m.Layout.Copies!, c => Assert.Equal("dial", c.Widget));
+
+        Assert.False(Lens.EditWidget(m, "dial", "Rename", d => d.Name = "CPU gauge"));
+        m.Undo();
+        Assert.Empty(m.WidgetEdits);
+    }
 }

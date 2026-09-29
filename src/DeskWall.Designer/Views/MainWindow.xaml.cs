@@ -61,13 +61,16 @@ public partial class MainWindow : Window
 
     private Settings _settings;
     private IReadOnlyList<WidgetTemplate> _catalog;
-    private WidgetEditorWindow? _editor;
     private DesignerModel _model = null!;
     private LiveSources? _live;
     private string _sourcesKey = "";
     private string? _transient;
     private DateTime _transientUntil;
     private bool _allowClose;
+
+    /// <summary>The copy Edit placed because the widget had none on this layout (<see cref="EditWidget"/>);
+    /// it goes again when the canvas is back at layout depth.</summary>
+    private string? _scratchCopy;
 
     /// <summary>The open document is the in-memory v2 migration of a v1 file, and the first Apply
     /// has not happened yet: it writes <c>&lt;file&gt;.v1.json</c> before overwriting anything.</summary>
@@ -81,12 +84,13 @@ public partial class MainWindow : Window
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         _renderer = new PreviewRenderer(() => _live?.Tree() ?? ValueTree.Empty);
 
-        Insert.AddRequested += Add;
-        Insert.NewRequested += () => OpenWidgetEditor(WidgetDocument.New());
-        Insert.EditRequested += t => OpenWidgetEditor(WidgetDocument.ForEditing(t));
-        Insert.DuplicateRequested += DuplicateTemplate;
+        Insert.AddRequested += t => Add(t);
+        Insert.NewRequested += NewWidget;
+        Insert.EditRequested += EditWidget;
+        Insert.DuplicateRequested += DuplicateWidget;
         Insert.DeleteRequested += DeleteTemplate;
         Properties.RemoveRequested += Remove;
+        Sources.Status += SetStatus;
         // The shell owns depth: the canvas asks, and the one path (the model) answers, so a
         // double-click, Enter, Esc and Ctrl+Alt+K cannot disagree about where they end up.
         Preview.DepthRequested += Preview.GoToDepth;
@@ -132,12 +136,14 @@ public partial class MainWindow : Window
 
         Preview.Attach(_model, _renderer);
         Properties.Attach(_model);
+        Sources.Attach(_model);
         Layers.Attach(_model);
         Insert.Attach(_model, Preview);
         Insert.Load(_catalog);
 
         RebuildLiveSources();
         RefreshChrome();
+        ShowSourcesAtWidgetDepth();
         // The model's signature, not the monitor's: it is the one that resolves straight back to
         // this file if the shell cannot enumerate monitors next time.
         Remember(s => { s.LastSignatureKey = _model.Signature.Key; s.LastLayoutPath = _model.Path; });
@@ -157,13 +163,29 @@ public partial class MainWindow : Window
         RefreshChrome();
     }
 
-    /// <summary>Widget depth runs the widget's own sources, which a widget with no copy in the
-    /// layout has nowhere else.</summary>
+    /// <summary>Widget depth runs the widget's own sources (a widget with no copy in the layout has
+    /// them nowhere else) and shows them in the right column. Back at layout depth, a copy Edit placed
+    /// only to have somewhere to edit the widget goes again.</summary>
     private void OnDepthChanged()
     {
         RebuildLiveSources();
         RefreshBreadcrumb();
+        ShowSourcesAtWidgetDepth();
+        if (_scratchCopy is { } id && _model.Depth.Kind == DepthKind.Layout)
+        {
+            _scratchCopy = null;
+            // After the depth change has finished: this can be raised from inside an undo.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_model.Depth.Kind != DepthKind.Layout || Copies.Find(_model.Layout, id) is null) return;
+                _model.Edit("Put the widget away", l => Copies.Remove(l, id));
+                if (_model.Selection.Contains(id)) _model.ClearSelection();
+            }));
+        }
     }
+
+    private void ShowSourcesAtWidgetDepth()
+        => SourcesHost.Visibility = _model.Depth.Kind == DepthKind.Widget ? Visibility.Visible : Visibility.Collapsed;
 
     private void RefreshChrome()
     {
@@ -236,6 +258,7 @@ public partial class MainWindow : Window
         _live.Updated += OnLiveUpdated;
         Properties.Live = _live;
         Insert.Live = _live;
+        Sources.Live = _live;
         // A rebuilt set starts with no providers, so the ones already on screen have to be put
         // back or a bound component would fall back to its default on the next source edit.
         _live.SetProviders(Providers.Records);
@@ -258,14 +281,22 @@ public partial class MainWindow : Window
     /// <para>The margin rather than the middle of the canvas because windows sit centred on the
     /// ultrawide and leave roughly 440 px either side (CLAUDE.md); dropping a new widget behind a
     /// browser window would look like nothing had happened.</para></summary>
-    private void Add(WidgetTemplate template)
+    private string? Add(WidgetTemplate template)
     {
-        // Where it lands is read before the edit: the expansion is the model's, cached per change.
-        var region = Arranger.Column(_model.Signature.Width, _model.Signature.Height);
-        var at = Placement.Spawn(region, Targets.All(_model).Select(t => t.Bounds).ToList(), template.Width, template.Height);
+        var at = SpawnAt(template.Width, template.Height);
         string? added = null;
         _model.Edit($"Add {template.Name}", l => added = Copies.Add(l, template, at.X, at.Y));
         if (added is not null) SelectCopy(added);
+        return added;
+    }
+
+    /// <summary>Where a new copy of this size lands: the right-hand margin, below what is there.
+    /// Read before the edit: the expansion is the model's, cached per change.</summary>
+    private (int X, int Y) SpawnAt(int width, int height)
+    {
+        var region = Arranger.Column(_model.Signature.Width, _model.Signature.Height);
+        var at = Placement.Spawn(region, Targets.All(_model).Select(t => t.Bounds).ToList(), width, height);
+        return (at.X, at.Y);
     }
 
     private void Remove(string copyId)
@@ -336,6 +367,13 @@ public partial class MainWindow : Window
             _backupBeforeApply = false;
             if (created) _store.Set(_model.Signature, dest);
         }
+        catch (InvalidOperationException ex) when (ex.InnerException is FormatException)
+        {
+            // A widget that would not load again: nothing was written, and the sentence says which.
+            if (created) _model.Path = null;
+            SetStatus(ex.Message);
+            return false;
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             if (created) _model.Path = null;
@@ -344,52 +382,68 @@ public partial class MainWindow : Window
             return false;
         }
         _appliedAt = DateTime.Now;
+        // A widget written just now is on disk: its card reads "edited" and offers Reset.
+        if (_model.WidgetEdits.Count > 0) ReloadCatalog();
         Remember(s => { s.LastSignatureKey = _model.Signature.Key; s.LastLayoutPath = _model.Path; });
         RefreshChrome();
         return true;
     }
 
-    // ---- the widget editor -------------------------------------------------------------------
+    // ---- the Insert panel's widget menu ---------------------------------------------------------
+    // Every widget is edited on this canvas, at widget depth (brief section 3); Apply writes it
+    // (a shipped one forks into the user's widgets folder, plan D2).
 
-    /// <summary>One editor at a time. A second request asks the open one whether to keep what is
-    /// in it first: two windows editing two templates that may share a key is a race to the same
-    /// file, and the gallery behind them can only show one answer.</summary>
-    private void OpenWidgetEditor(WidgetDocument document)
+    /// <summary>"New widget": an empty frame in the right-hand margin, at widget depth.</summary>
+    private void NewWidget()
     {
-        if (_editor is not null)
+        var at = SpawnAt(Lens.NewWidth, Lens.NewHeight);
+        Lens.NewWidget(_model, at.X, at.Y);
+        Preview.Focus();
+        SetStatus("A new widget: drag parts and values into its frame. Apply saves it.");
+    }
+
+    /// <summary>"Edit": widget depth on the first copy of it in this layout. A widget with no copy
+    /// here has nowhere on the canvas to be drawn, so one is placed as a click on its card would
+    /// place it, and taken away again when the canvas is back at layout depth; the widget edits
+    /// stay, and Apply saves them.</summary>
+    private void EditWidget(WidgetTemplate template)
+    {
+        var copy = _model.Layout.Copies?.Find(c => string.Equals(c.Widget, template.Key, StringComparison.OrdinalIgnoreCase));
+        var id = copy?.Id;
+        if (id is null)
         {
-            if (!_editor.ConfirmDiscard()) { _editor.Activate(); return; }
-            _editor.ForceClose();
+            if ((id = Add(template)) is null) return;
+            _scratchCopy = id;
+            SetStatus($"'{template.Name}' is not on this layout: it is shown here while you edit it, and goes when you leave the widget.");
         }
-        var editor = new WidgetEditorWindow(document) { Owner = this };
-        _editor = editor;
-        editor.Saved += ReloadCatalog;
-        editor.Closed += (_, _) => { if (ReferenceEquals(_editor, editor)) _editor = null; };
-        editor.Show();
+        else if (!WidgetCatalog.IsUserTemplate(template))
+            SetStatus($"Editing the out-of-the-box '{template.Name}': Apply keeps your version in your own widgets folder, and every copy follows it.");
+        _model.SetDepth(Depth.Widget(template.Key, id));
+        _model.Select([]);
+        Preview.Focus();
     }
 
-    /// <summary>"Duplicate to mine": a copy, named apart from the original and not yet on disk, so
-    /// the first Save cannot land on the shipped key it came from.</summary>
-    private void DuplicateTemplate(WidgetTemplate template)
+    /// <summary>"Duplicate": the widget under a new key, with one copy of it, at widget depth.</summary>
+    private void DuplicateWidget(WidgetTemplate template)
     {
-        var document = WidgetDocument.FromTemplate(template, null);
-        document.Name = template.Name + " copy";
-        OpenWidgetEditor(document);
+        var at = SpawnAt(template.Width, template.Height);
+        Lens.DuplicateWidget(_model, template, at.X, at.Y);
+        Preview.Focus();
+        SetStatus($"'{template.Name} copy' is a widget of its own. Apply saves it.");
     }
 
-    /// <summary>Delete one of the owner's own template files. When that file is an override of a
-    /// shipped key it is a reset, not a deletion: the widget stays in the gallery and the shipped
-    /// version comes back, so the question has to say so.</summary>
+    /// <summary>Delete one of the owner's own widget files. When that file is a fork of a shipped
+    /// key it is a reset, not a deletion: the widget stays in Insert and the shipped version comes
+    /// back, so the question has to say so. Copies are linked by key (plan D1), in every layout on
+    /// this machine, so the question says what happens to them.</summary>
     private void DeleteTemplate(WidgetTemplate template)
     {
         if (template.Path is null) return;
-        // Copies are linked (plan D1): they follow the file, so deleting it is not harmless any more.
         var n = Counts().GetValueOrDefault(template.Key);
-        var copies = n == 1 ? "1 copy on this wallpaper" : $"{n} copies on this wallpaper";
+        var here = n == 1 ? "1 is on this layout" : $"{n} are on this layout";
         var question = template.OverridesShipped
-            ? $"Put '{template.Name}' back to the out-of-the-box version? Your edits to it are deleted"
-              + (n > 0 ? $", and {copies} change back with it." : ".")
-            : $"Delete the widget '{template.Name}'?" + (n > 0 ? $" {copies} will show as missing." : "");
+            ? $"Put '{template.Name}' back to the out-of-the-box version? Your edits to it are deleted, and every copy of it in every layout on this machine changes back with it ({here}). Each copy's own changes stay."
+            : $"Delete the widget '{template.Name}'? Every copy of it in every layout on this machine will show as missing ({here}).";
         var answer = MessageBox.Show(this, question, "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes) return;
         try { File.Delete(template.Path); }
@@ -399,12 +453,14 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
+        // Its unapplied edits too, or the copies would go on drawing them.
+        _model.ForgetWidget(template.Key);
         ReloadCatalog();
     }
 
-    /// <summary>A template file changed on disk. Everything that reads the catalog is rebuilt from
-    /// it: the gallery's cards, the knobs panel (an instance of the edited template shows its new
-    /// knobs at once) and the running sources, which include one of each catalog source.</summary>
+    /// <summary>A widget file changed on disk (Apply wrote one, or one was deleted). Everything that
+    /// reads the catalog is rebuilt from it: the Insert panel's cards, the properties panel and the
+    /// running sources, which include one of each catalog source.</summary>
     private void ReloadCatalog()
     {
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
@@ -412,7 +468,6 @@ public partial class MainWindow : Window
         _model.WidgetsChanged();
         Insert.Load(_catalog);
         Properties.Attach(_model);
-        _sourcesKey = "";
         RebuildLiveSources();
         RefreshChrome();
     }
@@ -501,7 +556,7 @@ public partial class MainWindow : Window
     }
 
     private bool InSidePanel()
-        => Properties.IsKeyboardFocusWithin || Insert.IsKeyboardFocusWithin || Providers.IsKeyboardFocusWithin;
+        => Properties.IsKeyboardFocusWithin || Sources.IsKeyboardFocusWithin || Insert.IsKeyboardFocusWithin || Providers.IsKeyboardFocusWithin;
 
     private void Paste()
     {

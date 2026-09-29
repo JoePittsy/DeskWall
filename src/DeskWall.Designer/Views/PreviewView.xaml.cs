@@ -140,10 +140,6 @@ public partial class PreviewView : UserControl
         GridSpacing.SelectedIndex = Math.Max(0, Placement.Spacings.ToList().IndexOf(Placement.DefaultSpacing));
     }
 
-    /// <summary>Whether an empty canvas says where the first widget will land. False in the widget
-    /// editor: its canvas IS the widget, so there is no spawn region to point at, and a dashed box
-    /// over a 172 px document zoomed to fit the pane is the loudest thing on screen.</summary>
-    public bool ShowEmptyHint { get; set; } = true;
 
     /// <summary>Where the canvas is looking. Changes with every zoom and pan.</summary>
     public Viewport View => _view;
@@ -1187,7 +1183,7 @@ public partial class PreviewView : UserControl
         _surface.Grid = GridToggle.IsChecked == true ? _spacing : 0;
         // Empty counts loose components too: a layout carried over from before widgets has plenty
         // on it, and telling its owner to "add a widget to start" over the top of it would be a lie.
-        _surface.Empty = ShowEmptyHint && depth == DepthKind.Layout && _model is not null && AllTargets().Count == 0;
+        _surface.Empty = depth == DepthKind.Layout && _model is not null && AllTargets().Count == 0;
         _surface.Hint = _surface.Empty ? SpawnRegion() : null;
         _surface.Selected = selected.Select(t => t.Bounds).ToList();
         _surface.SelectionBox = selected.Count > 1 ? Placement.Bounds(selected.Select(t => t.Bounds)) : null;

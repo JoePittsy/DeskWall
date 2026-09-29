@@ -4,6 +4,7 @@ using DeskWall.Core;
 using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Widgets;
+using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Model;
 
@@ -184,6 +185,51 @@ public static partial class Lens
         return copyId;
     }
 
+    /// <summary>"Duplicate" in the Insert panel: <paramref name="source"/> under a new key, named
+    /// "&lt;name&gt; copy", in the overlay, with a copy of it at (<paramref name="x"/>,
+    /// <paramref name="y"/>), as one edit; then widget depth on it. The key is a slug of the new name
+    /// made free (<see cref="FreeKey"/>), so Apply writes a file of its own and never lands on the
+    /// widget it came from. Returns the copy's id.</summary>
+    public static string DuplicateWidget(DesignerModel model, WidgetTemplate source, int x, int y)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(source);
+        var name = source.Name + " copy";
+        var key = FreeKey(model, WidgetDocument.Slug(name));
+        var parts = TemplateParts(source);
+        var template = new WidgetTemplate
+        {
+            Name = name, Key = key, Description = source.Description, Width = source.Width, Height = source.Height,
+            Anchor = source.Anchor, Requires = source.Requires, Knobs = source.Knobs, Sources = parts.Sources, Components = parts.Components,
+        };
+        var copyId = FreeCopyId(model.Layout, key);
+        model.Edit($"Duplicate {source.Name}", (l, edits) =>
+        {
+            edits[key] = template;
+            AddCopy(l, new WidgetCopy { Id = copyId, Widget = key, X = x, Y = y });
+        });
+        model.SetDepth(Depth.Widget(key, copyId));
+        return copyId;
+    }
+
+    /// <summary>An edit to the widget <paramref name="key"/> as a whole (its name, description,
+    /// anchor, knobs or its own sources), into the overlay, as ONE undo entry: <paramref name="change"/>
+    /// gets the widget as a <see cref="WidgetDocument"/> draft, which knows how a knob maps to what it
+    /// sets. The key never changes (plan D2). No entry when nothing changed; false then, and when the
+    /// widget cannot be read.</summary>
+    public static bool EditWidget(DesignerModel model, string key, string label, Action<WidgetDocument> change)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(change);
+        if (Template(model, key) is not { } template) return false;
+        var doc = WidgetDocument.FromTemplate(template);
+        change(doc);
+        var edited = doc.ToTemplate();
+        if (WidgetTemplateWriter.ToJson(edited) == WidgetTemplateWriter.ToJson(template)) return false;
+        model.Edit(label, (_, edits) => edits[template.Key] = edited);
+        return true;
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     private static WidgetCopy? FindCopy(LayoutFile layout, string? copyId)
@@ -349,14 +395,15 @@ public static partial class Lens
         l.Version = Math.Max(l.Version, 2);
     }
 
-    /// <summary>"widget", "widget-2", ...: the first key no widget file (user or shipped, loadable or
-    /// not), overlay entry or copy in this layout already uses. A copy pointing at a missing key
-    /// would otherwise silently link to the new widget.</summary>
-    private static string FreeKey(DesignerModel model)
+    /// <summary>"widget", "widget-2", ... (or <paramref name="baseKey"/> and its numbered forms): the
+    /// first key no widget file (user or shipped, loadable or not), overlay entry or copy in this
+    /// layout already uses. A copy pointing at a missing key would otherwise silently link to the new
+    /// widget. This is the widget key rule: a new key is always free, so there is no collision to refuse.</summary>
+    private static string FreeKey(DesignerModel model, string baseKey = "widget")
     {
         for (var n = 1; ; n++)
         {
-            var key = n == 1 ? "widget" : $"widget-{n}";
+            var key = n == 1 ? baseKey : $"{baseKey}-{n}";
             if (model.WidgetEdits.ContainsKey(key)) continue;
             if (File.Exists(Path.Combine(WidgetCatalog.UserDir, key + ".json")) || File.Exists(Path.Combine(WidgetCatalog.ShippedDir, key + ".json"))) continue;
             if (model.Layout.Copies?.Exists(c => string.Equals(c.Widget, key, StringComparison.OrdinalIgnoreCase)) == true) continue;

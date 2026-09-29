@@ -17,7 +17,7 @@ public class DriveKnobTests
 {
     private static WidgetDocument TwoPartDriveWidget()
     {
-        var doc = WidgetDocument.New();
+        var doc = Drafts.New();
         doc.Name = "Drive C";
         doc.Description = "How full a drive is.";
         doc.AddSource(new SourceDef { Name = "disks", Type = "disks" });
@@ -174,7 +174,7 @@ public class DriveKnobTests
         doc.ToggleAdjustable("text", "Text");
         var loaded = SaveAndLoad(doc.ToTemplate(), "reopen");
 
-        var reopened = WidgetDocument.FromTemplate(loaded, null);
+        var reopened = WidgetDocument.FromTemplate(loaded);
 
         // The canvas must draw real data, not a literal "{drive}" key that resolves to nothing.
         Assert.Equal("disks.drives[C].usedFraction", BindingText(reopened.Model.Layout, "bar", "Fraction"));
