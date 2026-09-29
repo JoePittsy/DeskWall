@@ -88,7 +88,7 @@
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <v:KnobsPanel x:Name="Knobs" Grid.Row="0" />
+        <v:PropertiesPanel x:Name="Properties" Grid.Row="0" />
         <Border Grid.Row="1" BorderThickness="0,1,0,0" MaxHeight="260"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
           <v:ProvidersPanel x:Name="Providers" />
