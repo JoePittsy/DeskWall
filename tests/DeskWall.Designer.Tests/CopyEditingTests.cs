@@ -171,7 +171,7 @@ public class CopyEditingTests
         m.Select(["dial-1"]);
         var dial = m.Finder()("dial")!;
         var gpu = dial.Knobs.Single(k => k.Id == "metric").Choices!.Single(c => c.StartsWith("GPU||", StringComparison.Ordinal));
-        // What KnobsPanel.Commit does.
+        // What the properties panel's knob rows do (PropertiesPanel.CommitKnob).
         m.Edit("Set Metric", l => Copies.SetKnob(l, dial, "dial-1", "metric", gpu));
         Assert.Equal(gpu, Copy(m, "dial-1").Knobs["metric"]);
         Assert.Equal("gpu", ((TextDef)Part(m, "dial-1.label")).Text.LiteralText);
@@ -191,7 +191,7 @@ public class CopyEditingTests
     public void Details_Edits_A_Part_At_Copy_Depth_As_An_Override_On_That_Copy()
     {
         var m = Model();
-        // What KnobsPanel's Details does on open, then what PropertiesPanel's EditCurrent does.
+        // What the properties panel's Edit parts does, then what its EditCurrent does.
         m.SetDepth(Depth.Copy("dial-1", "dial"));
         m.Select(["dial-1.label"]);
         Assert.Equal(["dial-1.label"], m.Selection);

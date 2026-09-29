@@ -86,7 +86,7 @@ public partial class MainWindow : Window
         Gallery.EditRequested += t => OpenWidgetEditor(WidgetDocument.ForEditing(t));
         Gallery.DuplicateRequested += DuplicateTemplate;
         Gallery.DeleteRequested += DeleteTemplate;
-        Knobs.RemoveRequested += Remove;
+        Properties.RemoveRequested += Remove;
         // The shell owns depth: the canvas asks, and the one path (the model) answers, so a
         // double-click, Enter, Esc and Ctrl+Alt+K cannot disagree about where they end up.
         Preview.DepthRequested += Preview.GoToDepth;
@@ -94,7 +94,7 @@ public partial class MainWindow : Window
         {
             if (Copies.Find(_model.Layout, copyId) is { } copy) Preview.GoToDepth(Depth.Widget(copy.Widget, copy.Id));
         };
-        Layers.TemplateChildActivated += Knobs.ShowTemplateChild;
+        Layers.TemplateChildActivated += Properties.ShowTemplateChild;
         Providers.Status += SetStatus;
         // The records go into LiveSources, not into a second tree of their own: the binding
         // picker, the preview and the value trees all read that one, so a provider that is not in
@@ -130,7 +130,7 @@ public partial class MainWindow : Window
         ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
 
         Preview.Attach(_model, _renderer);
-        Knobs.Attach(_model);
+        Properties.Attach(_model);
         Layers.Attach(_model);
         Gallery.Load(_catalog);
 
@@ -222,7 +222,7 @@ public partial class MainWindow : Window
         if (previous is not null) previous.Updated -= OnLiveUpdated;
         _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
         _live.Updated += OnLiveUpdated;
-        Knobs.Live = _live;
+        Properties.Live = _live;
         // A rebuilt set starts with no providers, so the ones already on screen have to be put
         // back or a bound component would fall back to its default on the next source edit.
         _live.SetProviders(Providers.Records);
@@ -399,7 +399,7 @@ public partial class MainWindow : Window
         // Before anything reads the expansion: the copies of a saved widget redraw from its new file.
         _model.WidgetsChanged();
         Gallery.Load(_catalog);
-        Knobs.Attach(_model);
+        Properties.Attach(_model);
         _sourcesKey = "";
         RebuildLiveSources();
         RefreshChrome();
