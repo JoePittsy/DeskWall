@@ -21,7 +21,7 @@ public partial class BindingPicker : Window
     {
         InitializeComponent();
         _tree = tree;
-        ValueTreeView.Populate(TreeHost, tree, path => { PathBox.Text = path; });
+        ValueTreeView.Populate(TreeHost, tree, path => { PathBox.Text = path; }, pickOnSelect: true);
         if (current is not null)
         {
             PathBox.Text = PathText(current);

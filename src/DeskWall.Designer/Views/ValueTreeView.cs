@@ -16,19 +16,22 @@ internal static class ValueTreeView
     /// forgets which nodes were open cannot be browsed at all: the owner expands a record and the
     /// next refresh closes it again.</param>
     public static void Populate(ItemsControl root, RecordValue tree, Action<string>? onPathClicked,
-        IReadOnlySet<string>? expanded = null)
+        IReadOnlySet<string>? expanded = null, bool pickOnSelect = false)
     {
         root.Items.Clear();
         foreach (var kv in tree.Fields.OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase))
-            root.Items.Add(BuildNode(kv.Key, kv.Key, kv.Value, onPathClicked, expanded));
+            root.Items.Add(BuildNode(kv.Key, kv.Key, kv.Value, onPathClicked, expanded, pickOnSelect));
     }
 
     private static TreeViewItem BuildNode(string label, string path, Value value, Action<string>? onPathClicked,
-        IReadOnlySet<string>? expanded)
+        IReadOnlySet<string>? expanded, bool pickOnSelect)
     {
+        // Auto, not star: a TreeViewItem header is measured at its content's width, so star columns
+        // collapse to Auto anyway and the value ran into the name ("cpu0.268"). The value's left
+        // margin is the gap; its MaxWidth is what lets a long value trim instead of widening the tree.
         var header = new Grid();
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var pathText = new TextBlock
         {
@@ -45,11 +48,13 @@ internal static class ValueTreeView
             var valueText = new TextBlock
             {
                 Text = value.ToText(null),
-                Foreground = SystemColors.GrayTextBrush,
                 FontFamily = SystemFonts.MessageFontFamily,
                 FontSize = SystemFonts.MessageFontSize,
                 TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(12, 0, 0, 0),
+                MaxWidth = 240,
             };
+            valueText.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
             Grid.SetColumn(valueText, 1);
             header.Children.Add(valueText);
         }
@@ -61,19 +66,23 @@ internal static class ValueTreeView
             pathText.Cursor = Cursors.Hand;
             pathText.TextDecorations = TextDecorations.Underline;
             pathText.MouseLeftButtonUp += (_, e) => { onPathClicked(path); e.Handled = true; };
+            // Keyboard: Enter or Space picks the focused leaf. Not marked handled, so Enter in a
+            // dialog still reaches its default button once the path is set.
+            item.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) onPathClicked(path); };
+            if (pickOnSelect) item.Selected += (_, e) => { if (ReferenceEquals(e.OriginalSource, item)) onPathClicked(path); };
         }
 
         switch (value)
         {
             case RecordValue r:
                 foreach (var kv in r.Fields.OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase))
-                    item.Items.Add(BuildNode(kv.Key, AppendName(path, kv.Key), kv.Value, onPathClicked, expanded));
+                    item.Items.Add(BuildNode(kv.Key, AppendName(path, kv.Key), kv.Value, onPathClicked, expanded, pickOnSelect));
                 break;
             case ListValue l:
                 for (var i = 0; i < l.Items.Count; i++)
                 {
                     var key = l.KeyField is not null && l.Items[i].Get(l.KeyField) is { } kv2 ? kv2.ToText(null) : i.ToString();
-                    item.Items.Add(BuildNode($"[{key}]", AppendIndex(path, key), l.Items[i], onPathClicked, expanded));
+                    item.Items.Add(BuildNode($"[{key}]", AppendIndex(path, key), l.Items[i], onPathClicked, expanded, pickOnSelect));
                 }
                 break;
         }

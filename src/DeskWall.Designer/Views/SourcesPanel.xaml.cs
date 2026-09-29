@@ -118,7 +118,7 @@ public partial class SourcesPanel : UserControl
             Text = Age(def.Name),
             FontSize = 12,
             Margin = new Thickness(8, 0, 0, 0),
-            Foreground = Brush(Snapshot(def.Name)?.LastError is null ? "TextFillColorTertiaryBrush" : "SystemFillColorCriticalBrush"),
+            Foreground = Brush(Snapshot(def.Name)?.LastError is null ? "TextFillColorSecondaryBrush" : "SystemFillColorCriticalBrush"),
         };
         DockPanel.SetDock(state, Dock.Right);
         panel.Children.Add(state);
@@ -285,6 +285,7 @@ public partial class SourcesPanel : UserControl
         {
             var combo = new ComboBox { ItemsSource = field.Choices, SelectedItem = values[field.Key] };
             combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s) Commit(def.Name, field.Key, s); };
+            System.Windows.Automation.AutomationProperties.SetName(combo, field.Label);
             row.Children.Add(combo);
         }
         else
@@ -295,6 +296,7 @@ public partial class SourcesPanel : UserControl
             void Do() => Commit(def.Name, field.Key, box.Text.Trim());
             box.LostFocus += (_, _) => Do();
             box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Do(); Keyboard.ClearFocus(); } };
+            System.Windows.Automation.AutomationProperties.SetName(box, field.Label);
             row.Children.Add(box);
         }
 

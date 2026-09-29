@@ -70,7 +70,7 @@
             <Border DockPanel.Dock="Right" CornerRadius="9" Padding="7,1" Margin="8,0,0,0"
                     VerticalAlignment="Center" Visibility="{Binding CountVisibility}"
                     Background="{DynamicResource AccentFillColorDefaultBrush}">
-              <TextBlock Text="{Binding Count}" FontSize="11"
+              <TextBlock Text="{Binding Count}" FontSize="12"
                          Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
             </Border>
             <!-- One quiet word, in the caption style already on the card: the gallery must not

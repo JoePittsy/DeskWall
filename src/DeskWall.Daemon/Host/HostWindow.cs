@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using DeskWall.Core;
 using DeskWall.Core.Scheduling;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -14,38 +15,18 @@ internal sealed unsafe class HostWindow : IDisposable
     public const uint WM_APP_WAKE = 0x8000 + 1;   // WPARAM = (int)WakeKind, posted by other threads
     public const uint WM_APP_TRAY = 0x8000 + 2;   // Shell_NotifyIcon callback message
 
-    private const string ClassName = "DeskWallHost";
+    private const string ClassName = RuntimeInstance.WindowClass;
 
-    /// <summary>One daemon per runtime directory. What the single-instance lock actually protects is
-    /// the runtime dir - two daemons on one home race on frame.raw and restore.json - and two on
-    /// different homes do not share any of it. The default home keeps the old name byte for byte,
-    /// so an installed daemon is unaffected and a bare `deskwall run` still means "refresh the one
-    /// that is running"; only a scratch `deskwall --home &lt;dir&gt; run` gets a lock of its own, which
-    /// is what makes a live check of a development build possible without stopping the user's
-    /// daemon.</summary>
-    internal static string LockName()
-    {
-        var home = Path.GetFullPath(global::DeskWall.Core.Paths.RuntimeDir).TrimEnd('\\');
-        var standard = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeskWall")).TrimEnd('\\');
-        if (string.Equals(home, standard, StringComparison.OrdinalIgnoreCase)) return @"Local\DeskWall.Daemon";
-        // A path cannot be a kernel object name: the backslash is the namespace separator. Hash it.
-        var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.Unicode.GetBytes(home.ToUpperInvariant()));
-        return @"Local\DeskWall.Daemon." + Convert.ToHexString(digest, 0, 8);
-    }
+    /// <summary>One daemon per runtime directory. The derivation lives in Core
+    /// (<see cref="RuntimeInstance"/>) so the designer finds the same daemon this one registers as.</summary>
+    internal static string LockName() => RuntimeInstance.DaemonLockName(Paths.RuntimeDir);
 
-    /// <summary>The window title is how another process finds the daemon for *its* runtime dir: the
-    /// class name is the same for every daemon, so FindWindow by class alone would let
-    /// `deskwall --home &lt;scratch&gt; stop` close the user's real daemon. The default home keeps the
-    /// title it always had (the class name), so a new `stop` still finds a daemon from an older
-    /// build and the designer's class-only lookup is unchanged.</summary>
-    private static string Title()
-    {
-        var name = LockName();
-        return name == @"Local\DeskWall.Daemon" ? ClassName : name;
-    }
+    /// <summary>The window title is how another process finds the daemon for *its* runtime dir; the
+    /// class name is the same for every daemon.</summary>
+    private static string Title() => RuntimeInstance.DaemonWindowTitle(Paths.RuntimeDir);
 
     /// <summary>The running daemon's host window for this process's runtime dir, or null.</summary>
-    internal static HWND Find() => PInvoke.FindWindow(ClassName, Title());
+    internal static HWND Find() => (HWND)RuntimeInstance.FindDaemonWindow();
 
     private static HostWindow? s_instance;       // one per process; the WndProc is a static function pointer
     private readonly List<WakeReason> _pending = new();
