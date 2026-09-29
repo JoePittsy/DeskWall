@@ -26,18 +26,25 @@ public static class Copies
         ArgumentNullException.ThrowIfNull(t);
         layout.Copies ??= [];
         layout.Version = Math.Max(layout.Version, 2);
-        var n = 1;
-        while (Taken(layout, $"{t.Key}-{n}")) n++;
-        var id = $"{t.Key}-{n}";
+        var id = FreeId(layout, t.Key);
         layout.Copies.Add(new WidgetCopy { Id = id, Widget = t.Key, X = x, Y = y });
         return id;
+    }
+
+    /// <summary>"&lt;key&gt;-&lt;n&gt;" with n the first free: a new copy's id (Add, paste, duplicate).</summary>
+    public static string FreeId(LayoutFile layout, string key)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        var n = 1;
+        while (Taken(layout, $"{key}-{n}")) n++;
+        return $"{key}-{n}";
     }
 
     /// <summary>An id is taken by another copy, or by a loose component that still carries a v1
     /// stamped id ("clock-1.clock", left loose by the migrator): the expansion would otherwise hold
     /// two components with one id.</summary>
     private static bool Taken(LayoutFile layout, string id)
-        => layout.Copies!.Any(c => c.Id == id)
+        => layout.Copies?.Any(c => c.Id == id) == true
            || layout.Components.Any(c => c.Id.StartsWith(id + ".", StringComparison.Ordinal));
 
     /// <summary>False when there is no such copy. Its sources go with it: they only ever existed in

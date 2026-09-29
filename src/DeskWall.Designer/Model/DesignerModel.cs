@@ -362,21 +362,37 @@ public sealed class DesignerModel
         });
     }
 
-    public void SetZ(string id, int z) => EditAtDepth("Set Z", l => { if (Find(id) is { } c) c.Z = z; });
-
-    public void BringToFront(string id) => EditAtDepth("Bring to front", l =>
+    /// <summary>A component's or part's z; at layout depth a copy's id sets the copy's own
+    /// <c>z</c> (added to every part's), its parts moving with it so no override is written.</summary>
+    public void SetZ(string id, int z) => EditAtDepth("Set Z", l =>
     {
-        if (Find(id) is not { } c) return;
-        var max = l.Components.Where(o => o != c).Select(o => o.Z).DefaultIfEmpty(0).Max();
-        c.Z = max + 1;
+        var (parts, copies) = Resolve(l, [id]);
+        if (copies.FirstOrDefault() is { } copy) Shift(parts, copies, z - copy.Z);
+        else foreach (var c in parts) c.Z = z;
     });
 
-    public void SendToBack(string id) => EditAtDepth("Send to back", l =>
+    /// <summary>Everything in <paramref name="ids"/> above everything else at this depth, keeping its
+    /// own order (Ctrl+]). A copy's id moves the copy's <c>z</c>; a part at copy or widget depth moves
+    /// among its siblings through the lens.</summary>
+    public void BringToFront(params string[] ids) => Restack("Bring to front", ids, front: true);
+
+    /// <summary>The same, below everything else (Ctrl+[).</summary>
+    public void SendToBack(params string[] ids) => Restack("Send to back", ids, front: false);
+
+    private void Restack(string label, string[] ids, bool front) => EditAtDepth(label, l =>
     {
-        if (Find(id) is not { } c) return;
-        var min = l.Components.Where(o => o != c).Select(o => o.Z).DefaultIfEmpty(0).Min();
-        c.Z = min - 1;
+        var (parts, copies) = Resolve(l, ids);
+        var others = l.Components.Where(c => !parts.Contains(c)).Select(c => c.Z).ToList();
+        if (parts.Count == 0 || others.Count == 0) return;   // a broken copy paints nothing to restack
+        var dz = front ? others.Max() + 1 - parts.Min(c => c.Z) : others.Min() - 1 - parts.Max(c => c.Z);
+        if (front ? dz > 0 : dz < 0) Shift(parts, copies, dz);
     });
+
+    private static void Shift(IEnumerable<ComponentDef> parts, IEnumerable<WidgetCopy> copies, int dz)
+    {
+        foreach (var c in parts) c.Z += dz;
+        foreach (var copy in copies) copy.Z += dz;
+    }
 
     /// <summary>Adds the component, making its id unique with a -2, -3, ... suffix if needed.</summary>
     public void Add(ComponentDef def) => EditAtDepth("Add", l =>
@@ -388,24 +404,41 @@ public sealed class DesignerModel
         l.Components.Add(def);
     });
 
-    /// <summary>Deep-copy the components (a JSON round trip through the layout's own serializer, so
-    /// a repeater brings its template), offset them and add them as ONE undo entry. Returns the new
-    /// ids, so the caller can select the copies.
-    /// <para>Added for the canvas's Ctrl+D: <see cref="Add"/> alone cannot clone, and would be one
-    /// undo entry per copy.</para></summary>
-    public IReadOnlyList<string> Duplicate(IEnumerable<string> ids, int dx, int dy)
+    /// <summary>What Ctrl+C puts on the in-process clipboard: the copies (layout depth) and
+    /// components or parts named by <paramref name="ids"/>, as layout JSON. Null when nothing is.
+    /// A copy goes as itself (key, origin, knobs, overrides), never as its expanded parts.</summary>
+    public string? CopyJson(IEnumerable<string> ids)
     {
-        var originals = ids.Select(Find).OfType<ComponentDef>().ToList();
-        if (originals.Count == 0) return Array.Empty<string>();
-        var clones = Clone(originals);
-        var made = new List<string>(clones.Count);
-        EditAtDepth("Duplicate", l =>
+        ArgumentNullException.ThrowIfNull(ids);
+        var (parts, copies) = Resolve(Parts, ids);
+        var loose = parts.Where(c => !copies.Exists(copy => IsPartOf(c, copy))).ToList();
+        if (loose.Count == 0 && copies.Count == 0) return null;
+        return new LayoutFile { Version = 2, BaseImage = "", Components = loose, Copies = copies.Count > 0 ? copies : null }.ToJson();
+    }
+
+    /// <summary>Add what <see cref="CopyJson"/> made, offset by (dx, dy), as ONE undo entry, and
+    /// return the new ids (copy ids first-class, so the caller can select them). Every id is new:
+    /// a component or template child gets a -2, -3, ... suffix, a copy the next free
+    /// "&lt;key&gt;-&lt;n&gt;". Copies paste only at layout depth (a copy holds no copies). Nothing
+    /// pastes at copy depth: an override cannot add a part, so the edit would vanish; add parts to
+    /// the widget instead.</summary>
+    public IReadOnlyList<string> Paste(string json, int dx, int dy, string label = "Paste")
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        if (Depth.Kind == DepthKind.Copy) return [];
+        LayoutFile clip;
+        try { clip = LayoutFile.Parse(json); }
+        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException) { return []; }
+        var copies = Depth.Kind == DepthKind.Layout ? clip.Copies ?? [] : [];
+        if (clip.Components.Count == 0 && copies.Count == 0) return [];
+        var made = new List<string>();
+        EditAtDepth(label, l =>
         {
             var taken = AllIds(l).ToHashSet(StringComparer.Ordinal);
-            foreach (var c in clones)
+            foreach (var c in clip.Components)
             {
-                var id = Uniquify(taken, c.Id);
-                c.Id = id;
+                c.Id = Uniquify(taken, c.Id);
+                c.Widget = null;   // a part copied at layout depth pastes loose
                 // A repeater's template children carry their own ids through the clone, and a copy
                 // whose children still answer to "letter" makes the copy's template unreachable: the
                 // panels address a child as (repeater id, child id) and the layers tree shows both.
@@ -413,11 +446,25 @@ public sealed class DesignerModel
                     foreach (var t in r.Template) t.Id = Uniquify(taken, t.Id);
                 c.Rect = c.Rect.Offset(dx, dy);
                 l.Components.Add(c);
-                made.Add(id);
+                made.Add(c.Id);
+            }
+            foreach (var copy in copies)
+            {
+                copy.Id = Copies.FreeId(l, copy.Widget);
+                copy.X += dx; copy.Y += dy;
+                (l.Copies ??= []).Add(copy);
+                l.Version = Math.Max(l.Version, 2);
+                made.Add(copy.Id);
             }
         });
         return made;
     }
+
+    /// <summary>Ctrl+D: <see cref="CopyJson"/> then <see cref="Paste"/>, one undo entry. A copy's
+    /// duplicate is a new copy with a new id; components and parts are deep copies (a repeater
+    /// brings its template).</summary>
+    public IReadOnlyList<string> Duplicate(IEnumerable<string> ids, int dx, int dy)
+        => CopyJson(ids) is { } json ? Paste(json, dx, dy, "Duplicate") : [];
 
     /// <summary>Every id in the layout, template children included.</summary>
     private static IEnumerable<string> AllIds(LayoutFile l)
@@ -438,9 +485,6 @@ public sealed class DesignerModel
         while (!taken.Add(id)) id = $"{baseId}-{n++}";
         return id;
     }
-
-    private static List<ComponentDef> Clone(List<ComponentDef> defs)
-        => LayoutFile.Parse(new LayoutFile { BaseImage = "", Components = defs }.ToJson()).Components;
 
     public void Remove(IEnumerable<string> ids)
     {
@@ -496,6 +540,94 @@ public sealed class DesignerModel
                 copy.X = r.X; copy.Y = r.Y;
             }
         });
+    }
+
+    // ---- the shell's keyboard verbs (Task 3.5) ------------------------------------------------
+
+    /// <summary>What the canvas grabs at this depth: copies and loose components at layout depth,
+    /// the open copy's or widget's parts deeper. Ctrl+A and Tab work over these.</summary>
+    private IReadOnlyList<Target> DepthTargets() => Depth.Kind == DepthKind.Layout ? Targets.All(this) : Targets.All(Parts);
+
+    /// <summary>Ctrl+A: everything at this depth.</summary>
+    public void SelectAll() => Select(DepthTargets().SelectMany(t => Targets.EditIds(Layout, t)));
+
+    /// <summary>Tab (+1) and Shift+Tab (-1): the next or previous thing at this depth, in paint order,
+    /// wrapping. From nothing, Tab takes the first and Shift+Tab the last.</summary>
+    public void SelectSibling(int step)
+    {
+        var all = DepthTargets();
+        if (all.Count == 0) return;
+        var i = all.ToList().FindIndex(t => _selection.Contains(t.Id) || t.ComponentIds.Any(_selection.Contains));
+        var next = i < 0 ? (step > 0 ? 0 : all.Count - 1) : ((i + step) % all.Count + all.Count) % all.Count;
+        Select(Targets.EditIds(Layout, all[next]));
+    }
+
+    /// <summary>The copy a selected id belongs to at layout depth: the copy itself, or the copy one
+    /// of its expanded parts came from.</summary>
+    private WidgetCopy? CopyOf(string id)
+        => Copies.Find(Layout, id) ?? (Find(id)?.Widget is { } w ? Copies.Find(Layout, w) : null);
+
+    /// <summary>Enter: down one depth. Layout to the selected copy (keeping a selected part
+    /// selected), copy to its widget. False when there is nowhere to go.</summary>
+    public bool Descend()
+    {
+        switch (Depth.Kind)
+        {
+            case DepthKind.Layout when _selection.Select(id => (Id: id, Copy: CopyOf(id))).FirstOrDefault(x => x.Copy is not null) is { Copy: { } copy } hit:
+                SetDepth(Depth.Copy(copy.Id, copy.Widget));
+                Select(hit.Id == copy.Id ? [] : [hit.Id]);
+                return true;
+            case DepthKind.Copy:
+                SetDepth(Depth.Widget(Depth.WidgetKey!, Depth.CopyId));
+                Select([.. _selection]);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Esc: up one depth. Widget to the copy it was opened from (or to layout depth, for a
+    /// widget with no copy here), copy to layout with that copy selected. False at layout depth,
+    /// where Esc clears the selection instead.</summary>
+    public bool Climb()
+    {
+        switch (Depth.Kind)
+        {
+            case DepthKind.Widget when Depth.CopyId is { } id && Copies.Find(Layout, id) is not null:
+                SetDepth(Depth.Copy(id, Depth.WidgetKey!));
+                Select([.. _selection]);
+                return true;
+            case DepthKind.Widget:
+                SetDepth(Depth.Layout);
+                Select([]);
+                return true;
+            case DepthKind.Copy:
+                var copyId = Depth.CopyId!;
+                SetDepth(Depth.Layout);
+                Select([copyId]);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Ctrl+Alt+K. Loose components selected at layout depth: Make widget, then widget depth
+    /// on it. A copy (or one of its parts) selected, or copy depth: Edit widget. False otherwise.</summary>
+    public bool MakeOrEditWidget()
+    {
+        if (Depth.Kind == DepthKind.Copy) { SetDepth(Depth.Widget(Depth.WidgetKey!, Depth.CopyId)); return true; }
+        if (Depth.Kind != DepthKind.Layout || _selection.Count == 0) return false;
+        if (_selection.Select(CopyOf).FirstOrDefault(c => c is not null) is { } copy)
+        {
+            SetDepth(Depth.Widget(copy.Widget, copy.Id));
+            Select([]);
+            return true;
+        }
+        if (Lens.MakeWidget(this, [.. _selection]) is not { } made) return false;
+        var key = Copies.Find(Layout, made)!.Widget;
+        SetDepth(Depth.Widget(key, made));
+        Select([]);
+        return true;
     }
 
     // ---- persistence ---------------------------------------------------------------------
