@@ -178,14 +178,15 @@ public partial class InsertPanel : UserControl
 
     /// <summary>The least an open Widgets section is given: its header and one whole card (a
     /// two-line description), so the list never shows only slices of cards (critique 3, P2-c).</summary>
-    public const double WidgetsFloor = 150;
+    public const double WidgetsFloor = 170;
 
     /// <summary>The least an open Data section is given: its header, the search box and three rows.</summary>
-    public const double DataFloor = 176;
+    public const double DataFloor = 216;
 
-    /// <summary>What the whole panel needs at the least: Parts and both floors. The shell keeps this
-    /// much of the column for it however far Layers is dragged.</summary>
-    public const double Floor = 76 + WidgetsFloor + 6 + DataFloor;
+    /// <summary>What the whole panel needs at the least: its top margin, Parts, both floors and the
+    /// splitter between them. The shell keeps this much of the column for it however far Layers is
+    /// dragged (measured: 1080x680 then leaves Layers about 100 px).</summary>
+    public const double Floor = 8 + 76 + WidgetsFloor + 10 + DataFloor;
 
     /// <summary>An open section takes a share of the height, down to its floor; a closed one only its
     /// header. The splitter only means something between two open sections.</summary>

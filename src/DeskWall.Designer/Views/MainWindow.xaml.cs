@@ -782,7 +782,7 @@ public partial class MainWindow : Window
     private const double LayersShare = 0.28;
 
     /// <summary>Insert keeps at least this much of the column, however far the splitter goes.</summary>
-    private const double InsertFloor = InsertPanel.Floor;
+    private const double InsertFloor = InsertPanel.Floor + 10;   // and the Layers splitter above it
 
     /// <summary>Layers sizes to its rows, capped at a share of the column; once the splitter has been
     /// moved it is that height (remembered), still leaving Insert its floor.</summary>
@@ -795,7 +795,9 @@ public partial class MainWindow : Window
             Layers.MaxHeight = double.PositiveInfinity;
             LayersRow.Height = new GridLength(Math.Max(LayersRow.MinHeight, Math.Min(fixedAt, h - InsertFloor)));
         }
-        else Layers.MaxHeight = Math.Max(LayersRow.MinHeight, h * LayersShare);
+        // The panel itself is capped, not only its row: a panel taller than its row is clipped, and
+        // its tree does not scroll to the rows cut off.
+        else Layers.MaxHeight = Math.Max(LayersRow.MinHeight, Math.Min(h * LayersShare, h - InsertFloor));
         LayersRow.MaxHeight = Math.Max(LayersRow.MinHeight, h - InsertFloor);
     }
 

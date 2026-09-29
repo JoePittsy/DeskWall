@@ -192,8 +192,8 @@
       </DockPanel>
     </Expander>
 
-    <GridSplitter x:Name="SectionsSplitter" Grid.Row="2" Height="6" HorizontalAlignment="Stretch" Margin="8,0"
-                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="Transparent"
+    <GridSplitter x:Name="SectionsSplitter" Grid.Row="2" Height="10" HorizontalAlignment="Stretch" Margin="8,0"
+                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                   ToolTip="Drag to share the height between Widgets and Data"
                   AutomationProperties.Name="Resize Widgets and Data" />
 
