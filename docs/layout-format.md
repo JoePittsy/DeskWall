@@ -9,7 +9,7 @@ placed on the canvas in physical pixels. Source of truth for this document: `Lay
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
-| `version` | int | `1` | The only version this build reads (`LayoutStore.MaxVersion`). A file with a higher version is rejected, not half-read. |
+| `version` | int | `1` | `1` or `2`; this build reads both (`LayoutStore.MaxVersion` is 2). A file with a higher version is rejected, not half-read. |
 | `baseImage` | string | required | Path to a JPEG or PNG. |
 | `baseFit` | `"cover"` \| `"contain"` \| `"stretch"` | `"cover"` | How the base image fills the canvas. |
 | `encode` | `"jpeg"` \| `"png"` | `"jpeg"` | Output format for the composed frame. |

@@ -171,11 +171,7 @@ public class LayoutStoreTests
         Assert.NotNull(store.Resolve(sig));
     }
 
-    // ---- v2 (plan Task 1.5). The store takes a fake finder, so none of this reads a widget file.
-    // Tests marked Skip need WidgetExpander.Expand's body from lane/p1-expander (the seam throws for
-    // a layout with copies); un-skip them once both lanes are merged.
-
-    private const string NeedsExpander = "needs lane/p1-expander";
+    // ---- v2. The store takes a fake finder, so none of this reads a widget file.
 
     /// <summary>A one-part widget: a text part "value" at (0,0) 80x20, with a time source.</summary>
     private static WidgetTemplate Widget(string key)
@@ -239,7 +235,7 @@ public class LayoutStoreTests
         Assert.Equal(new Rect(3340, 0, 100, 50), Assert.Single(r.Layout.Components).Rect);
     }
 
-    [Fact(Skip = NeedsExpander)]
+    [Fact]
     public void A_V2_Layout_Resolves_Expanded()
     {
         var (_, dir) = Fresh();
@@ -256,7 +252,7 @@ public class LayoutStoreTests
         Assert.Contains(r.Layout.Sources, s => s.Name == "time");
     }
 
-    [Fact(Skip = NeedsExpander)]
+    [Fact]
     public void A_V2_Layout_Is_Expanded_Before_It_Is_Scaled()
     {
         var (_, dir) = Fresh();
@@ -289,7 +285,7 @@ public class LayoutStoreTests
         Assert.Contains(Path.Combine(WidgetCatalog.UserDir, "y.json"), store.WatchPaths);
     }
 
-    [Fact(Skip = NeedsExpander)]
+    [Fact]
     public void A_Missing_Widget_Is_Reported_Watched_And_The_Rest_Still_Paints()
     {
         var (_, dir) = Fresh();
@@ -309,7 +305,7 @@ public class LayoutStoreTests
         Assert.Contains(Path.Combine(WidgetCatalog.UserDir, "gone.json"), store.WatchPaths);
     }
 
-    [Fact(Skip = NeedsExpander)]
+    [Fact]
     public void A_Broken_Widget_Is_Reported_And_The_Rest_Still_Paints()
     {
         var (_, dir) = Fresh();
@@ -325,7 +321,7 @@ public class LayoutStoreTests
         Assert.Contains("cannot be loaded", e);
     }
 
-    [Fact(Skip = NeedsExpander)]
+    [Fact]
     public void An_Orphan_Override_Is_Not_Logged()
     {
         var (_, dir) = Fresh();

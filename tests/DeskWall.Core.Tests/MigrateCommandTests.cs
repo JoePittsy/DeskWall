@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using DeskWall.Core.Layout;
 using Xunit;
 
@@ -6,11 +6,9 @@ namespace DeskWall.Core.Tests;
 
 /// <summary>`deskwall --home &lt;scratch&gt; migrate` against the JIT deskwall.exe the project reference
 /// copies next to the test binaries (with the shipped widgets beside it), as StopCommandTests does.
-/// Every file it touches is a copy in a scratch home. Tests marked Skip need LayoutMigrator.Migrate's
-/// body from lane/p1-expander; un-skip them once both lanes are merged.</summary>
+/// Every file it touches is a copy in a scratch home.</summary>
 public class MigrateCommandTests
 {
-    private const string NeedsMigrator = "needs lane/p1-expander";
     private static readonly string Exe = Path.Combine(AppContext.BaseDirectory, "deskwall.exe");
 
     private static (int Exit, string Out) Deskwall(string home, params string[] args)
@@ -88,7 +86,7 @@ public class MigrateCommandTests
         finally { Clean(home); }
     }
 
-    [Fact(Skip = NeedsMigrator)]
+    [Fact]
     public void Check_Prints_Copies_And_Equivalence_And_Writes_Nothing()
     {
         var (home, layout) = Scratch();
@@ -107,7 +105,7 @@ public class MigrateCommandTests
         finally { Clean(home); }
     }
 
-    [Fact(Skip = NeedsMigrator)]
+    [Fact]
     public void Migrate_Writes_A_Backup_And_A_V2_File_And_A_Second_Run_Refuses()
     {
         var (home, layout) = Scratch();
