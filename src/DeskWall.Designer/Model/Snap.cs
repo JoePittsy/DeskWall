@@ -54,6 +54,39 @@ public static class Snap
         return result;
     }
 
+    /// <summary>A resize's box (<paramref name="box"/>, from <see cref="Model.Resize.Box"/>) with the
+    /// edges <paramref name="handle"/> moves pulled onto the nearest line (<see cref="Edge"/>); the
+    /// anchored edges never move. A corner keeps <paramref name="start"/>'s aspect ratio: the axis
+    /// that snapped leads and the other follows it, so only that axis's guide is shown.</summary>
+    public static (Rect Snapped, IReadOnlyList<Guide> Guides) Resize(Rect start, Rect box, Handle handle,
+        IEnumerable<Rect> others, Rect canvas, int threshold = Threshold)
+    {
+        var (xs, ys) = Lines(others, canvas);
+        int left = box.X, top = box.Y, right = box.Right, bottom = box.Bottom;
+        int? gx = null, gy = null;
+        if (Model.Resize.MovesLeft(handle)) left = Edge(left, xs, threshold, out gx);
+        if (Model.Resize.MovesRight(handle)) right = Edge(right, xs, threshold, out gx);
+        if (Model.Resize.MovesTop(handle)) top = Edge(top, ys, threshold, out gy);
+        if (Model.Resize.MovesBottom(handle)) bottom = Edge(bottom, ys, threshold, out gy);
+
+        var w = Math.Max(Model.Resize.MinSize, right - left);
+        var h = Math.Max(Model.Resize.MinSize, bottom - top);
+        if (Model.Resize.IsCorner(handle) && start.W > 0 && start.H > 0 && (gx is not null || gy is not null))
+        {
+            var ratio = start.W / (double)start.H;
+            if (gx is not null) { h = Math.Max(Model.Resize.MinSize, (int)Math.Round(w / ratio)); gy = null; }
+            else w = Math.Max(Model.Resize.MinSize, (int)Math.Round(h * ratio));
+        }
+        else if (Model.Resize.IsCorner(handle)) { w = box.W; h = box.H; }
+        if (Model.Resize.MovesLeft(handle)) left = right - w; else right = left + w;
+        if (Model.Resize.MovesTop(handle)) top = bottom - h; else bottom = top + h;
+
+        var guides = new List<Guide>();
+        if (gx is { } vx && (vx == left || vx == right)) guides.Add(new Guide(true, vx));
+        if (gy is { } hy && (hy == top || hy == bottom)) guides.Add(new Guide(false, hy));
+        return (new Rect(left, top, right - left, bottom - top), guides);
+    }
+
     /// <summary>Smallest delta that brings any of the moving edges onto a candidate line.</summary>
     private static int Best(IReadOnlyList<int> candidates, int[] edges, int threshold, out int? matched)
     {

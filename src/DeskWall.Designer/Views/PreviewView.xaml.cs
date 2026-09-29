@@ -40,6 +40,10 @@ public partial class PreviewView : UserControl
     /// by moves and by resizes alike.</summary>
     public const ModifierKeys SnapModifier = ModifierKeys.Shift;
 
+    /// <summary>Hold this while dragging and the smart guides let go: the gesture is pixel-exact.
+    /// Smart guides are on by default (brief section 3, as in Figma).</summary>
+    public const ModifierKeys GuidesOffModifier = ModifierKeys.Alt;
+
     /// <summary>Hold this and a click adds to or takes away from the selection instead of
     /// replacing it. Not Shift: Shift already means "snap", and a Shift-press that is half a click
     /// and half the start of a drag would have to mean both things at once.</summary>
@@ -200,8 +204,11 @@ public partial class PreviewView : UserControl
 
     // ---- what is on the canvas ------------------------------------------------------------------
 
+    /// <summary>What a click can land on at the current depth: the layout's copies and loose
+    /// components at layout depth; the open copy's (or widget's) parts, one target each, deeper.</summary>
     private IReadOnlyList<Target> AllTargets()
-        => _targets ??= _model is null ? [] : Targets.All(_model);
+        => _targets ??= _model is null ? []
+            : _model.Depth.Kind == DepthKind.Layout ? Targets.All(_model) : Targets.All(_model.Parts);
 
     private IReadOnlyList<Target> SelectedTargets()
     {
@@ -216,12 +223,18 @@ public partial class PreviewView : UserControl
     /// <summary>What the model's verbs take for a target: a copy's own id (<see cref="Targets.EditIds"/>).</summary>
     private IReadOnlyList<string> Ids(Target t) => _model is null ? t.ComponentIds : Targets.EditIds(_model.Layout, t);
 
-    /// <summary>The canvas works at layout depth: a press or a nudge while Details has a copy open
-    /// at copy depth acts on the whole copy (moves its origin), as it acted on a whole stamped
-    /// instance before, rather than writing an override on every part.</summary>
-    private void ToLayoutDepth()
+    /// <summary>The copy open at copy depth, or whose origin widget depth is shown at.</summary>
+    private WidgetCopy? OpenCopy()
+        => _model is { Depth.CopyId: { } id } ? Copies.Find(_model.Layout, id) : null;
+
+    /// <summary>The open widget's frame on the canvas: its copy's origin and the widget's size, at
+    /// copy and widget depth. What smart guides snap a part to besides its siblings.</summary>
+    private CRect? WidgetFrame()
     {
-        if (_model is { Depth.Kind: DepthKind.Copy }) _model.SetDepth(Depth.Layout);
+        if (_model is null || OpenCopy() is not { } copy) return null;
+        return Copies.TryFind(_model.Finder(), copy.Widget) is { } t
+            ? new CRect(copy.X, copy.Y, t.Width, t.Height)
+            : null;
     }
 
     /// <summary>Where a widget added from the gallery lands, and - while the layout is empty - the
@@ -335,6 +348,27 @@ public partial class PreviewView : UserControl
     /// questions, and someone who knows where the lines are should not have to look at them.</summary>
     private int? SnapTo() => (Keyboard.Modifiers & SnapModifier) != 0 ? _spacing : null;
 
+    // ---- smart guides (plan Task 3.2) -------------------------------------------------------------
+
+    /// <summary>Whether this gesture snaps to guides: not while the grid has it (Shift), and not
+    /// while Alt is held.</summary>
+    private static bool GuidesOn()
+        => (Keyboard.Modifiers & (SnapModifier | GuidesOffModifier)) == 0;
+
+    /// <summary><see cref="Snap.Threshold"/> screen pixels, in canvas pixels at this zoom.</summary>
+    private int GuideThreshold() => (int)Math.Round(Snap.Threshold / Math.Max(Viewport.MinZoom, _view.Zoom));
+
+    /// <summary>What a gesture snaps to: every target at this depth that is not being dragged.</summary>
+    private IReadOnlyList<CRect> Siblings()
+    {
+        var moving = _gestureTargets.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
+        return AllTargets().Where(t => !moving.Contains(t.Id)).Select(t => t.Bounds).ToList();
+    }
+
+    /// <summary>The frame whose edges a gesture snaps to: the wallpaper at layout depth, the widget's
+    /// frame deeper.</summary>
+    private CRect GuideCanvas() => WidgetFrame() ?? CanvasRect();
+
     // ---- grips -------------------------------------------------------------------------------------
 
     /// <summary>The selection's box on screen, outline and all - what the grips sit on.</summary>
@@ -419,7 +453,6 @@ public partial class PreviewView : UserControl
     public void BeginGesture(Point screen)
     {
         if (_model is null) return;
-        ToLayoutDepth();
         _downScreen = screen;
         _dragging = false;
         _moving = false;
@@ -487,8 +520,8 @@ public partial class PreviewView : UserControl
         DragTo(p);
     }
 
-    /// <summary>The gesture in progress has reached <paramref name="p"/>: the ghosts and the band
-    /// follow it. Nothing is written until <see cref="EndGesture"/>.</summary>
+    /// <summary>The gesture in progress has reached <paramref name="p"/>: ghosts, the band and the
+    /// smart guides follow it. Nothing is written until <see cref="EndGesture"/>.</summary>
     public void DragTo(Point p)
     {
         if (_model is null || (!_moving && !_banding && _resizing is null)) return;
@@ -499,15 +532,17 @@ public partial class PreviewView : UserControl
 
         if (_resizing is { } handle)
         {
-            var to = ResizedBox(handle, p);
+            var to = ResizedBox(handle, p, out var guides);
             _surface.Ghosts = _gestureTargets.Select(t => Resize.Map(t.Bounds, _gestureBox, to)).ToList();
             _surface.GhostBox = to;
+            _surface.Guides = guides;
         }
         else if (_moving)
         {
-            var (dx, dy) = MoveOffset(p);
+            var (dx, dy) = MoveOffset(p, out var guides);
             _surface.Ghosts = _gestureTargets.Select(t => t.Bounds.Offset(dx, dy)).ToList();
             _surface.GhostBox = _gestureBox.Offset(dx, dy);
+            _surface.Guides = guides;
         }
         else
         {
@@ -536,14 +571,14 @@ public partial class PreviewView : UserControl
         {
             if (_resizing is { } handle)
             {
-                var to = ResizedBox(handle, p);
+                var to = ResizedBox(handle, p, out _);
                 var corner = Resize.IsCorner(handle);
                 _model.Scale(corner ? "Scale" : "Resize",
                     _gestureTargets.SelectMany(Ids).ToList(), _gestureBox, to, corner);
             }
             else if (_moving)
             {
-                var (dx, dy) = MoveOffset(p);
+                var (dx, dy) = MoveOffset(p, out _);
                 _model.MoveGroups(_gestureTargets.Count > 1 ? "Move widgets" : "Move", Offsets(_gestureTargets, dx, dy));
             }
         }
@@ -573,20 +608,34 @@ public partial class PreviewView : UserControl
         Redraw();
     }
 
-    /// <summary>The offset this move has reached, snapped if the modifier is down. Measured from
-    /// where the press landed, so the thing being dragged stays under the pointer.</summary>
-    private (int Dx, int Dy) MoveOffset(Point p)
+    /// <summary>The offset this move has reached: on the grid with Shift, onto the nearest sibling
+    /// or frame line (<see cref="Snap.Apply"/>) by default, exact with Alt. Measured from where the
+    /// press landed, so the thing being dragged stays under the pointer.</summary>
+    private (int Dx, int Dy) MoveOffset(Point p, out IReadOnlyList<Snap.Guide> guides)
     {
+        guides = [];
         var dx = (int)Math.Round((p.X - _downScreen.X) / _surface.Zoom);
         var dy = (int)Math.Round((p.Y - _downScreen.Y) / _surface.Zoom);
-        return Placement.DragOffset(_gestureBox, dx, dy, SnapTo());
+        if (SnapTo() is { } spacing) return Placement.DragOffset(_gestureBox, dx, dy, spacing);
+        if (!GuidesOn()) return (dx, dy);
+        var moving = _gestureBox.Offset(dx, dy);
+        var (snapped, found) = Snap.Apply(moving, Siblings(), GuideCanvas(), GuideThreshold());
+        guides = found;
+        return (dx + snapped.X - moving.X, dy + snapped.Y - moving.Y);
     }
 
-    private CRect ResizedBox(Handle handle, Point p)
-        => Resize.Box(_gestureBox, handle,
+    private CRect ResizedBox(Handle handle, Point p, out IReadOnlyList<Snap.Guide> guides)
+    {
+        guides = [];
+        var box = Resize.Box(_gestureBox, handle,
             (int)Math.Round((p.X - _downScreen.X) / _surface.Zoom),
             (int)Math.Round((p.Y - _downScreen.Y) / _surface.Zoom),
             SnapTo());
+        if (!GuidesOn()) return box;
+        var (snapped, found) = Snap.Resize(_gestureBox, box, handle, Siblings(), GuideCanvas(), GuideThreshold());
+        guides = found;
+        return snapped;
+    }
 
     private CRect CanvasRect(Point a, Point b)
     {
@@ -608,6 +657,7 @@ public partial class PreviewView : UserControl
         _surface.Ghosts = [];
         _surface.GhostBox = null;
         _surface.BandRect = null;
+        _surface.Guides = [];
         ReleaseMouseCapture();
         Redraw();
     }
@@ -645,11 +695,11 @@ public partial class PreviewView : UserControl
     // ---- the verbs, as the rest of the window can reach them -------------------------------------
 
     /// <summary>Move everything selected by one offset, as one undo entry. The canvas's own drags
-    /// and the arrow keys both come through here so they cannot drift apart.</summary>
+    /// and the arrow keys both come through here so they cannot drift apart. At copy depth that is
+    /// the selected parts (overrides on the copy); at layout depth whole copies.</summary>
     public void MoveSelection(string label, int dx, int dy)
     {
         if (_model is null || (dx == 0 && dy == 0)) return;
-        ToLayoutDepth();
         var targets = SelectedTargets();
         if (targets.Count == 0) return;
         _model.MoveGroups(label, Offsets(targets, dx, dy));
@@ -750,6 +800,7 @@ public partial class PreviewView : UserControl
         public IReadOnlyList<Point> Handles { get; set; } = [];
         public CRect? Hint { get; set; }
         public bool Empty { get; set; }
+        public IReadOnlyList<Snap.Guide> Guides { get; set; } = [];
 
         public Point ToCanvas(Point screen) => new((screen.X - Origin.X) / Zoom, (screen.Y - Origin.Y) / Zoom);
 
@@ -809,6 +860,8 @@ public partial class PreviewView : UserControl
                 dc.DrawRectangle(null, new Pen(accent, 1) { DashStyle = new DashStyle([4, 3], 0) },
                     Inflate(ToScreen(gb), OutlineInset + 4));
 
+            DrawGuides(dc, frame);
+
             if (BandRect is { } band)
             {
                 var box = ToScreen(band);
@@ -832,6 +885,30 @@ public partial class PreviewView : UserControl
             var top = -Math.Round(fv.OriginY) / fv.Zoom;
             return new Rect(Origin.X + left * Zoom, Origin.Y + top * Zoom,
                 Bitmap.PixelWidth / fv.Zoom * Zoom, Bitmap.PixelHeight / fv.Zoom * Zoom);
+        }
+
+        /// <summary>The smart guides mid-drag: full-length lines across the wallpaper in a colour no
+        /// photograph or selection outline uses, so a snap is visible at any zoom.</summary>
+        private void DrawGuides(DrawingContext dc, Rect frame)
+        {
+            if (Guides.Count == 0) return;
+            var halo = Stroke(Color.FromArgb(140, 0, 0, 0), 3);
+            var line = Stroke(Color.FromRgb(255, 64, 160), 1);
+            foreach (var g in Guides)
+            {
+                if (g.Vertical)
+                {
+                    var x = Math.Round(Origin.X + g.Position * Zoom) + 0.5;
+                    dc.DrawLine(halo, new Point(x, frame.Top), new Point(x, frame.Bottom));
+                    dc.DrawLine(line, new Point(x, frame.Top), new Point(x, frame.Bottom));
+                }
+                else
+                {
+                    var y = Math.Round(Origin.Y + g.Position * Zoom) + 0.5;
+                    dc.DrawLine(halo, new Point(frame.Left, y), new Point(frame.Right, y));
+                    dc.DrawLine(line, new Point(frame.Left, y), new Point(frame.Right, y));
+                }
+            }
         }
 
         /// <summary>The grid, in canvas pixels, at a coarser multiple when the zoom would otherwise

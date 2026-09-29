@@ -190,4 +190,49 @@ public class LensTests
         }
         finally { File.Delete(path); }
     }
+
+    /// <summary>Task 3.2, hug contents: at widget depth the widget's size follows its parts, so a
+    /// part dragged below the frame grows it, and one dragged back shrinks it again.</summary>
+    [Fact]
+    public void At_Widget_Depth_The_Size_Hugs_The_Parts()
+    {
+        var m = TwoDials();
+        m.SetDepth(Depth.Widget("dial", "dial-1"));
+
+        m.Move(["dial-1.label"], 0, 40);
+        var grown = m.WidgetEdits["dial"];
+        Assert.Equal((80, 118), (grown.Width, grown.Height));        // 62 + 40 + 16
+        Assert.Equal((100, 50), (Copy(m, "dial-1").X, Copy(m, "dial-1").Y));
+
+        m.Move(["dial-1.label"], 0, -40);
+        Assert.Equal((80, 80), (m.WidgetEdits["dial"].Width, m.WidgetEdits["dial"].Height));
+    }
+
+    /// <summary>Task 3.2, renormalise: a part dragged left of or above the frame moves the frame's
+    /// origin instead. The parts start at (0, 0) again, every copy of the widget shifts by the same
+    /// amount so nothing on the canvas jumps, and it is one undo entry.</summary>
+    [Fact]
+    public void A_Part_Dragged_Negative_Renormalises_And_Every_Copy_Shifts()
+    {
+        var m = TwoDials();
+        m.SetDepth(Depth.Widget("dial", "dial-1"));
+        var dial2Label = Part(m, "dial-2.label").Rect;
+
+        m.Move(["dial-1.label"], -10, -70);
+
+        var edited = m.WidgetEdits["dial"];
+        Assert.Equal(new Rect(0, 0, 80, 16), edited.Components.Single(c => c.Id == "label").Rect);
+        Assert.Equal(new Rect(10, 8, 80, 80), edited.Components.Single(c => c.Id == "dial").Rect);
+        Assert.Equal((90, 88), (edited.Width, edited.Height));
+        Assert.Equal((90, 42), (Copy(m, "dial-1").X, Copy(m, "dial-1").Y));
+        Assert.Equal((290, 42), (Copy(m, "dial-2").X, Copy(m, "dial-2").Y));
+        Assert.Equal(new Rect(100, 50, 80, 80), Part(m, "dial-1.dial").Rect);                 // where it was
+        Assert.Equal(new Rect(90, 42, 80, 16), Part(m, "dial-1.label").Rect);                 // where it was dragged
+        Assert.Equal(dial2Label.Offset(-10, -70), Part(m, "dial-2.label").Rect);             // the other copy follows the widget
+
+        m.Undo();
+        Assert.Empty(m.WidgetEdits);
+        Assert.Equal((100, 50), (Copy(m, "dial-1").X, Copy(m, "dial-1").Y));
+        Assert.Equal((300, 50), (Copy(m, "dial-2").X, Copy(m, "dial-2").Y));
+    }
 }
