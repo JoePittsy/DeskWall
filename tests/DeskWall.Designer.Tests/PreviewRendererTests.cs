@@ -6,7 +6,9 @@ using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
+using DeskWall.Core.Resolve;
 using DeskWall.Core.Values;
+using DeskWall.Designer.Tests.Widgets;
 using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model;
 using Xunit;
@@ -136,16 +138,78 @@ public class PreviewRendererTests
         Assert.Equal(2, frame.Resolved.Count);
     }
 
-    private static PreviewFrame RenderOnce(DesignerModel model)
+    private static PreviewFrame RenderOnce(DesignerModel model, Viewport? view = null)
     {
         using var r = new PreviewRenderer(() => ValueTree.Empty);
         PreviewFrame? frame = null;
         var done = new ManualResetEventSlim();
         r.Rendered += f => { frame = f; done.Set(); };
-        r.Request(model);
+        r.Request(model, view);
         Assert.True(done.Wait(10_000), "no frame arrived");
         return frame!;
     }
+
+    /// <summary>Above zoom 1 the frame is the pane, rendered at the zoom: a 13 px label is drawn
+    /// 4x in viewport coordinates, while the hit map stays the 1:1 resolve.</summary>
+    [Fact]
+    public void At_4x_The_Frame_Is_The_Viewport_And_Parts_Are_Drawn_At_Scale()
+    {
+        var model = Model(BaseImage());
+        model.Edit("label", l => l.Components.Add(new TextDef { Id = "label", Rect = new Rect(100, 150, 60, 16), Text = PropertyValue.Literal("cpu"), Size = PropertyValue.Literal(13) }));
+        // The canvas's bottom edge (y 200) lands at screen y 200, so the pane's last 100 rows are off it.
+        var view = new Viewport(4, -300, -600, 400, 300);
+
+        var frame = RenderOnce(model, view);
+
+        Assert.Equal(400, frame.Width);
+        Assert.Equal(300, frame.Height);
+        Assert.Equal(400 * 300 * 4, frame.Bgra.Length);
+        Assert.Equal(view, frame.View);
+        Assert.Equal(new Rect(100, 150, 60, 16), frame.Resolved.Single(c => c.Id == "label").Rect);
+        var drawn = Assert.IsType<ResolvedText>(frame.Drawn!.Single(c => c.Id == "label"));
+        Assert.Equal(new Rect(100, 0, 240, 64), drawn.Rect);
+        Assert.Equal(52f, drawn.Style.Size);
+        Assert.Equal(255, frame.Bgra[((100 * 400) + 350) * 4 + 3]);    // the photograph, stretched
+        Assert.Equal(0, frame.Bgra[((250 * 400) + 10) * 4 + 3]);       // off the canvas: clear
+    }
+
+    /// <summary>The measurement plan Task 3.1 asks for: the starter column layout on its 3440x1440
+    /// canvas, over a real-sized photograph, at 8x on a 1600x1000 pane centred on dial-1's label.
+    /// The warm figure is what a pan or an edit costs; the stop line is 100 ms.</summary>
+    [Fact]
+    public void RenderTime_At_8x_On_3440x1440_Is_Recorded()
+    {
+        var photo = Path.Combine(Paths.RuntimeDir, "preview-test-base-3440.png");
+        if (!File.Exists(photo))
+        {
+            using var s = Surface.Create(3440, 1440);
+            s.Clear(new Color(255, 60, 90, 120));
+            s.FillRect(new Rect(1000, 200, 1400, 900), new Color(255, 200, 160, 90), 40);
+            s.SavePng(photo);
+        }
+        var layout = LayoutFile.Load(Path.Combine(TestRepo.Root, "layouts", "column-system.json"));
+        layout.BaseImage = photo;
+        var model = new DesignerModel(layout, new DisplaySignature("TEST", 3440, 1440, 100), null);
+        const double zoom = 8;
+        var view = new Viewport(zoom, 800 - 3260 * zoom, 500 - 312 * zoom, 1600, 1000);
+
+        RenderOnce(model, view);                                     // cold: base cache, fonts
+        var times = Enumerable.Range(0, 9).Select(_ => RenderOnce(model, view).RenderTime.TotalMilliseconds).ToList();
+        // The whole-canvas render beside it, for comparison: what zoom 1 and below costs.
+        var whole = Enumerable.Range(0, 9).Select(_ => RenderOnce(model, null).RenderTime.TotalMilliseconds).ToList();
+
+        var frame = RenderOnce(model, view);
+        Assert.Equal(1600, frame.Width);
+        Assert.Contains(frame.Drawn!, c => c.Id == "dial-1.label" && c.Rect.W == 80 * 8);
+        var median = times.Order().ElementAt(times.Count / 2);
+        _output.WriteLine($"8x render, 3440x1440 layout, 1600x1000 pane: median {median:F1} ms, all [{string.Join(", ", times.Select(t => t.ToString("F1")))}]");
+        _output.WriteLine($"1:1 whole-canvas render, same layout: median {whole.Order().ElementAt(whole.Count / 2):F1} ms, all [{string.Join(", ", whole.Select(t => t.ToString("F1")))}]");
+        Assert.True(median < 1000, $"8x render took {median} ms");   // a sanity bound; the report records the figure
+    }
+
+    private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+    public PreviewRendererTests(Xunit.Abstractions.ITestOutputHelper output) => _output = output;
 
     /// <summary>The render expands before it resolves, as the daemon does: the hit map holds the
     /// copy's parts under their expanded ids, offset to the copy's origin. The shipped dial is used

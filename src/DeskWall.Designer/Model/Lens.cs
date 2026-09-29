@@ -78,8 +78,18 @@ public static partial class Lens
             {
                 var local = Clone(after);
                 if (FindCopy(model.Layout, depth.CopyId) is { } origin) Unplace(local, origin.Id + ".", origin.X, origin.Y, origin.Z);
-                var edited = With(template, local.Components, local.Sources);
-                model.Edit(label, (_, edits) => edits[key] = edited);
+                var (dx, dy) = Hug(local, out var width, out var height);
+                var edited = With(template, local.Components, local.Sources, width ?? template.Width, height ?? template.Height);
+                model.Edit(label, (l, edits) =>
+                {
+                    edits[key] = edited;
+                    // A part dragged above or left of the frame moved the frame's origin, not the
+                    // part: every copy of this widget shifts back by as much, so nothing on the
+                    // canvas jumps.
+                    if (dx == 0 && dy == 0) return;
+                    foreach (var c in l.Copies ?? [])
+                        if (string.Equals(c.Widget, key, StringComparison.OrdinalIgnoreCase)) { c.X -= dx; c.Y -= dy; }
+                });
                 return;
             }
         }
@@ -308,11 +318,30 @@ public static partial class Lens
         }
     }
 
-    private static WidgetTemplate With(WidgetTemplate t, List<ComponentDef> components, List<SourceDef> sources) => new()
+    private static WidgetTemplate With(WidgetTemplate t, List<ComponentDef> components, List<SourceDef> sources)
+        => With(t, components, sources, t.Width, t.Height);
+
+    private static WidgetTemplate With(WidgetTemplate t, List<ComponentDef> components, List<SourceDef> sources, int width, int height) => new()
     {
-        Name = t.Name, Key = t.Key, Path = t.Path, Description = t.Description, Width = t.Width, Height = t.Height,
+        Name = t.Name, Key = t.Key, Path = t.Path, Description = t.Description, Width = width, Height = height,
         Anchor = t.Anchor, Requires = t.Requires, Knobs = t.Knobs, Sources = sources, Components = components,
     };
+
+    /// <summary>Hug contents (brief section 3, "frames grow to fit their contents"): a part at a
+    /// negative coordinate renormalises every part so the parts start at 0 on that axis, and returns
+    /// by how much (the copies' origins move back by the same); the size is then the parts' extent
+    /// from (0, 0). A widget with no parts keeps its size (null).</summary>
+    private static (int Dx, int Dy) Hug(LayoutFile parts, out int? width, out int? height)
+    {
+        width = height = null;
+        if (parts.Components.Count == 0) return (0, 0);
+        var dx = Math.Max(0, -parts.Components.Min(c => c.Rect.X));
+        var dy = Math.Max(0, -parts.Components.Min(c => c.Rect.Y));
+        foreach (var c in parts.Components) c.Rect = c.Rect.Offset(dx, dy);
+        width = Math.Max(1, parts.Components.Max(c => c.Rect.Right));
+        height = Math.Max(1, parts.Components.Max(c => c.Rect.Bottom));
+        return (dx, dy);
+    }
 
     private static void AddCopy(LayoutFile l, WidgetCopy copy)
     {

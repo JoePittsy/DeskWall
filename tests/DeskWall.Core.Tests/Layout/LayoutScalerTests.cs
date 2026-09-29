@@ -73,4 +73,22 @@ public class LayoutScalerTests
         var d = Assert.IsType<DialDef>(Assert.Single(scaled.Components));
         Assert.Equal("5", d.Thickness.LiteralText);
     }
+
+    /// <summary>The designer's zoom: every rect and pixel size times the zoom, top-level rects then
+    /// offset into the viewport; repeater children scale but stay cell-relative; "auto" stays.</summary>
+    [Fact]
+    public void Transform_Scales_About_The_Origin_Then_Offsets()
+    {
+        var src = LayoutFile.Parse(Json);
+        var t = LayoutScaler.Transform(src, 8, -25000, -100);
+        var clock = (TextDef)t.Components[0];
+        Assert.Equal(new Rect(3220 * 8 - 25000, 40 * 8 - 100, 172 * 8, 78 * 8), clock.Rect);
+        Assert.Equal("512", clock.Size.LiteralText);
+        Assert.Equal("auto", clock.EffectRadius.LiteralText);
+        var rep = (RepeaterDef)t.Components[1];
+        Assert.Equal(112, rep.Gap);
+        Assert.Equal("368", rep.CellHeight.LiteralText);
+        Assert.Equal(new Rect(0, 208, 1376, 48), rep.Template[0].Rect);
+        Assert.Equal(new Rect(3220, 40, 172, 78), ((TextDef)src.Components[0]).Rect);   // source untouched
+    }
 }
