@@ -7,8 +7,9 @@ using DeskWall.Designer.Views;
 using Xunit;
 
 /// <summary>Critique 3, P1-b: Apply clears the focus so a knob being typed into commits, and used
-/// to leave it cleared, so no key reached anything and Esc could not climb. The rule it now follows:
-/// focus goes back to what had it, or to the canvas when that is gone.</summary>
+/// to leave it cleared, so no key reached anything and Esc could not climb; and clearing it raised no
+/// LostFocus, so the knob never committed either. The rule now: focus moves to the canvas (the box
+/// commits), then goes back to what had it, or stays on the canvas when that is gone.</summary>
 public class FocusRuleTests
 {
     [Fact]
@@ -31,9 +32,12 @@ public class FocusRuleTests
                 window.Activate();
                 Assert.True(knob.Focus());
 
-                var was = Keyboard.FocusedElement;
-                Keyboard.ClearFocus();
-                Assert.Null(Keyboard.FocusedElement);
+                // Apply's first half: the box loses focus (so it commits), and what had it is kept.
+                var lost = 0;
+                knob.LostFocus += (_, _) => lost++;
+                var was = MainWindow.CommitFocus(canvas);
+                Assert.Same(knob, was);
+                Assert.Equal(1, lost);
                 MainWindow.RestoreFocus(was, canvas);
                 Assert.Same(knob, Keyboard.FocusedElement);
 

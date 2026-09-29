@@ -84,8 +84,8 @@ public sealed class DropPlan
     public const string OverrideShowAs = OverridePrefix + ": show as ";
 
     /// <summary>At copy depth, a knob of the copy's widget that sets <paramref name="property"/> of
-    /// <paramref name="partId"/> and has a choice under which that property shows
-    /// <paramref name="value"/> (format aside): "Set Metric to GPU". Null when there is none.</summary>
+    /// <paramref name="partId"/> and has a choice under which that property, or another the knob
+    /// sets, shows <paramref name="value"/> (format aside): "Set Metric to GPU". Null when there is none.</summary>
     private static DropOption? KnobOption(DesignerModel model, string partId, string property, ValueEntry value)
     {
         if (model.Depth.CopyId is not { } copyId || Copies.Find(model.Layout, copyId) is not { } copy
@@ -96,8 +96,13 @@ public sealed class DropPlan
             if (knob.Choices is not { Count: > 0 } choices || !knob.Sets.Any(s => string.Equals(SetPath(s), key, StringComparison.OrdinalIgnoreCase))) continue;
             foreach (var choice in choices)
             {
+                // The copy's own choice already says this, unless an override is hiding it.
+                if (choice == Copies.KnobValue(copy, knob) && !copy.Overrides.ContainsKey(key)) continue;
                 var knobs = new Dictionary<string, string>(copy.Knobs, StringComparer.Ordinal) { [knob.Id] = choice };
-                if (KnobSets.Get(WidgetExpander.Baseline(template, knobs), key)?.Binding is { } b && SamePath(b, value.Path))
+                var baseline = WidgetExpander.Baseline(template, knobs);
+                // This property, or another the same knob sets: CPU load dropped on the RAM dial's
+                // "50%" still means "make this the CPU dial".
+                if (knob.Sets.Any(s => KnobSets.Get(baseline, SetPath(s))?.Binding is { } b && SamePath(b, value.Path)))
                     return new DropOption($"Set {knob.Label} to {choice.Split("||")[0]}", null, property, Bound(value, null), knob.Id, choice);
             }
         }

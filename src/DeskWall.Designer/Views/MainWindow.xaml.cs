@@ -366,10 +366,19 @@ public partial class MainWindow : Window
         // typed is not in the document that gets written. Focus goes back afterwards (to the canvas
         // when what had it is gone, as a committed knob's row is rebuilt): with none, WPF routes no
         // key anywhere and Esc could not climb.
-        var focused = Keyboard.FocusedElement;
-        Keyboard.ClearFocus();
+        var focused = CommitFocus(Preview);
         try { return Save(); }
         finally { RestoreFocus(focused, Preview); }
+    }
+
+    /// <summary>Move the focus to <paramref name="canvas"/>, so the box that had it raises LostFocus
+    /// and commits, and return what had it. Not <c>Keyboard.ClearFocus</c>: that leaves the logical
+    /// focus where it was, and a TextBox's LostFocus is the logical one, so nothing committed.</summary>
+    internal static IInputElement? CommitFocus(UIElement canvas)
+    {
+        var focused = Keyboard.FocusedElement;
+        if (!canvas.Focus()) Keyboard.ClearFocus();
+        return focused;
     }
 
     /// <summary>Focus <paramref name="element"/> again if it is still on screen, else <paramref name="fallback"/>.</summary>

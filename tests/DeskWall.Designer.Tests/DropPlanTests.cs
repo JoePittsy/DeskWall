@@ -218,6 +218,24 @@ public class DropPlanTests
         Assert.Empty(DropPlan.For(m, Cpu, new DropTarget(140, 90, "dial-1.dial")).Options);
     }
 
+    /// <summary>The critique's case at copy depth: CPU load on the RAM dial's "50%" is "make this the
+    /// CPU dial", not a CPU fraction printed on a RAM arc.</summary>
+    [Fact]
+    public void At_Copy_Depth_A_Value_Another_Part_Of_The_Knob_Shows_Offers_The_Knob_First()
+    {
+        var m = DesignerModelDepthTests.Model("""{ "id": "dial-1", "widget": "dial", "x": 100, "y": 50, "knobs": { "metric": "RAM||hardware.ram||hardware.ramPct | \"{0}%\"||ram" } }""");
+        m.SetDepth(Depth.Copy("dial-1", "dial"));
+        var plan = DropPlan.For(m, Cpu, new DropTarget(140, 90, "dial-1.value"));
+        Assert.Equal("Set Metric to CPU", plan.Options[0].Label);
+        Assert.All(plan.Options.Skip(1), o => Assert.StartsWith(DropPlan.OverrideShowAs, o.Label, StringComparison.Ordinal));
+        plan.Apply(m, plan.Options[0]);
+        Assert.Empty(m.Layout.Copies!.Single().Knobs);
+        Assert.Equal("hardware.cpuPct | \"{0}%\"", Bind(((TextDef)m.Find("dial-1.value")!).Text));
+
+        // Now it is the CPU dial: the same drop offers no knob change, only the override.
+        Assert.All(DropPlan.For(m, Cpu, new DropTarget(140, 90, "dial-1.value")).Options, o => Assert.Null(o.Knob));
+    }
+
     [Fact]
     public void At_Copy_Depth_A_Value_No_Knob_Choice_Gives_Is_Offered_Only_As_An_Override()
     {
