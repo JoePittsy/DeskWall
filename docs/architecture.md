@@ -42,20 +42,23 @@ path the resident daemon uses, useful for scripting and for this documentation's
 ## Daemon lifecycle
 
 1. **Start.** Create the hidden host window, register the tray icon unless `--no-tray` (menu:
-   Open designer, Refresh now, Pause, Exit), load the layout store, subscribe the remote image
-   cache's `Landed` event to a wake, sweep image-cache entries untouched for 30 days.
+   Open designer, Refresh now, Pause, Exit), load the layout store, create the user widgets
+   folder (`%LOCALAPPDATA%\DeskWall\widgets\`), watch the widget folders for file changes (to
+   reactivate when a widget is edited), subscribe the remote image cache's `Landed` event to a
+   wake, sweep image-cache entries untouched for 30 days.
 2. **First tick**, forced (`Tick("start", force: true, ...)`), so the wallpaper is correct before
    the loop ever waits.
 3. **Sleep.** The waitable timer is set to the earliest due time across every active source
    (`Scheduler.NextWake`, clamped to `[now + 250 ms, now + 15 min]`); the wait also wakes on any
    window message.
 4. **Wake on:** the timer, a display change, a session unlock, a layout-store or layout-file
-   change (`LayoutWatcher`, debounced), a tray command, or a source finishing a fetch that
-   overran into the next tick. `TickPlan.From(reasons)` turns the batch of reasons the pump
-   collected into `{ Tick, Force, Reactivate, DelayForExplorer, Shutdown }`. A display change
-   adds a two-second `Thread.Sleep` before the tick runs, because Explorer is still re-laying the
-   desktop and hands back stale metrics until it finishes (spec 3.1); this blocks the pump,
-   including a tray Exit, for those two seconds.
+   change (`LayoutWatcher`, debounced), a widget file change (watched folder), a tray command, or
+   a source finishing a fetch that overran into the next tick. `TickPlan.From(reasons)` turns the
+   batch of reasons the pump collected into `{ Tick, Force, Reactivate, DelayForExplorer,
+   Shutdown }`. A display change adds a two-second `Thread.Sleep` before the tick runs, because
+   Explorer is still re-laying the desktop and hands back stale metrics until it finishes (spec
+   3.1); this blocks the pump, including a tray Exit, for those two seconds. A widget file change
+   triggers a Reactivate.
 5. **After every tick:** log the outcome, update the tray tooltip, compute the next wake,
    `Footprint.Trim()` (`SetProcessWorkingSetSize`, giving freed pages back so Task Manager shows
    the idle number rather than the render peak).
@@ -72,18 +75,29 @@ itself, not a single source.
 ## The tick pipeline
 
 `TickRunner.RunAsync(force, apply, ct)` -- one method, seven numbered stages (spec section 6),
-timed into a `TickTimings` that `deskwall tick --measure` prints as a table:
+timed into a `TickTimings` that `deskwall tick --measure` prints as a table. Before the tick proper,
+`LayoutStore.TryLoad` reads and expands the layout:
+
+- **Load.** Read the layout file from disk, check its version, expand any linked widget copies
+  (`WidgetExpander.Expand`) into ordinary sources and components, and scale the result to the
+  current display signature if needed (`LayoutScaler.Scale`). This is measured as `load` in the
+  timing output (read + expand + scale time, before the tick). The expander resolves widget files
+  from the user folder first (`%LOCALAPPDATA%\DeskWall\widgets\`) and then the shipped folder
+  beside the exe, enabling copy-on-write for a shipped widget: editing it writes a user copy and
+  every placed copy of that widget, in every layout on the machine, follows the edit.
+
+The tick itself:
 
 1. **Refresh due sources.** For each source, `Scheduler.IsDue` (not the source's own `NextDue`
    directly -- the wake math and the run gate must agree exactly, or a source can be due by one
    test and not the other) decides whether to call `RefreshAsync`. A source that throws is marked
    failed; its previous values keep publishing.
-2. **Resolve and diff.** `LayoutResolver.Resolve` expands the layout (repeaters included) against
-   the current value tree and computes each component's content key. This is compared against
-   `frame-state.json`'s `KeysById` from the previous tick. If nothing changed, nothing was
-   removed, the display signature matches, and the base image's cache key matches, the tick ends
-   here (`t.Skipped = true`) before any drawing, encoding or applying -- the whole point of
-   content keys (spec 4.4).
+2. **Resolve and diff.** `LayoutResolver.Resolve` expands the layout (repeaters, after copies are
+   already expanded) against the current value tree and computes each component's content key.
+   This is compared against `frame-state.json`'s `KeysById` from the previous tick. If nothing
+   changed, nothing was removed, the display signature matches, and the base image's cache key
+   matches, the tick ends here (`t.Skipped = true`) before any drawing, encoding or applying --
+   the whole point of content keys (spec 4.4).
 3. **Base image.** `BaseCache.Ensure` scales the base image to the canvas once and caches the
    result as a raw PBGRA dump under `runtime/base/<key>.raw`, keyed by path, mtime, target size
    and fit, so a cache hit is a file copy, not a JPEG/PNG decode.

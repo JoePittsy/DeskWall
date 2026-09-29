@@ -48,7 +48,7 @@ source that shells out to Tailscale. Each has its own requirement:
 
 - **Weather.** The `http` source calls Open-Meteo with coordinates for Leeds
   (`latitude=53.8008&longitude=-1.5491`, the `weather` widget's `town` knob default -
-  `docs/layout-format.md` "Widgets"). To point it at a different town, use the designer's Town
+  `docs/layout-format.md` "Copies"). To point it at a different town, use the designer's Town
   knob, or give the `weather-1` copy a `"knobs": { "town": "<name>||<lat>||<lon>" }` by hand -
   Open-Meteo needs no key and the request is unauthenticated. The weather icon (`sky` component) binds
   `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"`; the `runtime:` prefix
@@ -58,8 +58,8 @@ source that shells out to Tailscale. Each has its own requirement:
   `deskwall tick --layout layouts\column-system.json` needs the folder copied by hand first, or
   the icon area draws the missing-image fallback plate).
 - **Tailscale.** The `vpn` line needs Tailscale installed at its default path,
-  `C:\Program Files\Tailscale\tailscale.exe`; if yours is elsewhere, give the `vpn-1` copy an
-  override `"sources.tailscale.settings.command": "<path>"`. Without it the `command` source's own failure means the line falls back to its
+  `C:\Program Files\Tailscale\tailscale.exe`; if yours is elsewhere, give the `vpn-1` copy a
+  `"knobs": { ... }` or `"overrides": { "sources.tailscale.settings.command": "<path>" }`. Without it the `command` source's own failure means the line falls back to its
   default (spec 3.2: a missing binding is never an exception).
 - **GPU dials.** The second (`dial-2`, GPU load) and fourth (`dial-4`, GPU temperature) dial
   instances bind `hardware.gpu` and `hardware.gpuTempFraction`/`hardware.gpuTempC`, which the

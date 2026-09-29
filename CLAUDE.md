@@ -8,7 +8,7 @@ stuff you would otherwise rediscover the hard way.
 A tool that paints slow-changing state (clock, recently played games, disk headroom) into a
 static wallpaper image every minute, with transparent desktop shortcuts placed over the game
 covers so they launch on click. Owner: Joe (JOES-PC, 3440x1440 Dell U3425WE, Windows 11,
-i7-6700K). v1 (C# on .NET 10) is the current implementation, on branch `v1`; the PowerShell proof
+i7-6700K). v1 (C# on .NET 10) is the current implementation, on branch `main`; the PowerShell proof
 of concept it replaces still runs the desktop today (see "POC (retired soon)" below) and is
 deleted only once every item in the phase 6 parity gate is checked off.
 
@@ -36,9 +36,9 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
 
 | Where | What |
 |---|---|
-| `src/DeskWall.Core/` | Library, native-AOT-safe, no UI. Model (`Layout/`), bindings (`Bindings/`), resolution (`Resolve/`), rendering (`Render/`, Direct2D/DirectWrite/WIC via CsWin32), sources (`Sources/`), shortcuts (`Shortcuts/`), scheduling (`Scheduling/`), the tick itself (`Tick/TickRunner.cs`). |
-| `src/DeskWall.Daemon/` | `deskwall.exe`. `Program.cs` (subcommands), `DaemonLoop.cs` (resident lifecycle), `Host/` (hidden window, tray, waitable timer, layout-file watcher). |
-| `src/DeskWall.Designer/` | `DeskWall.Designer.exe`, WPF, JIT (not AOT). `Model/` (document, undo, live source panels, settings), `Views/` (canvas, panels, XAML). Phase 5 complete (all 8 tasks, review, fix wave); two review findings deferred by design, see `.superpowers/sdd/2026-09-20-deskwall-v1-phase5-designer/fix-wave-report.md`. |
+| `src/DeskWall.Core/` | Library, native-AOT-safe, no UI. Model (`Layout/`), bindings (`Bindings/`), resolution (`Resolve/`), rendering (`Render/`, Direct2D/DirectWrite/WIC via CsWin32), sources (`Sources/`), shortcuts (`Shortcuts/`), scheduling (`Scheduling/`), the tick itself (`Tick/TickRunner.cs`), widget templates and expander (`Widgets/`). |
+| `src/DeskWall.Daemon/` | `deskwall.exe`. `Program.cs` (subcommands including `migrate`), `DaemonLoop.cs` (resident lifecycle, widget-folder watch), `Host/` (hidden window, tray, waitable timer, layout-file watcher). |
+| `src/DeskWall.Designer/` | `DeskWall.Designer.exe`, WPF, JIT (not AOT). `Model/` (document, undo, live source panels, settings), `Views/` (canvas with three depths, Layers panel, Insert panel, properties panel, XAML). |
 | `tests/DeskWall.Core.Tests/`, `tests/DeskWall.Designer.Tests/` | xUnit. Run under `DESKWALL_HOME` so nothing touches the real runtime dir. |
 | `layouts/` | Starter and example layout JSON files, plus `layouts/README.md`. `column-system.json` (weather, hardware dials, Tailscale) is what JOES-PC runs since 2026-09-21. |
 | `assets/weather/` | 28 WMO-code weather icons (Meteocons, MIT) referenced by layouts as `runtime:assets/weather/{0}.png`; the designer ships and copies them into the runtime dir, `assets/weather/README.md` has the mapping. |
@@ -50,10 +50,9 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
 
 ## v1 gotchas
 
-- **Branches:** `v1` is the integration branch; lanes are `lane/<name>` (git forbids `v1/x` while
-  `v1` exists). Phase plans live in `docs/superpowers/plans/`; the SDD ledger and lane reports
-  (verified behaviour, deviations, concerns) live in `.superpowers/sdd/` (gitignored). Read the
-  relevant phase's reports before resuming it.
+- **Branches:** `main` is the integration branch; lanes are `lane/<name>`. Phase plans live in
+  `docs/superpowers/plans/`; the SDD ledger and lane reports (verified behaviour, deviations,
+  concerns) live in `.superpowers/sdd/` (gitignored). Read the relevant phase's reports before resuming it.
 - **CsWin32 (`allowMarshaling: false`):** COM interface methods return `void` and throw
   `COMException`; static entry points return `HRESULT` and take `.ThrowOnFailure()`.
   `CoInitializeEx` returns `RPC_E_CHANGED_MODE` on .NET's MTA main thread: treat as success
@@ -144,6 +143,14 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
 - **`deskwall run` always paints the real wallpaper** -- there is no `--no-apply` for it, only for
   `tick`. A scratch `run` therefore takes the desktop over until the live daemon's next
   content change (the clock, so within a minute). Budget-style checks restore it explicitly.
+- **Layout format is v2 (linked copies) on JOES-XPS-17 since 2026-09-29, still v1 on JOES-PC.**
+  `deskwall migrate [--check] [<path>...]` converts v1 stamped instances to v2 linked copies. The
+  backup is named `<file>.v1.json` (e.g. `column-system.v1.json`), never overwritten. `--check`
+  prints the conversion without writing. See `docs/layout-format.md` "Copies".
+- **Agents must never open the designer on the live runtime dir** (`%LOCALAPPDATA%\DeskWall`).
+  Use a scratch `DESKWALL_HOME` environment variable. Designer screenshots via the in-process
+  rendering harness (see `%TEMP%\dw-*/live.ps1`), because `PrintWindow` returns blank in agent
+  sessions over RDP.
 
 ## Verifying a v1 change
 

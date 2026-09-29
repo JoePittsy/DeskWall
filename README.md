@@ -89,16 +89,33 @@ guessed at.
 ### The designer
 
 `DeskWall.Designer.exe` edits layout files against a live preview rendered by the same code the
-daemon uses, with source and property panels and a binding picker. It is a separate process that
-runs only while its window is open and never talks to the daemon directly -- it edits the same
-files (`layouts.json`, layout files, `secrets.json`, `settings.json`) that the daemon watches and
-hot-reloads. Its widget editor builds a reusable widget out of parts and saves it into
-`%LOCALAPPDATA%\DeskWall\widgets\`, where it joins the gallery beside the shipped ones
-(`docs/layout-format.md` "Your own templates, and the widget editor").
-**The designer's main window (`MainWindow.xaml`, Phase 5 Task 8) is still being
-built** at the time of writing; the panels and canvas it will host already exist and have their
-own model tests (`tests/DeskWall.Designer.Tests`), but there is no way yet to open the whole
-shell as a user would. Full plan: `docs/superpowers/plans/2026-09-20-deskwall-v1-phase5-designer.md`.
+daemon uses. It is a separate process that runs only while its window is open and never talks to
+the daemon directly -- it edits the same files (`layouts.json`, layout files, `secrets.json`,
+`settings.json`) that the daemon watches and hot-reloads.
+
+The canvas works in three depths, always with the wallpaper behind it:
+
+- **Layout depth** (default) -- select, move and resize placed widgets. The left column holds a
+  Layers panel (expandable list of widgets and their parts) and an Insert panel (drag widgets,
+  parts or live data values onto the canvas). Properties appear on the right.
+- **Copy depth** -- double-click a placed widget to edit it in place, zoomed to fit. Every change
+  is an override, marked in Layers. `Reset` and `Push to widget` buttons control whether the
+  change is local or shared.
+- **Widget depth** -- `Ctrl+Alt+K` or the Insert menu's Edit option (or New widget, or Duplicate).
+  Edit the widget itself; every placed copy follows immediately. The properties panel shows the
+  widget's name, description, anchor, size (read only; frames hug their contents), and knobs.
+
+Keyboard: Tab/Shift+Tab cycle siblings within a depth. Enter goes deeper; Esc climbs back up.
+Ctrl+C/V/D/A work; arrow keys nudge; Ctrl+[ / Ctrl+] change z-order. Shift+1 fits all, Shift+2
+zooms to selection. Smart guides on by default (Alt suspends).
+
+Binding is by dragging: the Data panel lists live values (`hardware · CPU 43%`). Drag one onto the
+canvas to create a part (auto-choosing Dial, Bar, Clock or Text), or onto a part to bind it.
+Bound properties show as chips with a Bind button to change the source.
+
+Editing a shipped widget forks it into `%LOCALAPPDATA%\DeskWall\widgets\` and every placed copy
+follows the fork. A user's own widget is always local. Apply writes the edits and reloads the
+catalogue so the changes are visible immediately.
 
 ## Layouts
 
@@ -117,7 +134,11 @@ physical pixels, each property either a literal or a binding into a source's pub
 deskwall tick --layout layouts\clock-disks.json --force --measure   # render once, print timings, do not need a registered store entry
 deskwall layouts list                                                # what is registered, and what this display resolves to
 deskwall shortcuts                                                   # read-only: planned vs actual desktop-icon positions
+deskwall migrate [--check] [<path>...]                               # convert v1 stamped layouts to v2 linked copies (default: all in layouts.json)
 ```
+
+`deskwall migrate --check` prints what would happen without writing. The backup is `<file>.v1.json`
+(never overwritten); the real run refuses if non-equivalent. See `docs/layout-format.md` "Copies".
 
 ## Pushing a value in
 
