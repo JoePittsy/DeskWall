@@ -489,7 +489,7 @@ internal static class Program
             }
             exit = 0;
             // The same expansion the store does, so a scripted tick draws what the daemon would.
-            return LayoutStore.Expand(file, Path.GetFullPath(layoutPath), LayoutStore.DefaultFinder(), Console.Error.WriteLine, out _);
+            return LayoutStore.Expand(file, Path.GetFullPath(layoutPath), LayoutStore.DefaultFinder(), Console.Error.WriteLine);
         }
         var res = LayoutStore.Default(Console.Error.WriteLine).Resolve(monitor.Signature);
         if (res is null)

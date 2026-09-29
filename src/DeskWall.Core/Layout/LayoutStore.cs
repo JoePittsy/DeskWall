@@ -63,7 +63,7 @@ public sealed class LayoutStore
     /// copies, comes back as itself without a widget file being looked at). A missing or broken
     /// widget skips that copy and is reported through <paramref name="onError"/>; orphan overrides
     /// and knobs are not errors on the wallpaper and are not reported (plan D1).</summary>
-    public static LayoutFile Expand(LayoutFile file, string path, Func<string, WidgetTemplate?> find, Action<string>? onError, out IReadOnlyList<string> widgetKeys)
+    public static LayoutFile Expand(LayoutFile file, string path, Func<string, WidgetTemplate?> find, Action<string>? onError)
     {
         var x = WidgetExpander.Expand(file, find);
         foreach (var p in x.Problems)
@@ -73,7 +73,6 @@ public sealed class LayoutStore
             else if (p.Kind == ExpandProblemKind.BrokenWidget)
                 onError?.Invoke($"layout {path}: copy {p.CopyId}: widget cannot be loaded: {p.Detail}; copy skipped");
         }
-        widgetKeys = x.WidgetKeys;
         return x.Layout;
     }
 
@@ -162,7 +161,7 @@ public sealed class LayoutStore
         // Keys go in before the expansion, not from its result, so an expander that throws on this
         // file still leaves the widget files it names watched: the fix to one of them reactivates.
         if (file.Copies is { } copies) widgetKeys.UnionWith(copies.Select(c => c.Widget));
-        return Expand(file, path, find, _onError, out _);
+        return Expand(file, path, find, _onError);
     }
 
     private string Resolve(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(_baseDir, p));
