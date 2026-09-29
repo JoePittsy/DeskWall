@@ -75,12 +75,14 @@ public partial class KnobsPanel : UserControl
 
     // ---- what is selected -----------------------------------------------------------------------
 
-    /// <summary>The three states this panel has, as one answer: a widget copy (a selected part of
-    /// its expansion), a loose component (one belonging to no copy), or neither.</summary>
+    /// <summary>The three states this panel has, as one answer: a widget copy (selected by its id at
+    /// layout depth, or a selected part of its expansion with Details open), a loose component (one
+    /// belonging to no copy), or neither.</summary>
     private (string? Instance, string? Loose) Selected()
     {
         if (_model is not { Selection.Count: > 0 }) return (null, null);
         var id = _model.Selection[0];
+        if (Copies.Find(_model.Layout, id) is not null) return (id, null);
         var part = _model.Expanded().Layout.Components.FirstOrDefault(c => c.Id == id);
         if (part?.Widget is { Length: > 0 } copyId && Copies.Find(_model.Layout, copyId) is not null) return (copyId, null);
         return _model.Find(id) is { } c ? (null, c.Id) : (null, null);
@@ -340,7 +342,7 @@ public partial class KnobsPanel : UserControl
                 ? _model.Selection[0] : ids.FirstOrDefault(),
             Margin = new Thickness(0, 0, 0, 12),
         };
-        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string id) _model?.Select([id]); };
+        combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string id) OpenPart(instanceId, id); };
         body.Children.Add(combo);
 
         _details = new PropertiesPanel { Live = _live };
@@ -353,12 +355,13 @@ public partial class KnobsPanel : UserControl
         var expander = new Expander { Header = "Details", Margin = new Thickness(0, 20, 0, 0), Content = body, IsExpanded = _detailsOpen };
         // Opening Details narrows the selection to one component so the properties panel has
         // something to show; closing it puts the whole widget back.
-        expander.Expanded += (_, _) => { _detailsOpen = true; if (combo.SelectedItem is string id) _model?.Select([id]); };
+        expander.Expanded += (_, _) => { _detailsOpen = true; if (combo.SelectedItem is string id) OpenPart(instanceId, id); };
         expander.Collapsed += (_, _) =>
         {
             _detailsOpen = false;
             if (_model is null || instanceId is null) return;
-            _model.Select(Copies.Components(_model.Expanded(), instanceId).Select(c => c.Id).ToList());
+            _model.SetDepth(Depth.Layout);
+            _model.Select([instanceId]);
         };
         // IsExpanded was set before those handlers existed, so a panel rebuilt with Details already
         // open has to do the Expanded handler's job itself, or the properties panel says "No
@@ -366,8 +369,18 @@ public partial class KnobsPanel : UserControl
         // done here: Select raises SelectionChanged, and re-entering Render while it is still
         // filling Root would clear the panel being built.
         if (_detailsOpen && combo.SelectedItem is string open)
-            Dispatcher.BeginInvoke(new Action(() => _model?.Select([open])));
+            Dispatcher.BeginInvoke(new Action(() => OpenPart(instanceId, open)));
         return expander;
+    }
+
+    /// <summary>Show one part in the properties panel. A copy's part is edited at copy depth, through
+    /// the lens, so a change there is an override on this copy and never an edit to the widget or
+    /// to the flattened layout (plan Task 2.6).</summary>
+    private void OpenPart(string? instanceId, string partId)
+    {
+        if (_model is null) return;
+        if (instanceId is not null && Copy(instanceId) is { } copy) _model.SetDepth(Depth.Copy(copy.Id, copy.Widget));
+        _model.Select([partId]);
     }
 
     // ---- nothing selected: the layout's own two knobs, and the sources ------------------------------

@@ -84,7 +84,7 @@ public partial class PropertiesPanel : UserControl
     private string? CurrentId() => _templateChildId ?? (_model is { Selection.Count: 1 } ? _model.Selection[0] : null);
 
     private ComponentLookup.Found? CurrentFound()
-        => _model is not null && CurrentId() is { } id ? ComponentLookup.Find(_model.Layout, _templateParentId, id) : null;
+        => _model is not null && CurrentId() is { } id ? ComponentLookup.Find(_model.Parts, _templateParentId, id) : null;
 
     private void EditCurrent(string label, Action<ComponentDef> mutate)
     {
@@ -92,7 +92,9 @@ public partial class PropertiesPanel : UserControl
         // Captured, not read inside the callback: the pair (parent, child) is what identifies a
         // template child; the child id alone matches the first one in any repeater.
         var parentId = _templateParentId;
-        _model.Edit(label, l => { if (ComponentLookup.Find(l, parentId, id) is { } f) mutate(f.Def); });
+        // Through the depth: at copy depth (Details on a placed widget) this writes an override on
+        // the copy; on a layout with copies it is the layout-depth lens; otherwise the layout itself.
+        _model.EditAtDepth(label, l => { if (ComponentLookup.Find(l, parentId, id) is { } f) mutate(f.Def); });
     }
 
     /// <summary>The tree a binding picker for the current selection should show. Inside a repeater
@@ -101,7 +103,7 @@ public partial class PropertiesPanel : UserControl
     {
         var full = _live?.Tree() ?? ValueTree.Empty;
         if (_templateParentId is null || _model is null) return full;
-        if (ComponentLookup.FindRepeater(_model.Layout, _templateParentId) is { Items.Binding: { } items })
+        if (ComponentLookup.FindRepeater(_model.Parts, _templateParentId) is { Items.Binding: { } items })
         {
             var resolved = BindingResolver.Resolve(items, full);
             if (resolved is ListValue { Items.Count: > 0 } list) return list.Items[0];
