@@ -165,6 +165,7 @@ public partial class PreviewView : UserControl
             _model.Changed -= OnModelChanged;
             _model.SelectionChanged -= OnSelectionChanged;
             _model.DepthChanged -= OnDepthChanged;
+            _model.Previewed -= OnPreviewed;
         }
         if (_renderer is not null) _renderer.Rendered -= OnRendered;
         _model = model;
@@ -172,6 +173,7 @@ public partial class PreviewView : UserControl
         _model.Changed += OnModelChanged;
         _model.SelectionChanged += OnSelectionChanged;
         _model.DepthChanged += OnDepthChanged;
+        _model.Previewed += OnPreviewed;
         _renderer.Rendered += OnRendered;
         _targets = null;
         _fitted = true;
@@ -195,6 +197,13 @@ public partial class PreviewView : UserControl
     }
 
     private void OnSelectionChanged() => Redraw();
+
+    /// <summary>A render-only edit (a colour being dragged): draw it, nothing else.</summary>
+    private void OnPreviewed()
+    {
+        _targets = null;
+        RequestFrame();
+    }
 
     private void RequestFrame()
     {

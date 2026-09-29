@@ -55,5 +55,21 @@ public readonly record struct ColorModel(double Hue, double Saturation, double V
         catch (FormatException) { color = default; return false; }
     }
 
+    /// <summary>The literal colours <paramref name="parts"/> use (repeater templates too), as
+    /// #AARRGGBB, most used first, each once, at most <paramref name="max"/>: the picker's swatch row.</summary>
+    public static IReadOnlyList<string> InUse(IEnumerable<DeskWall.Core.Layout.ComponentDef> parts, int max = 8)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        var all = parts.SelectMany(c => c is DeskWall.Core.Layout.RepeaterDef r ? r.Template.Prepend(c) : [c]);
+        return all.SelectMany(c => PropertySchema.For(c).Where(p => p.Editor == PropertySchema.Editor.Color).Select(p => p.Get(c)))
+            .Where(v => v is { IsBound: false } && TryParseHex(v.LiteralText, out _))
+            .Select(v => { TryParseHex(v!.LiteralText, out var c); return c.ToHex(); })
+            .GroupBy(h => h, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .Take(max)
+            .ToList();
+    }
+
     private static byte Byte(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
 }

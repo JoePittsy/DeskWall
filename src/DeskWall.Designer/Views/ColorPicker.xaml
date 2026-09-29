@@ -106,5 +106,10 @@
                      AutomationProperties.Name="Hex colour" AutomationProperties.HelpText="#RGB, #RRGGBB or #AARRGGBB"
                      KeyDown="HexBox_KeyDown" LostKeyboardFocus="HexBox_LostKeyboardFocus" />
         </Grid>
+
+        <!-- The colours already on this layout and widget, one click each: matching what is there
+             is the usual job, not inventing a new colour. -->
+        <WrapPanel x:Name="SwatchRow" Margin="0,8,0,0" Visibility="Collapsed"
+                   AutomationProperties.Name="Colours in use" />
     </StackPanel>
 </UserControl>

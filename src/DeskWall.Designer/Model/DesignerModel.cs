@@ -213,11 +213,17 @@ public sealed class DesignerModel
     public void Edit(string label, Action<LayoutFile, IDictionary<string, WidgetTemplate>> mutate, Depth? then)
     {
         ArgumentNullException.ThrowIfNull(mutate);
-        _undo.Add(Capture());
-        if (_undo.Count > UndoCap) _undo.RemoveAt(0);
-        _redo.Clear();
+        if (!_previewing)
+        {
+            // A real edit after a preview starts from the document as it was before the preview, so
+            // its one undo entry takes back the whole gesture.
+            EndTransient();
+            _undo.Add(Capture());
+            if (_undo.Count > UndoCap) _undo.RemoveAt(0);
+            _redo.Clear();
+            LastEditLabel = label;
+        }
         mutate(Layout, _widgetEdits);
-        LastEditLabel = label;
         var moved = then is not null && then != Depth;
         if (moved) Depth = then!;
         AfterChange();
@@ -230,8 +236,42 @@ public sealed class DesignerModel
     {
         _expanded = null;
         _projection = null;
+        if (_previewing) { Previewed?.Invoke(); return; }
         PruneDepth();
         Changed?.Invoke();
+    }
+
+    // ---- previews: render-only edits (a colour being dragged) ------------------------------------
+
+    private Snapshot? _transient;   // the document before the first preview of a gesture
+    private bool _previewing;       // inside Transient: edits make no undo entry and raise no Changed
+
+    /// <summary>Raised when a <see cref="Transient"/> edit changed what the canvas should draw. Not
+    /// <see cref="Changed"/>: the panels do not rebuild under a drag.</summary>
+    public event Action? Previewed;
+
+    /// <summary>Do <paramref name="edit"/> (any ordinary edit call) for the canvas only: it is drawn,
+    /// but makes no undo entry and raises no <see cref="Changed"/>. The next real edit starts from
+    /// the document as it was before the first preview, so a whole drag is one undo entry; an undo,
+    /// or <see cref="EndTransient"/>, puts it back.</summary>
+    public void Transient(Action edit)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        _transient ??= Capture();
+        _previewing = true;
+        try { edit(); }
+        finally { _previewing = false; }
+    }
+
+    /// <summary>Take back any preview: the document as it was before it. No event but
+    /// <see cref="Previewed"/>, since nothing a panel shows changed.</summary>
+    public void EndTransient()
+    {
+        if (_transient is not { } saved) return;
+        _transient = null;
+        Restore(saved);
+        _expanded = null;
+        Previewed?.Invoke();
     }
 
     /// <summary>Climb out of a copy or widget that no longer exists (an undo of Make widget, a redo
@@ -254,6 +294,7 @@ public sealed class DesignerModel
 
     public void Undo()
     {
+        EndTransient();
         if (!CanUndo) return;
         _redo.Add(Capture());
         Restore(_undo[^1]);
@@ -264,6 +305,7 @@ public sealed class DesignerModel
 
     public void Redo()
     {
+        EndTransient();
         if (!CanRedo) return;
         _undo.Add(Capture());
         Restore(_redo[^1]);

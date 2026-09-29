@@ -872,8 +872,9 @@ public partial class PropertiesPanel : UserControl
     }
 
     /// <summary>A swatch over the checkerboard and the hex; pressing it opens a <see cref="ColorPicker"/>
-    /// under the row. The picker commits on release, so a drag is one final change and one undo
-    /// entry, as is a key press or a hex typed in.</summary>
+    /// under the row. While a drag or a run of arrow keys is under way the canvas shows each colour
+    /// as a render-only preview (<see cref="DesignerModel.Transient"/>); the release, or the key-up,
+    /// is the one commit and the one undo entry, as a hex typed in or a swatch picked is.</summary>
     private FrameworkElement ColourEditor(string rowId, string label, string hex, Action<string> commit, out FrameworkElement? below)
     {
         below = null;
@@ -887,20 +888,33 @@ public partial class PropertiesPanel : UserControl
         content.Children.Add(swatch);
         content.Children.Add(text);
         var open = _openColour == rowId;
+        // Open, the picker's own hex box says it (and takes typing): once is enough.
+        text.Visibility = open ? Visibility.Collapsed : Visibility.Visible;
         var toggle = new ToggleButton { Content = content, IsChecked = open, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new Thickness(6, 4, 6, 4) };
         AutomationProperties.SetHelpText(toggle, hex);
         toggle.Click += (_, _) => { _openColour = toggle.IsChecked == true ? rowId : null; Render(); };
         if (open)
         {
-            var picker = new ColorPicker { CommitOnRelease = true, Margin = new Thickness(0, 8, 0, 8) };
+            var picker = new ColorPicker { Margin = new Thickness(0, 8, 0, 8), Swatches = ColoursInUse() };
             if (ColorModel.TryParseHex(hex, out _)) picker.Value = hex;
-            AutomationProperties.SetName(picker, $"{label} colour picker");
+            AutomationProperties.SetName(picker, label.EndsWith("colour", StringComparison.OrdinalIgnoreCase) ? $"{label} picker" : $"{label} colour picker");
             AutomationProperties.SetAutomationId(picker, rowId + ":picker");
-            picker.ValueChanged += (_, e) => { if (e.IsFinal) commit(e.NewValue); };
+            picker.ValueChanged += (_, e) =>
+            {
+                if (_model is null) return;
+                if (!e.IsFinal) { _model.Transient(() => commit(e.NewValue)); return; }
+                _model.EndTransient();
+                commit(e.NewValue);
+            };
             below = picker;
         }
         return toggle;
     }
+
+    /// <summary>The colours on the canvas now: every copy's and loose part's (the expansion), and at
+    /// widget depth the widget's own parts, which may not be placed anywhere.</summary>
+    private IReadOnlyList<string> ColoursInUse()
+        => _model is null ? [] : ColorModel.InUse(_model.Expanded().Layout.Components.Concat(_model.Depth.Kind == DepthKind.Widget ? _model.Parts.Components : []));
 
     /// <summary>Enter commits; leaving the box commits. The rebuild that follows puts the focus back
     /// in the same row (<see cref="RestoreFocus"/>).</summary>

@@ -67,7 +67,7 @@ public static class PropertyRows
         ["Effect"] = (Group.Type, "Effect", false),
         ["EffectRadius"] = (Group.Type, "Effect size", false),
 
-        ["Color"] = (Group.Colour, "Colour", false),
+        ["Color"] = (Group.Colour, "Text colour", false),
         ["EffectColor"] = (Group.Colour, "Effect colour", false),
         ["Track"] = (Group.Colour, "Track", false),
         ["Fill"] = (Group.Colour, "Fill", false),

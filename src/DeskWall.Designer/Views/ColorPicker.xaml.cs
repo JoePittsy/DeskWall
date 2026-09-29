@@ -22,13 +22,15 @@ public sealed class ColorValueChangedEventArgs(string oldValue, string newValue,
 /// <summary>Job: pick a colour, alpha included, by eye or by hex, and see a translucent one against
 /// a checkerboard. A saturation/brightness area, hue and opacity strips, a swatch and a hex box.
 /// <see cref="Value"/> is #AARRGGBB, the form the layout files store; hex typed in may be #RGB,
-/// #RRGGBB or #AARRGGBB (Core's parser). Leaves out: no palette of recent colours, no eyedropper,
-/// no RGB/HSV number boxes.
+/// #RRGGBB or #AARRGGBB (Core's parser). Under them, <see cref="Swatches"/>: the colours already in
+/// use, one click each. Leaves out: no eyedropper, no RGB/HSV number boxes.
 ///
-/// Every change raises <see cref="ValueChanged"/>; with <see cref="CommitOnRelease"/> set, a drag
-/// raises (and writes <see cref="Value"/>) only once, on release. Setting <see cref="Value"/> from
-/// outside repaints the picker and raises nothing, so a caller's own write never comes back as an
-/// edit.</summary>
+/// Every change raises <see cref="ValueChanged"/>. A drag, and a run of arrow or page keys in the
+/// area or a strip, is one gesture: non-final changes while it lasts, then one final change on the
+/// release or the key-up (or when the focus leaves) whose <see cref="ColorValueChangedEventArgs.OldValue"/>
+/// is the colour before it began. With <see cref="CommitOnRelease"/> set a gesture raises only that
+/// final change. Setting <see cref="Value"/> from outside repaints the picker and raises nothing, so
+/// a caller's own write never comes back as an edit.</summary>
 public partial class ColorPicker : UserControl
 {
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(
@@ -64,8 +66,41 @@ public partial class ColorPicker : UserControl
             slider.PreviewMouseLeftButtonUp += (_, _) => EndGesture();
             slider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => EndGesture()));
         }
+        // A held arrow key is a burst of KeyDowns and one KeyUp: one gesture, so one undo entry.
+        PreviewKeyDown += (_, e) => { if (IsStepKey(e) && !HexBox.IsKeyboardFocusWithin) BeginGesture(); };
+        PreviewKeyUp += (_, e) => { if (IsStepKey(e)) EndGesture(); };
+        IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false && !Area.IsMouseCaptured) EndGesture(); };
         Paint();
     }
+
+    private static bool IsStepKey(KeyEventArgs e)
+        => e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End;
+
+    /// <summary>The colours to offer under the picker (#AARRGGBB each; the first eight are shown).</summary>
+    public IReadOnlyList<string> Swatches
+    {
+        get => _swatches;
+        set
+        {
+            _swatches = value ?? [];
+            SwatchRow.Children.Clear();
+            foreach (var hex in _swatches.Take(8))
+            {
+                if (!ColorModel.TryParseHex(hex, out var c)) continue;
+                var fill = new Border { CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B)) };
+                var chip = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), Child = fill };
+                chip.SetResourceReference(Border.BackgroundProperty, "Checker");
+                chip.SetResourceReference(Border.BorderBrushProperty, "ControlStrokeColorDefaultBrush");
+                var button = new Button { Content = chip, Padding = new Thickness(0), Margin = new Thickness(0, 0, 6, 6), MinWidth = 0, MinHeight = 0, ToolTip = hex, Tag = hex };
+                System.Windows.Automation.AutomationProperties.SetName(button, "Use " + hex);
+                button.Click += (_, _) => Edit(ColorModel.FromColor(c, _state));
+                SwatchRow.Children.Add(button);
+            }
+            SwatchRow.Visibility = SwatchRow.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private IReadOnlyList<string> _swatches = [];
 
     // ---- state in, state out ---------------------------------------------------------------------
 
