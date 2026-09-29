@@ -16,6 +16,8 @@ placed on the canvas in physical pixels. Source of truth for this document: `Lay
 | `jpegQuality` | int | `92` | Passed to the WIC JPEG encoder, clamped to 1..100. Ignored when `encode` is `"png"`. |
 | `sources` | array of source declarations | `[]` | See `docs/sources.md`. |
 | `components` | array of components | `[]` | Drawn in `z` order (ties keep file order). |
+| `copies` | array of copies | absent | Version 2: linked widget copies, expanded into components at load. See "Copies". Omitted from the file when absent. |
+| `widgets` | object | absent | Version 1 only: stamped-instance bookkeeping, read only by the migrator. See "Widgets". Omitted from the file when absent. |
 
 Example:
 
@@ -286,7 +288,102 @@ that fails to parse or whose `version` exceeds `LayoutStore.MaxVersion` is repor
 log/tray and treated as if nothing were registered for that signature (the previous wallpaper
 stays, spec 3.2) -- it is never used as a stand-in for another display's request.
 
+## Copies
+
+Version 2 of the format links a placed widget to its widget file instead of stamping a copy of it
+into the layout. A layout keeps `components` for things placed by hand and gains `copies`: each
+entry names a widget by key and stores only where it sits and what the owner changed. The expander
+(`WidgetExpander.Expand`, `src/DeskWall.Core/Widgets/`) turns the copies into ordinary sources and
+components at load, before scaling and resolve, for the daemon and the designer alike, so what the
+designer shows is what gets painted. Resolve and render never see a copy, and the tick does not
+pay for expansion. The model is `WidgetCopy` (`src/DeskWall.Core/Layout/WidgetCopy.cs`).
+
+(While Phase 1 of the canvas-authoring plan is in progress, `LayoutStore.MaxVersion` is still 1
+and the expander handles only files with no copies; a version-1 file expands to itself.)
+
+```json
+{
+  "version": 2,
+  "baseImage": "...",
+  "sources": [ ],
+  "components": [ ],
+  "copies": [
+    { "id": "dial-2", "widget": "dial", "x": 3312, "y": 400, "z": 0,
+      "knobs": { "metric": "GPU||hardware.gpu||hardware.gpuPct | \"{0}%\"||gpu" },
+      "overrides": {
+        "components.value.color": "#FFFFC000",
+        "components.label.rect": "0,60,80,18",
+        "components.label.hidden": true,
+        "components.drives.letter.size": 15,
+        "sources.hardware.every": 10
+      } }
+  ]
+}
+```
+
+| Property | Type | Default | Notes |
+|---|---|---|---|
+| `id` | string | required | Unique among the layout's copies, `"<widgetKey>-<n>"`. |
+| `widget` | string | required | The widget's key: its file name without `.json`. A key never changes after the widget is created, so a copy never needs re-pointing. |
+| `x`, `y` | int | `0` | The copy's origin on the canvas. Every part's `rect` is offset by it. |
+| `z` | int | `0` | Added to every part's own `z`. |
+| `knobs` | object | `{}` | Knob id to the value the owner set. A knob left at its default is not stored, so changing a widget's default reaches every copy that never touched it. Values use the knob value conventions in "Knobs and the `sets` grammar". |
+| `overrides` | object | `{}` | Override key to value; see below. |
+
+**Override keys** reuse the knob `sets` grammar:
+
+- `components.<partId>.<property>`: a property of one of the widget's parts.
+- `components.<repeaterId>.<childId>.<property>`: a property of a repeater's template child. Part
+  ids are `[A-Za-z_][A-Za-z0-9_-]*`, so they never contain dots and four segments are unambiguous.
+- `sources.<name>.settings.<key>` and `sources.<name>.every`: one of the widget's sources, by its
+  name in the widget file.
+- Three pseudo-properties of a part: `rect`, a literal `"x,y,w,h"` relative to the copy's origin;
+  `z`; and `hidden`, a literal `true`, which leaves the part out altogether. That is how a copy
+  deletes a part.
+
+**Override values** are ordinary property values: a literal (string, number or boolean) or
+`{ "bind": "..." }`, exactly as in a component.
+
+**Precedence:** the widget file, then the knob values (the copy's own, else the knob's default),
+then the overrides. Resetting an override deletes its key, and setting a value equal to what the
+widget and knobs already give also deletes it, so the file only ever holds real differences.
+
+**Orphans.** An override or knob naming a part, property or knob the widget no longer has stays in
+the file untouched. The expander skips it and reports it (`OrphanOverride`, `OrphanKnob`); the
+designer shows it on the copy with Remove; the daemon does not log it, because it is not an error on
+the wallpaper. If the part comes back under the same id (an undo, a restored widget file), the
+override applies again. Nothing is deleted silently.
+
+**z.** Each part's z is `copy.z + part.z`, so the default of `0` keeps every part's z as the widget
+authored it.
+
+**Expanded ids** are `"<copyId>.<partId>"`, the same as a version-1 stamped instance, with the
+part's `widget` field set to the copy id. Keys in `frame-state.json` carry straight across a
+migration.
+
+**Sources.** The layout's own `sources` come first. Then each copy's sources, with its knobs and
+overrides applied:
+
+- Same name and an identical definition (type, `every` and settings): shared. Four dials use one
+  `hardware` sampler.
+- Same name, different definition: the copy's source is renamed `<name>2`, `<name>3`, and so on,
+  and that copy's bindings are rewritten to match. Two headline copies with different feeds
+  therefore no longer fight, which retires both "Known limitation" paragraphs under "Widgets".
+
+**A missing or unparseable widget file.** The daemon skips that copy, paints the rest, and reports
+the problem through the log and tray (`MissingWidget`, `BrokenWidget`). The designer draws a
+broken-link box at the copy's `x,y`, never a silent blank.
+
+**Where widget files come from.** By key, from `%LOCALAPPDATA%\DeskWall\widgets\` first and then
+the shipped `widgets\` beside the exe. Editing a shipped widget writes the user file under the same
+key, so every copy of it, in every layout on the machine, follows the edit without anything being
+rewritten; deleting that user file returns them to the shipped widget, overrides intact.
+
 ## Widgets
+
+**Version 1, read only for migration.** This section describes the stamped-instance model that
+version 2's "Copies" replaces. `LayoutFile.Widgets` and `ComponentDef.Widget` are still read so the
+migrator can turn a version-1 file into copies; they are no longer written when absent.
 
 The designer's widget picker (`docs/superpowers/specs/2026-09-21-designer-widgets-design.md`
 sections 3, 5, 6) adds a layer above the plain layout format described so far: a *widget

@@ -17,7 +17,13 @@ public sealed class LayoutFile
     /// re-create it. Null (not an empty dictionary) when the layout was never touched by the
     /// widget picker; the daemon ignores this field entirely (spec 3, `docs/layout-format.md`
     /// "Widgets"). Component-level ownership is <see cref="ComponentDef.Widget"/>.</summary>
+    /// <remarks>v1 only: read for the migrator, never written once null.</remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, WidgetRecord>? Widgets { get; set; }
+    /// <summary>v2: linked widget copies, expanded into components before resolve
+    /// (<c>Widgets.WidgetExpander</c>, <c>docs/layout-format.md</c> "Copies"). Null in a v1 file.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<WidgetCopy>? Copies { get; set; }
 
     public static LayoutFile Parse(string json)
         => JsonSerializer.Deserialize(json, LayoutJsonContext.Default.LayoutFile) ?? throw new JsonException("empty layout");

@@ -18,6 +18,7 @@ public abstract class ComponentDef
     /// or null for a component placed by hand. Ignored by resolve and render; the designer's
     /// widget model uses it to find, move and remove a widget's components as a unit
     /// (<c>WidgetInstance</c>, <c>docs/layout-format.md</c> "Widgets").</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Widget { get; set; }
 }
 
