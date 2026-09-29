@@ -1,144 +1,29 @@
 {
-  "version": 1,
+  "version": 2,
   "baseImage": "C:\\Windows\\SystemApps\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\\DesktopSpotlight\\Assets\\Images\\image_3.jpg",
-  "baseFit": "cover",
+  "baseFit": "Cover",
   "encode": "jpeg",
   "jpegQuality": 92,
-  "sources": [
+  "sources": [],
+  "components": [],
+  "copies": [
     {
-      "name": "time",
-      "type": "time",
-      "every": null,
-      "settings": {}
-    },
-    {
-      "name": "disks",
-      "type": "disks",
-      "every": 300,
-      "settings": {}
-    }
-  ],
-  "components": [
-    {
-      "type": "text",
-      "text": {
-        "bind": "time.now | \"HH:mm\""
-      },
-      "font": "Segoe UI Light",
-      "size": "64",
-      "weight": "300",
-      "color": "#EBFFFFFF",
-      "align": "right",
-      "effect": "shadow",
-      "effectRadius": "6",
-      "effectColor": "#A0000000",
-      "id": "clock-1.clock",
-      "rect": [
-        3220,
-        40,
-        172,
-        78
-      ],
-      "z": 1,
-      "widget": "clock-1"
-    },
-    {
-      "type": "repeater",
-      "items": {
-        "bind": "disks.drives"
-      },
-      "axis": "vertical",
-      "gap": 0,
-      "cellHeight": "46",
-      "template": [
-        {
-          "type": "text",
-          "text": {
-            "bind": "letter | \"{0}:\""
-          },
-          "font": "Segoe UI",
-          "size": "15",
-          "weight": "400",
-          "color": "#EBFFFFFF",
-          "align": "left",
-          "effect": "shadow",
-          "effectRadius": "6",
-          "effectColor": "#A0000000",
-          "id": "letter",
-          "rect": [
-            0,
-            0,
-            60,
-            24
-          ],
-          "z": 0,
-          "widget": null
-        },
-        {
-          "type": "text",
-          "text": {
-            "bind": "freeGB | \"{0:N0} GB free\""
-          },
-          "font": "Segoe UI",
-          "size": "15",
-          "weight": "400",
-          "color": "#EBFFFFFF",
-          "align": "right",
-          "effect": "shadow",
-          "effectRadius": "6",
-          "effectColor": "#A0000000",
-          "id": "free",
-          "rect": [
-            60,
-            0,
-            112,
-            24
-          ],
-          "z": 0,
-          "widget": null
-        },
-        {
-          "type": "bar",
-          "fraction": {
-            "bind": "usedFraction"
-          },
-          "track": "#46FFFFFF",
-          "fill": "#EBFFFFFF",
-          "threshold": "0.85",
-          "thresholdFill": "#FFD13438",
-          "direction": "horizontal",
-          "id": "bar",
-          "rect": [
-            0,
-            26,
-            172,
-            6
-          ],
-          "z": 0,
-          "widget": null
-        }
-      ],
-      "id": "drives-1.drives",
-      "rect": [
-        3220,
-        1308,
-        172,
-        92
-      ],
-      "z": 1,
-      "widget": "drives-1"
-    }
-  ],
-  "widgets": {
-    "clock-1": {
-      "template": "clock",
+      "id": "clock-1",
+      "widget": "clock",
+      "x": 3220,
+      "y": 40,
+      "z": 0,
       "knobs": {},
-      "unlocked": false
+      "overrides": {}
     },
-    "drives-1": {
-      "template": "drives",
+    {
+      "id": "drives-1",
+      "widget": "drives",
+      "x": 3220,
+      "y": 1308,
+      "z": 0,
       "knobs": {},
-      "unlocked": false
+      "overrides": {}
     }
-  }
+  ]
 }

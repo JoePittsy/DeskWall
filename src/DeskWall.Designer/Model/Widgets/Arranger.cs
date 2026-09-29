@@ -4,9 +4,9 @@ using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model.Widgets;
 
-/// <summary>Lays widget instances out as a single vertical stack in the right-hand column. Free
-/// placement is a per-instance opt-out (<see cref="WidgetRecord.Unlocked"/>), not a mode: an
-/// unlocked instance is skipped entirely and keeps whatever rect it already has.</summary>
+/// <summary>Lays widget copies out as a single vertical stack in the right-hand column, by moving
+/// each copy's origin. Only the starter generator arranges now: the designer's canvas is free
+/// placement, and the column survives there only as the spawn region (<see cref="Column"/>).</summary>
 public static class Arranger
 {
     public const int ColumnX = 3220, ColumnWidth = 172, TopY = 40, BottomY = 1400, Gap = 16;
@@ -14,9 +14,8 @@ public static class Arranger
     /// <summary>The canvas the constants above were measured on. Any other display scales from it.</summary>
     public const int ReferenceWidth = 3440, ReferenceHeight = 1440;
 
-    /// <summary>Stacks widgets in `order` (instance ids): anchor top downwards from TopY, anchor
-    /// bottom upwards from BottomY; skips instances whose WidgetRecord.Unlocked is true; writes
-    /// rects into the layout's components.</summary>
+    /// <summary>Stacks copies in `order` (copy ids): anchor top downwards from TopY, anchor bottom
+    /// upwards from BottomY, by each copy's expanded bounds; writes the copies' X and Y.</summary>
     public static void Arrange(LayoutFile layout, IReadOnlyList<WidgetTemplate> catalog, IReadOnlyList<string> order)
         => Arrange(layout, catalog, order, ReferenceWidth, ReferenceHeight);
 
@@ -28,24 +27,29 @@ public static class Arranger
     public static void Arrange(LayoutFile layout, IReadOnlyList<WidgetTemplate> catalog, IReadOnlyList<string> order,
         int canvasWidth, int canvasHeight)
     {
-        if (layout.Widgets is null) return;
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(order);
+        if (layout.Copies is null) return;
+        WidgetTemplate? Find(string key) => catalog.FirstOrDefault(t => string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase));
+        // One expansion: moving a copy moves its bounds by the same amount, so each copy's bounds
+        // relative to its own origin hold for the whole stack.
+        var expanded = WidgetExpander.Expand(layout, Find);
         var column = Column(canvasWidth, canvasHeight);
         var gap = Math.Max(4, (int)Math.Round(Gap * (canvasHeight / (double)ReferenceHeight)));
         var top = column.Y;
         var bottom = column.Bottom;
-        foreach (var instanceId in order)
+        foreach (var copyId in order)
         {
-            if (!layout.Widgets.TryGetValue(instanceId, out var record) || record.Unlocked) continue;
-            var template = catalog.FirstOrDefault(t => t.Key == record.Template);
-            var anchorBottom = string.Equals(template?.Anchor, "bottom", StringComparison.OrdinalIgnoreCase);
+            if (Copies.Find(layout, copyId) is not { } copy) continue;
+            var anchorBottom = string.Equals(Find(copy.Widget)?.Anchor, "bottom", StringComparison.OrdinalIgnoreCase);
 
-            var bounds = WidgetInstance.Bounds(layout, instanceId);
+            var bounds = Copies.Bounds(copy, expanded, Find);
             if (bounds.W == 0 && bounds.H == 0) continue;
 
             var newY = anchorBottom ? bottom - bounds.H : top;
-            var dx = column.X - bounds.X;
-            var dy = newY - bounds.Y;
-            foreach (var c in WidgetInstance.Components(layout, instanceId)) c.Rect = c.Rect.Offset(dx, dy);
+            copy.X += column.X - bounds.X;
+            copy.Y += newY - bounds.Y;
 
             if (anchorBottom) bottom -= bounds.H + gap; else top += bounds.H + gap;
         }
@@ -64,22 +68,5 @@ public static class Arranger
         var sy = canvasHeight / (double)ReferenceHeight;
         var x = Math.Max(0, canvasWidth - ColumnWidth - rightMargin);
         return new Rect(x, (int)Math.Round(TopY * sy), ColumnWidth, (int)Math.Round((BottomY - TopY) * sy));
-    }
-
-    /// <summary>Current top-to-bottom order by Bounds().Y, unlocked last.</summary>
-    public static IReadOnlyList<string> Order(LayoutFile layout)
-    {
-        if (layout.Widgets is null) return [];
-        var locked = new List<(string Id, int Y)>();
-        var unlocked = new List<(string Id, int Y)>();
-        foreach (var id in layout.Widgets.Keys)
-        {
-            var y = WidgetInstance.Bounds(layout, id).Y;
-            var target = layout.Widgets[id].Unlocked ? unlocked : locked;
-            target.Add((id, y));
-        }
-        return locked.OrderBy(x => x.Y).Select(x => x.Id)
-            .Concat(unlocked.OrderBy(x => x.Y).Select(x => x.Id))
-            .ToList();
     }
 }

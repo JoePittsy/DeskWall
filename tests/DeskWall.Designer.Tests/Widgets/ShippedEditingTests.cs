@@ -8,9 +8,18 @@ namespace DeskWall.Designer.Tests.Widgets;
 
 /// <summary>Editing a widget that ships beside the exe. The shipped folder is replaced by every
 /// install, so an edit is copy-on-write: it saves a file of the same key in the user's folder,
-/// which the catalog already prefers, in the shipped one's place in the gallery.</summary>
-public class ShippedEditingTests
+/// which the catalog already prefers, in the shipped one's place in the gallery.
+/// <para>These write part-less widgets (a "clock" among them) into the shared test home's real
+/// <c>widgets\</c> folder, which every other test's <c>DesignerModel.Finder()</c> reads first.
+/// xUnit disposes the class after each test, and that empties the folder again, so no later test
+/// expands a copy of "clock" against a clock with no parts.</para></summary>
+public sealed class ShippedEditingTests : IDisposable
 {
+    public void Dispose()
+    {
+        if (Directory.Exists(WidgetCatalog.UserDir)) Directory.Delete(WidgetCatalog.UserDir, recursive: true);
+    }
+
     private static string NewDir(string name)
     {
         var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "shipped-editing", name + "-" + Guid.NewGuid().ToString("N")[..8]);

@@ -2,6 +2,7 @@ using System.IO;
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model;
 
@@ -10,8 +11,10 @@ namespace DeskWall.Designer.Model;
 public sealed record DisplayChoice(string Key, string Label);
 
 /// <summary>What the window opens: the document, the canvas it is authored on, and the file it came
-/// from (null only when nothing was registered and this is a brand new layout).</summary>
-public sealed record OpenTarget(LayoutFile Layout, DisplaySignature Signature, string? Path);
+/// from (null only when nothing was registered and this is a brand new layout).
+/// <paramref name="Migrated"/>: the file on disk is v1 and <paramref name="Layout"/> is its v2
+/// migration, so the first Apply backs the file up first (<see cref="ShellState.BackupV1"/>).</summary>
+public sealed record OpenTarget(LayoutFile Layout, DisplaySignature Signature, string? Path, bool Migrated = false);
 
 /// <summary>The shell's decisions that are not WPF: where a layout for a display gets written, what
 /// the display selector offers, what the toolbar says. Separated from MainWindow so it can be
@@ -34,19 +37,46 @@ public static class ShellState
     /// identical to one edited at the console, and Apply writes the one file both signatures already
     /// resolve to. Only an empty store - no entry for any display - gets a new layout, and that one
     /// belongs to the display actually in front of the owner.
+    /// </para>
+    /// <para>
+    /// The authored file is read for an exact match too: since v2 the resolution's layout is the
+    /// <em>expansion</em> (the store expands at load), and a document opened from it would have no
+    /// copies left to edit. A v1 file is migrated in memory (<see cref="LayoutMigrator"/>) so the
+    /// designer only ever edits v2; if the migration is not equivalent the file opens as it is,
+    /// because showing the owner something other than his wallpaper is worse than a v1 document.
     /// </para></summary>
     /// <param name="load">reads the authored file; null when it cannot be read. A resolution's file
-    /// was readable a moment ago, so this only fires on a genuine race, and then the scaled copy is
-    /// opened with no path rather than being allowed to overwrite the authored one.</param>
+    /// was readable a moment ago, so this only fires on a genuine race, and then the resolution's
+    /// copy is opened with no path rather than being allowed to overwrite the authored one.</param>
+    /// <param name="find">the widget lookup a v1 migration runs against.</param>
     public static OpenTarget OpenFrom(LayoutResolution? resolution, DisplaySignature display,
-        Func<string, LayoutFile?> load, string defaultBaseImage)
+        Func<string, LayoutFile?> load, string defaultBaseImage, Func<string, WidgetTemplate?> find)
     {
         ArgumentNullException.ThrowIfNull(load);
-        if (resolution is null) return new OpenTarget(new LayoutFile { BaseImage = defaultBaseImage }, display, null);
-        if (!resolution.Scaled) return new OpenTarget(resolution.Layout, resolution.SourceSignature, resolution.SourcePath);
-        return load(resolution.SourcePath) is { } authored
-            ? new OpenTarget(authored, resolution.SourceSignature, resolution.SourcePath)
-            : new OpenTarget(resolution.Layout, display, null);
+        if (resolution is null) return new OpenTarget(new LayoutFile { Version = 2, BaseImage = defaultBaseImage }, display, null);
+        if (load(resolution.SourcePath) is not { } authored)
+            return new OpenTarget(resolution.Layout, resolution.Scaled ? display : resolution.SourceSignature, null);
+        if (authored.Version < 2 && authored.Copies is null && LayoutMigrator.Migrate(authored, find) is { Equivalent: true } m)
+            return new OpenTarget(m.V2, resolution.SourceSignature, resolution.SourcePath, Migrated: true);
+        return new OpenTarget(authored, resolution.SourceSignature, resolution.SourcePath);
+    }
+
+    /// <summary>Where <see cref="BackupV1"/> puts the v1 file: <c>column-system.v1.json</c> beside
+    /// <c>column-system.json</c>, the same name <c>deskwall migrate</c> uses, so one refuses to
+    /// overwrite the other's backup.</summary>
+    public static string BackupPath(string layoutPath) => Path.ChangeExtension(layoutPath, ".v1.json");
+
+    /// <summary>Before the first Apply of a migrated document: copy the file, while it is still v1
+    /// on disk, to <see cref="BackupPath"/>. Never overwrites a backup already there, and never
+    /// backs up a file that is no longer v1 (the owner ran <c>deskwall migrate</c> meanwhile).
+    /// Returns the backup path when it wrote one.</summary>
+    public static string? BackupV1(string layoutPath)
+    {
+        var backup = BackupPath(layoutPath);
+        if (File.Exists(backup) || !File.Exists(layoutPath)) return null;
+        if (LayoutFile.Load(layoutPath).Version >= 2) return null;
+        File.Copy(layoutPath, backup);
+        return backup;
     }
 
     /// <summary>Where a layout saved "for this display" goes: runtime/layouts/&lt;safe key&gt;.json.

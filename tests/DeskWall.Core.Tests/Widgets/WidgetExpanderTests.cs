@@ -22,7 +22,7 @@ public class WidgetExpanderTests
     [Fact]
     public void A_V1_File_Is_Its_Own_Expansion()
     {
-        var v1 = LayoutFile.Load(Path.Combine(Repo.Root, "layouts", "clock-disks.json"));
+        var v1 = LayoutFile.Load(Path.Combine(Repo.Root, "tests", "fixtures", "layouts-v1", "clock-disks.json"));
         var e = WidgetExpander.Expand(v1, _ => throw new InvalidOperationException("not called"));
         Assert.Same(v1, e.Layout);
         Assert.Empty(e.Problems);

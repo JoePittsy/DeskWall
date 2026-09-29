@@ -6,13 +6,16 @@ using DeskWall.Core.Layout;
 using DeskWall.Core.Render;
 using DeskWall.Core.Resolve;
 using DeskWall.Core.Values;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model;
 
 /// <summary>One rendered preview: the pixels Core produced, and the resolved components behind
 /// them. The resolved list is the canvas's hit map - its rects are canvas (physical) pixels, the
-/// same coordinates the model stores.</summary>
-public sealed record PreviewFrame(int Width, int Height, byte[] Bgra, IReadOnlyList<Resolved> Resolved, TimeSpan RenderTime);
+/// same coordinates the model stores. <paramref name="Problems"/> is what the expansion skipped (a
+/// missing or broken widget, an orphan override or knob), for the canvas to show.</summary>
+public sealed record PreviewFrame(int Width, int Height, byte[] Bgra, IReadOnlyList<Resolved> Resolved, TimeSpan RenderTime,
+    IReadOnlyList<ExpandProblem> Problems);
 
 /// <summary>Turns the model into pixels on a background thread and hands the frame to the UI.
 /// Coalesces bursts: requests inside 50 ms collapse into one, at most one render is in flight and
@@ -40,8 +43,10 @@ public sealed class PreviewRenderer : IDisposable
     private bool _pending;
     private bool _disposed;
 
-    /// <summary>What a render needs, captured at request time.</summary>
-    private sealed record Snapshot(string Json, DisplaySignature Signature);
+    /// <summary>What a render needs, captured at request time. <paramref name="Find"/> is
+    /// <see cref="DesignerModel.Finder"/>, which copies the widget overlay when it is called, so the
+    /// render thread expands against the widgets as they were at the request.</summary>
+    private sealed record Snapshot(string Json, DisplaySignature Signature, Func<string, WidgetTemplate?> Find);
 
     /// <param name="valueTree">the live values to resolve bindings against; ValueTree.Empty before
     /// any source has run.</param>
@@ -62,7 +67,7 @@ public sealed class PreviewRenderer : IDisposable
     public void Request(DesignerModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
-        var snap = new Snapshot(model.ToJson(), model.Signature);
+        var snap = new Snapshot(model.ToJson(), model.Signature, model.Finder());
         lock (_gate)
         {
             if (_disposed) return;
@@ -141,10 +146,25 @@ public sealed class PreviewRenderer : IDisposable
         IReadOnlyList<Resolved> resolved = Array.Empty<Resolved>();
         string? error = null;
 
+        IReadOnlyList<ExpandProblem> problems = Array.Empty<ExpandProblem>();
+
         try { layout = LayoutFile.Parse(snap.Json); }
         catch (Exception ex) { error = Describe("layout", ex); }
 
+        // Before resolve, as the daemon does at load (plan D4): resolve and render only ever see
+        // components. A missing or broken widget is a problem in the frame, never an exception.
         if (layout is not null)
+        {
+            try
+            {
+                var expansion = WidgetExpander.Expand(layout, snap.Find);
+                layout = expansion.Layout;
+                problems = expansion.Problems;
+            }
+            catch (Exception ex) { error = Describe("widgets", ex); }
+        }
+
+        if (layout is not null && error is null)
         {
             try { resolved = LayoutResolver.Resolve(layout, _valueTree()); }
             catch (Exception ex) { error = Describe("resolve", ex); }
@@ -174,7 +194,7 @@ public sealed class PreviewRenderer : IDisposable
             if (error is not null) DrawError(frame, error);
             var bgra = new byte[w * 4 * h];
             frame.CopyTo(bgra);
-            return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed);
+            return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed, problems);
         }
         finally { frame?.Dispose(); }
     }
@@ -186,7 +206,7 @@ public sealed class PreviewRenderer : IDisposable
         Debug.WriteLine($"preview render failed: {ex}");
         var w = Math.Max(1, snap.Signature.Width);
         var h = Math.Max(1, snap.Signature.Height);
-        return new PreviewFrame(w, h, new byte[w * 4 * h], Array.Empty<Resolved>(), TimeSpan.Zero);
+        return new PreviewFrame(w, h, new byte[w * 4 * h], Array.Empty<Resolved>(), TimeSpan.Zero, Array.Empty<ExpandProblem>());
     }
 
     private static Surface Flat(int w, int h, IReadOnlyList<Resolved> resolved)

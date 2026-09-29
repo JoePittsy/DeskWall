@@ -201,14 +201,15 @@ public class DriveKnobTests
         var template = SaveAndLoad(doc.ToTemplate(), "placed");
 
         var layout = new LayoutFile { BaseImage = "x.jpg" };
-        var instance = WidgetInstance.Add(layout, template, new Rect(100, 200, 0, 0));
+        var copy = Copies.Add(layout, template, 100, 200);
+        LayoutFile Expanded() => WidgetExpander.Expand(layout, _ => template).Layout;
 
-        Assert.Equal("disks.drives[C].usedFraction", BindingText(layout, $"{instance}.bar", "Fraction"));
+        Assert.Equal("disks.drives[C].usedFraction", BindingText(Expanded(), $"{copy}.bar", "Fraction"));
 
-        WidgetInstance.SetKnob(layout, template, instance, "drive", "D");
+        Copies.SetKnob(layout, template, copy, "drive", "D");
 
-        Assert.Equal("disks.drives[D].usedFraction", BindingText(layout, $"{instance}.bar", "Fraction"));
-        Assert.Equal("disks.drives[D].freeGB | \"{0:N0} GB\"", BindingText(layout, $"{instance}.text", "Text"));
-        Assert.Equal("D", layout.Widgets![instance].Knobs["drive"]);
+        Assert.Equal("disks.drives[D].usedFraction", BindingText(Expanded(), $"{copy}.bar", "Fraction"));
+        Assert.Equal("disks.drives[D].freeGB | \"{0:N0} GB\"", BindingText(Expanded(), $"{copy}.text", "Text"));
+        Assert.Equal("D", layout.Copies![0].Knobs["drive"]);
     }
 }

@@ -23,7 +23,7 @@ public class MigrateCommandTests
         return (p.ExitCode, output);
     }
 
-    /// <summary>A scratch home holding a copy of the repo's layouts/clock-disks.json (a real v1
+    /// <summary>A scratch home holding a copy of tests/fixtures/layouts-v1/clock-disks.json (the v1
     /// file with stamped widgets), registered in layouts.json so the default "every registered
     /// file" path is what runs.</summary>
     private static (string Home, string Layout) Scratch()
@@ -31,7 +31,7 @@ public class MigrateCommandTests
         var home = Path.Combine(Path.GetTempPath(), "deskwall-tests", "migrate-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(home);
         var layout = Path.Combine(home, "clock-disks.json");
-        File.Copy(RepoFile("layouts", "clock-disks.json"), layout);
+        File.Copy(RepoFile("tests", "fixtures", "layouts-v1", "clock-disks.json"), layout);
         File.WriteAllText(Path.Combine(home, "layouts.json"),
             $$"""{ "layouts": { "TEST|3440x1440@100": {{System.Text.Json.JsonSerializer.Serialize(layout)}} } }""");
         return (home, layout);

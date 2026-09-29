@@ -30,7 +30,6 @@ public partial class KnobsPanel : UserControl
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     private DesignerModel? _model;
-    private IReadOnlyList<WidgetTemplate> _catalog = Array.Empty<WidgetTemplate>();
     private LiveSources? _live;
     private PropertiesPanel? _details;
     private string _renderedKey = "";
@@ -42,11 +41,12 @@ public partial class KnobsPanel : UserControl
     /// behind it, because nothing arranges the canvas any more.</summary>
     public event Action<string>? RemoveRequested;
 
-    public void Attach(DesignerModel model, IReadOnlyList<WidgetTemplate> catalog)
+    /// <summary>Also the way to say "the widget files changed": it re-renders from scratch, and a
+    /// copy's template is always looked up afresh through <see cref="DesignerModel.Finder"/>.</summary>
+    public void Attach(DesignerModel model)
     {
         if (_model is not null) { _model.Changed -= OnChanged; _model.SelectionChanged -= OnChanged; }
         _model = model;
-        _catalog = catalog;
         _model.Changed += OnChanged;
         _model.SelectionChanged += OnChanged;
         _renderedKey = "";
@@ -75,20 +75,24 @@ public partial class KnobsPanel : UserControl
 
     // ---- what is selected -----------------------------------------------------------------------
 
-    /// <summary>The three states this panel has, as one answer: a widget instance, a loose component
-    /// (one belonging to no widget, from a layout written before widgets existed), or neither.</summary>
+    /// <summary>The three states this panel has, as one answer: a widget copy (a selected part of
+    /// its expansion), a loose component (one belonging to no copy), or neither.</summary>
     private (string? Instance, string? Loose) Selected()
     {
         if (_model is not { Selection.Count: > 0 }) return (null, null);
-        if (_model.Find(_model.Selection[0]) is not { } c) return (null, null);
-        return string.IsNullOrEmpty(c.Widget) ? (null, c.Id) : (c.Widget, null);
+        var id = _model.Selection[0];
+        var part = _model.Expanded().Layout.Components.FirstOrDefault(c => c.Id == id);
+        if (part?.Widget is { Length: > 0 } copyId && Copies.Find(_model.Layout, copyId) is not null) return (copyId, null);
+        return _model.Find(id) is { } c ? (null, c.Id) : (null, null);
     }
 
-    private WidgetRecord? Record(string instanceId)
-        => _model?.Layout.Widgets is { } w && w.TryGetValue(instanceId, out var r) ? r : null;
+    private WidgetCopy? Copy(string copyId) => _model is null ? null : Copies.Find(_model.Layout, copyId);
 
-    private WidgetTemplate? TemplateFor(string instanceId)
-        => Record(instanceId) is { } r ? _catalog.FirstOrDefault(t => string.Equals(t.Key, r.Template, StringComparison.OrdinalIgnoreCase)) : null;
+    private string KnobValue(string copyId, Knob knob) => Copy(copyId) is { } c ? Copies.KnobValue(c, knob) : knob.Default;
+
+    /// <summary>Through the model's finder, so an edited widget not yet applied is the one shown.</summary>
+    private WidgetTemplate? TemplateFor(string copyId)
+        => _model is not null && Copy(copyId) is { } c ? Copies.TryFind(_model.Finder(), c.Widget) : null;
 
     /// <summary>Rebuild only when what this panel shows has actually changed. Every commit here goes
     /// through DesignerModel.Edit, which raises Changed, and rebuilding on that would take the focus
@@ -97,7 +101,7 @@ public partial class KnobsPanel : UserControl
     {
         var (instance, loose) = Selected();
         var key = instance is not null
-            ? instance + "|" + string.Join(",", Record(instance)?.Knobs.Select(kv => kv.Key + "=" + kv.Value) ?? [])
+            ? instance + "|" + string.Join(",", Copy(instance)?.Knobs.Select(kv => kv.Key + "=" + kv.Value) ?? [])
             : loose is not null
             ? "loose|" + loose
             : "none|" + (_model?.Layout.BaseImage ?? "") + "|" + (_model?.Layout.JpegQuality ?? 0) + "|" + SourcesKey();
@@ -116,7 +120,7 @@ public partial class KnobsPanel : UserControl
     {
         if (_model is null) return "";
         var snaps = _live?.Snapshots ?? Array.Empty<SourceSnapshot>();
-        return string.Join(";", _model.Layout.Sources.Select(s =>
+        return string.Join(";", _model.Expanded().Layout.Sources.Select(s =>
             s.Name + ":" + (snaps.FirstOrDefault(x => x.Name == s.Name) is { } sn
                 ? (sn.LastError is not null ? "err" : sn.LastRefresh?.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "-")
                 : "-")));
@@ -131,7 +135,7 @@ public partial class KnobsPanel : UserControl
 
         if (template is null)
         {
-            Root.Children.Add(Hint($"This widget was made from a template ('{Record(instanceId)?.Template}') that is not installed. Its knobs cannot be shown, but Details still edits it."));
+            Root.Children.Add(Hint($"The widget '{Copy(instanceId)?.Widget}' this copy links to is missing or cannot be read, so it has nothing to show. Put the widget file back, or remove the copy."));
         }
         else if (template.Knobs.Count == 0)
         {
@@ -146,7 +150,7 @@ public partial class KnobsPanel : UserControl
         remove.Click += (_, _) => RemoveRequested?.Invoke(instanceId);
         Root.Children.Add(remove);
 
-        Root.Children.Add(BuildDetails(instanceId, WidgetInstance.Components(_model!.Layout, instanceId)));
+        Root.Children.Add(BuildDetails(instanceId, Copies.Components(_model!.Expanded(), instanceId)));
     }
 
     // ---- a loose component ------------------------------------------------------------------------
@@ -184,7 +188,7 @@ public partial class KnobsPanel : UserControl
     {
         var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
         stack.Children.Add(new TextBlock { Text = knob.Label, FontSize = 12, Margin = new Thickness(0, 0, 0, 6), Foreground = Brush("TextFillColorSecondaryBrush") });
-        var current = Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id) ?? knob.Default;
+        var current = KnobValue(instanceId, knob);
 
         switch (knob.Type)
         {
@@ -210,8 +214,8 @@ public partial class KnobsPanel : UserControl
     private void Commit(string instanceId, WidgetTemplate template, Knob knob, string value)
     {
         if (_model is null) return;
-        if (string.Equals(Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id), value, StringComparison.Ordinal)) return;
-        _model.Edit($"Set {knob.Label}", l => WidgetInstance.SetKnob(l, template, instanceId, knob.Id, value));
+        if (string.Equals(KnobValue(instanceId, knob), value, StringComparison.Ordinal)) return;
+        _model.Edit($"Set {knob.Label}", l => Copies.SetKnob(l, template, instanceId, knob.Id, value));
     }
 
     /// <summary>A choice's value may be a composite ("GPU temperature||hardware.gpuTempFraction||...")
@@ -253,7 +257,7 @@ public partial class KnobsPanel : UserControl
             if (knob.Type == KnobType.Number)
             {
                 if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
-                { box.Text = Display(Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id) ?? knob.Default); return; }
+                { box.Text = Display(KnobValue(instanceId, knob)); return; }
                 n = Math.Clamp(n, knob.Min ?? double.MinValue, knob.Max ?? double.MaxValue);
                 text = n.ToString("R", CultureInfo.InvariantCulture);
                 box.Text = text;
@@ -295,9 +299,9 @@ public partial class KnobsPanel : UserControl
         async void Resolve()
         {
             var town = box.Text.Trim();
-            if (town.Length == 0 || string.Equals(town, Display(Record(instanceId)?.Knobs.GetValueOrDefault(knob.Id) ?? ""), StringComparison.OrdinalIgnoreCase)) return;
+            if (town.Length == 0 || string.Equals(town, Display(KnobValue(instanceId, knob)), StringComparison.OrdinalIgnoreCase)) return;
             note.Text = "looking up...";
-            var hit = await WidgetInstance.ResolveTownAsync(town, Http).ConfigureAwait(true);
+            var hit = await Copies.ResolveTownAsync(town, Http).ConfigureAwait(true);
             if (hit is not { } p) { note.Text = $"'{town}' was not found."; return; }
             note.Text = string.Format(CultureInfo.InvariantCulture, "{0} ({1:0.00}, {2:0.00})", town, p.lat, p.lon);
             // "town||lat||lon": SetKnob never makes a network call, so the coordinates travel with
@@ -354,7 +358,7 @@ public partial class KnobsPanel : UserControl
         {
             _detailsOpen = false;
             if (_model is null || instanceId is null) return;
-            _model.Select(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList());
+            _model.Select(Copies.Components(_model.Expanded(), instanceId).Select(c => c.Id).ToList());
         };
         // IsExpanded was set before those handlers existed, so a panel rebuilt with Details already
         // open has to do the Expanded handler's job itself, or the properties panel says "No
@@ -416,9 +420,11 @@ public partial class KnobsPanel : UserControl
         Root.Children.Add(quality);
 
         Root.Children.Add(Header("Sources"));
-        if (_model.Layout.Sources.Count == 0) Root.Children.Add(Hint("None yet. Adding a widget adds whatever it needs."));
+        // The expansion's: in v2 a copy's sources exist only there, and they are what runs.
+        var sources = _model.Expanded().Layout.Sources;
+        if (sources.Count == 0) Root.Children.Add(Hint("None yet. Adding a widget adds whatever it needs."));
         var snaps = _live?.Snapshots ?? Array.Empty<SourceSnapshot>();
-        foreach (var source in _model.Layout.Sources)
+        foreach (var source in sources)
         {
             var snap = snaps.FirstOrDefault(s => string.Equals(s.Name, source.Name, StringComparison.OrdinalIgnoreCase));
             var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };

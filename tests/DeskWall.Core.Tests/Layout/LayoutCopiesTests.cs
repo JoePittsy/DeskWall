@@ -52,7 +52,7 @@ public class LayoutCopiesTests
     [Fact]
     public void V1_Writes_No_Copies_And_Expands_To_Itself()
     {
-        var l = LayoutFile.Load(RepoFile("layouts", "column-system.json"));
+        var l = LayoutFile.Load(RepoFile("tests", "fixtures", "layouts-v1", "column-system.json"));
         Assert.Null(l.Copies);
         Assert.DoesNotContain("\"copies\"", l.ToJson());
 

@@ -169,10 +169,10 @@ public partial class PreviewView : UserControl
     // ---- what is on the canvas ------------------------------------------------------------------
 
     private IReadOnlyList<Target> AllTargets()
-        => _targets ??= _model is null ? [] : Targets.All(_model.Layout);
+        => _targets ??= _model is null ? [] : Targets.All(_model);
 
     private IReadOnlyList<Target> SelectedTargets()
-        => _model is null ? [] : Targets.From(_model.Layout, _model.Selection);
+        => _model is null ? [] : Targets.From(_model, _model.Selection);
 
     private void SelectTargets(IEnumerable<Target> targets)
         => _model?.Select(Targets.ComponentIds(targets));
@@ -436,7 +436,7 @@ public partial class PreviewView : UserControl
             var band = CanvasRect(_downScreen, p);
             _surface.BandRect = band;
             var caught = Targets.Within(AllTargets(), band).Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
-            var keep = Targets.From(_model.Layout, _bandBase);
+            var keep = Targets.From(_model, _bandBase);
             SelectTargets(keep.Concat(AllTargets().Where(t => caught.Contains(t.Id) && keep.All(k => k.Id != t.Id))));
         }
         Redraw();
