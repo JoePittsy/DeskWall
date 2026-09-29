@@ -8,29 +8,34 @@
                  ToolTip="Values another program sends DeskWall. Nothing to declare: bind to one and it appears."
                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
       <Button x:Name="ForgetButton" DockPanel.Dock="Right" Content="Forget" Click="Forget_Click"
-              Padding="8,2" FontSize="11" Margin="4,0,0,0" IsEnabled="False"
+              Padding="8,2" FontSize="12" Margin="4,0,0,0" IsEnabled="False"
               ToolTip="Stop remembering what this provider last sent" />
       <Button x:Name="DescribeButton" DockPanel.Dock="Right" Content="Describe" Click="Describe_Click"
-              Padding="8,2" FontSize="11" IsEnabled="False"
+              Padding="8,2" FontSize="12" IsEnabled="False"
               ToolTip="Write a manifest seeded from what it has sent, so you can name its fields" />
     </DockPanel>
 
-    <TextBlock x:Name="EmptyNote" DockPanel.Dock="Top" FontSize="11" TextWrapping="Wrap"
-               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+    <TextBlock x:Name="EmptyNote" DockPanel.Dock="Top" Style="{DynamicResource Hint}"
                Text="Nothing has been pushed yet. Write one JSON line to \\.\pipe\DeskWall.Events and it shows up here." />
 
     <ComboBox x:Name="Chooser" DockPanel.Dock="Top" Margin="0,0,0,6"
+              AutomationProperties.Name="Pushed provider"
               SelectionChanged="Chooser_SelectionChanged" Visibility="Collapsed" />
 
-    <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="True">
-      <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send" Click="Send_Click"
-              Padding="8,2" FontSize="11" Margin="4,0,0,0"
-              ToolTip="Publish this into the designer only, to design against an event that has not happened yet" />
-      <TextBox x:Name="TestJson" FontSize="11" FontFamily="Consolas, Cascadia Mono, monospace" />
-    </DockPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+      <TextBlock x:Name="TestJsonLabel" Text="Test event (JSON)" Style="{DynamicResource Caption}" Margin="0,0,0,3" />
+      <DockPanel LastChildFill="True">
+        <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send" Click="Send_Click"
+                Padding="8,2" FontSize="12" Margin="4,0,0,0"
+                ToolTip="Publish this into the designer only, to design against an event that has not happened yet" />
+        <TextBox x:Name="TestJson" FontSize="12" FontFamily="Consolas, Cascadia Mono, monospace"
+                 AutomationProperties.LabeledBy="{Binding ElementName=TestJsonLabel}" />
+      </DockPanel>
+    </StackPanel>
 
     <ListBox x:Name="Fields" BorderThickness="1" MinHeight="60"
              HorizontalContentAlignment="Stretch"
+             AutomationProperties.Name="Pushed fields"
              MouseDoubleClick="Fields_DoubleClick"
              ToolTip="Double-click a row to copy its binding path" />
   </DockPanel>

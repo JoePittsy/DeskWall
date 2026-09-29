@@ -11,6 +11,7 @@
     </DockPanel>
 
     <ListBox x:Name="List" DockPanel.Dock="Top" MaxHeight="120" Margin="0,0,0,8"
+             AutomationProperties.Name="Sources"
              BorderThickness="1" HorizontalContentAlignment="Stretch"
              SelectionChanged="List_SelectionChanged" />
 
@@ -27,6 +28,6 @@
               Padding="10,3" ToolTip="Take this source out of the widget" />
     </DockPanel>
 
-    <TreeView x:Name="ValueTree" BorderThickness="1" />
+    <TreeView x:Name="ValueTree" BorderThickness="1" AutomationProperties.Name="Source values" />
   </DockPanel>
 </UserControl>

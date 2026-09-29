@@ -117,7 +117,7 @@ public partial class ProvidersPanel : UserControl
                 FontSize = 11,
                 Margin = new Thickness(8, 0, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                Foreground = Brush("TextFillColorTertiaryBrush"),
+                Foreground = Brush("TextFillColorSecondaryBrush"),
             };
             DockPanel.SetDock(value, Dock.Right);
             row.Children.Add(value);
