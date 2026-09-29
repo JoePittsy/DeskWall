@@ -6,9 +6,9 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using DeskWall.Core;
-using DeskWall.Core.Events;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
+using DeskWall.Core.Values;
 using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model;
 using DeskWall.Designer.Model.Widgets;
@@ -27,9 +27,10 @@ namespace DeskWall.Designer.Views;
 /// the canvas, and a widget where a click puts it, in the right-hand margin.
 /// </para>
 /// <para>
-/// The Data section runs its own sources (<see cref="Insert.DataSources"/>): the document's own plus
+/// The Data section lists the values of <see cref="Insert.DataSources"/>: the document's own plus
 /// the local defaults (time, hardware, disks, system), so a value no source in the layout produces yet
-/// can be dropped, and the drop adds the source. Pushed providers come from <see cref="SetProviders"/>.
+/// can be dropped, and the drop adds the source. It reads them from the window's one running set
+/// (<see cref="Live"/>), which includes those defaults and the pushed providers.
 /// Deliberately left out: grouping the values by source (the labels already say "CPU", "C:" and so
 /// on, and the search box finds the rest), and a preview picture per widget card (see the gallery's
 /// old notes: eight grey rectangles told the owner less than the names).
@@ -50,8 +51,6 @@ public partial class InsertPanel : UserControl
     private PreviewView? _canvas;
     private LiveSources? _live;
     private IReadOnlyList<SourceDef> _defs = [];
-    private string _sourcesKey = "";
-    private IReadOnlyList<ProviderRecord> _providers = [];
     private bool _refreshQueued;
 
     private Point _pressAt;
@@ -64,8 +63,6 @@ public partial class InsertPanel : UserControl
         Rows.ItemsSource = _rows;
         _rowView = CollectionViewSource.GetDefaultView(_rows);
         _rowView.Filter = o => o is DataRow r && r.Matches(SearchBox.Text);
-        Unloaded += (_, _) => { _live?.Dispose(); _live = null; _sourcesKey = ""; };
-        Loaded += (_, _) => RebuildSources();
     }
 
     // ---- the gallery's hosting surface, unchanged -----------------------------------------------
@@ -103,47 +100,39 @@ public partial class InsertPanel : UserControl
 
     // ---- new: the document, the canvas and the providers ----------------------------------------
 
-    /// <summary>The open document (the Data section runs its sources, and follows depth) and the canvas
+    /// <summary>The open document (the Data section lists its sources, and follows depth) and the canvas
     /// that keyboard inserts go to. Call again for every document.</summary>
     public void Attach(DesignerModel model, PreviewView canvas)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(canvas);
-        if (_model is not null) { _model.Changed -= RebuildSources; _model.DepthChanged -= RebuildSources; }
+        if (_model is not null) { _model.Changed -= OnDocumentChanged; _model.DepthChanged -= OnDocumentChanged; }
         _model = model;
         _canvas = canvas;
-        _model.Changed += RebuildSources;
-        _model.DepthChanged += RebuildSources;
-        RebuildSources();
+        _model.Changed += OnDocumentChanged;
+        _model.DepthChanged += OnDocumentChanged;
+        OnDocumentChanged();
     }
 
-    /// <summary>The pushed providers the shell knows about, so their values are rows too.</summary>
-    public void SetProviders(IEnumerable<ProviderRecord> records)
+    /// <summary>The window's running sources, which must include every one of
+    /// <see cref="Insert.DataSources"/>. The host replaces it whenever the set changes.</summary>
+    public LiveSources? Live
     {
-        ArgumentNullException.ThrowIfNull(records);
-        _providers = records.ToList();
-        _live?.SetProviders(_providers);
+        get => _live;
+        set
+        {
+            if (_live is not null) _live.Updated -= OnUpdated;
+            _live = value;
+            if (_live is not null) _live.Updated += OnUpdated;
+            OnUpdated();
+        }
     }
 
-    /// <summary>Rebuilt only when the set of definitions differs, so a knob turn does not restart
-    /// the sources (the same rule as the shell's own <c>RebuildLiveSources</c>).</summary>
-    private void RebuildSources()
+    private void OnDocumentChanged()
     {
-        if (_model is null || !IsLoaded) return;
-        var defs = Insert.DataSources(_model);
-        var key = string.Join(";", defs.Select(s =>
-            $"{s.Name}|{s.Type}|{s.EverySeconds}|{string.Join(",", s.Settings.Select(kv => kv.Key + "=" + kv.Value))}"));
-        if (key == _sourcesKey && _live is not null) return;
-        _sourcesKey = key;
-        _defs = defs;
-        var previous = _live;
-        if (previous is not null) previous.Updated -= OnUpdated;
-        // ponytail: a second hardware sampler beside the shell's own LiveSources while the designer
-        // is open. Share the shell's if the cost ever shows up; it would need the defaults added there.
-        _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
-        _live.Updated += OnUpdated;
-        _live.SetProviders(_providers);
-        previous?.Dispose();
+        if (_model is null) return;
+        _defs = Insert.DataSources(_model);
+        OnUpdated();
     }
 
     /// <summary>Not on the UI thread, and many times a second at start-up: coalesced into one refresh.</summary>
@@ -160,7 +149,11 @@ public partial class InsertPanel : UserControl
     private void RefreshRows()
     {
         if (_live is null) return;
-        var entries = ValueCatalog.From(_live.Tree(), _defs);
+        // The window runs more than this list (every catalogue widget's sources): only these are rows.
+        var names = _defs.Select(d => d.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var tree = new RecordValue(_live.Tree().Fields.Where(f => names.Contains(f.Key))
+            .ToDictionary(f => f.Key, f => f.Value, StringComparer.OrdinalIgnoreCase));
+        var entries = ValueCatalog.From(tree, _defs);
         if (entries.Count == _rows.Count && entries.Select(e => e.Path).SequenceEqual(_rows.Select(r => r.Path)))
         {
             for (var i = 0; i < entries.Count; i++) _rows[i].Entry = entries[i];

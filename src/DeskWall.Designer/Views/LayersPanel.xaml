@@ -4,7 +4,7 @@
   <DockPanel Margin="8,8,8,8">
     <TextBlock DockPanel.Dock="Top" Text="Layers" Style="{DynamicResource SectionHeader}" Margin="8,0,0,4" />
     <TextBlock x:Name="EmptyNote" DockPanel.Dock="Top" Style="{DynamicResource Hint}" Margin="8,0,0,0"
-               Text="Nothing placed yet. Add a widget from the gallery." Visibility="Collapsed" />
+               Text="Nothing placed yet. Drag a widget, a part or a value in from Insert." Visibility="Collapsed" />
     <TreeView x:Name="Tree" BorderThickness="0" Background="Transparent"
               AutomationProperties.Name="Layers"
               KeyboardNavigation.TabNavigation="Once"

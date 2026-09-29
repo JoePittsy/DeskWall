@@ -71,7 +71,7 @@
                        ToolTip="Tab / Shift+Tab: next / previous. Ctrl+A: all. Ctrl+C, Ctrl+V, Ctrl+D: copy, paste, duplicate. Ctrl+] / Ctrl+[: bring to front / send to back. Delete: remove." />
         <Border Grid.Row="1" BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
-          <v:GalleryPanel x:Name="Gallery" />
+          <v:InsertPanel x:Name="Insert" />
         </Border>
       </Grid>
 

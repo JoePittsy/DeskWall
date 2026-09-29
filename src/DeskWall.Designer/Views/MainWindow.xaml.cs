@@ -20,7 +20,7 @@ namespace DeskWall.Designer.Views;
 /// The window.
 /// <para>
 /// Job: get a widget onto the wallpaper, where the owner wants it and looking right, in under a
-/// minute, without seeing a coordinate or a binding. Three panes and a verb: pick from the gallery
+/// minute, without seeing a coordinate or a binding. Three panes and a verb: drag in from Insert
 /// on the left (under Layers, which lists what is already placed), drag it about on the wallpaper
 /// in the middle, change what it says on the right, Apply.
 /// </para>
@@ -81,11 +81,11 @@ public partial class MainWindow : Window
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         _renderer = new PreviewRenderer(() => _live?.Tree() ?? ValueTree.Empty);
 
-        Gallery.AddRequested += Add;
-        Gallery.NewRequested += () => OpenWidgetEditor(WidgetDocument.New());
-        Gallery.EditRequested += t => OpenWidgetEditor(WidgetDocument.ForEditing(t));
-        Gallery.DuplicateRequested += DuplicateTemplate;
-        Gallery.DeleteRequested += DeleteTemplate;
+        Insert.AddRequested += Add;
+        Insert.NewRequested += () => OpenWidgetEditor(WidgetDocument.New());
+        Insert.EditRequested += t => OpenWidgetEditor(WidgetDocument.ForEditing(t));
+        Insert.DuplicateRequested += DuplicateTemplate;
+        Insert.DeleteRequested += DeleteTemplate;
         Properties.RemoveRequested += Remove;
         // The shell owns depth: the canvas asks, and the one path (the model) answers, so a
         // double-click, Enter, Esc and Ctrl+Alt+K cannot disagree about where they end up.
@@ -96,9 +96,10 @@ public partial class MainWindow : Window
         };
         Layers.TemplateChildActivated += Properties.ShowTemplateChild;
         Providers.Status += SetStatus;
+        Preview.Status += SetStatus;
         // The records go into LiveSources, not into a second tree of their own: the binding
-        // picker, the preview and the value trees all read that one, so a provider that is not in
-        // it is one the user cannot bind.
+        // chips, the preview and the Insert panel's Data rows all read that one, so a provider
+        // that is not in it is one the user cannot bind.
         Providers.ProvidersChanged += records => _live?.SetProviders(records);
 
         RestorePlacement();
@@ -115,16 +116,16 @@ public partial class MainWindow : Window
     /// <summary>Point the window at the layout the daemon would paint on this display. What that is
     /// (and why a scaled resolution still opens the authored file, on the authored canvas) is
     /// <see cref="ShellState.OpenFrom"/>. No layout at all anywhere is not a dialog: an empty one is
-    /// made here and the gallery is the first thing seen, which is the whole first-run story.</summary>
+    /// made here and the Insert panel is the first thing seen, which is the whole first-run story.</summary>
     private void Open(DisplaySignature signature, LayoutResolution? resolution)
     {
-        if (_model is not null) { _model.Changed -= OnModelChanged; _model.DepthChanged -= RefreshBreadcrumb; }
+        if (_model is not null) { _model.Changed -= OnModelChanged; _model.DepthChanged -= OnDepthChanged; }
 
         var target = ShellState.OpenFrom(resolution, signature, LoadAuthored, DefaultBaseImage,
             WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir));
         _model = new DesignerModel(target.Layout, target.Signature, target.Path);
         _model.Changed += OnModelChanged;
-        _model.DepthChanged += RefreshBreadcrumb;
+        _model.DepthChanged += OnDepthChanged;
         _backupBeforeApply = target.Migrated;
 
         ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
@@ -132,7 +133,8 @@ public partial class MainWindow : Window
         Preview.Attach(_model, _renderer);
         Properties.Attach(_model);
         Layers.Attach(_model);
-        Gallery.Load(_catalog);
+        Insert.Attach(_model, Preview);
+        Insert.Load(_catalog);
 
         RebuildLiveSources();
         RefreshChrome();
@@ -155,6 +157,14 @@ public partial class MainWindow : Window
         RefreshChrome();
     }
 
+    /// <summary>Widget depth runs the widget's own sources, which a widget with no copy in the
+    /// layout has nowhere else.</summary>
+    private void OnDepthChanged()
+    {
+        RebuildLiveSources();
+        RefreshBreadcrumb();
+    }
+
     private void RefreshChrome()
     {
         LayoutNameText.Text = LayoutLabel();
@@ -163,7 +173,7 @@ public partial class MainWindow : Window
         UndoButton.IsEnabled = _model.CanUndo;
         RedoButton.IsEnabled = _model.CanRedo;
         ApplyButton.IsEnabled = _model.Path is null || _model.Dirty;
-        Gallery.SetCounts(Counts());
+        Insert.SetCounts(Counts());
         RefreshBreadcrumb();
         RefreshStatus();
     }
@@ -199,17 +209,19 @@ public partial class MainWindow : Window
         return counts;
     }
 
-    /// <summary>The running sources: the expansion's (the layout's own, then every copy's, merged the
-    /// way the daemon merges them), plus one of each source every catalogue widget wants. The extras
-    /// are what makes a gallery card a real render rather than an empty field - the weather card
-    /// cannot show a temperature unless something is fetching one - and the layout's own definition
-    /// always wins on a name clash, so adding the widget changes nothing. Rebuilt only when the set
-    /// actually differs: doing it on every knob turn would restart the weather fetch on each
+    /// <summary>The one running set of sources in the window, read by the canvas, the properties
+    /// panel, the sources panel and the Insert panel's Data rows, so there is one hardware sampler
+    /// however many panels show a value. In order, the first of a name winning: at widget depth the
+    /// widget's own; the expansion's (the layout's own, then every copy's, merged the way the daemon
+    /// merges them); the Insert panel's local defaults (<see cref="Insert.DefaultSources"/>); one of
+    /// each source a catalogue widget wants, so adding a widget draws at once. Rebuilt only when the
+    /// set actually differs: doing it on every knob turn would restart the weather fetch on each
     /// keystroke.</summary>
     private void RebuildLiveSources()
     {
-        var defs = new List<SourceDef>(_model.Expanded().Layout.Sources);
-        foreach (var source in _catalog.SelectMany(t => t.Sources))
+        var defs = new List<SourceDef>();
+        IEnumerable<SourceDef> widget = _model.Depth.Kind == DepthKind.Widget ? _model.Parts.Sources : [];
+        foreach (var source in widget.Concat(_model.Expanded().Layout.Sources).Concat(DeskWall.Designer.Model.Insert.DefaultSources).Concat(_catalog.SelectMany(t => t.Sources)))
             if (!defs.Any(d => string.Equals(d.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
                 defs.Add(source);
 
@@ -223,6 +235,7 @@ public partial class MainWindow : Window
         _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
         _live.Updated += OnLiveUpdated;
         Properties.Live = _live;
+        Insert.Live = _live;
         // A rebuilt set starts with no providers, so the ones already on screen have to be put
         // back or a bound component would fall back to its default on the next source edit.
         _live.SetProviders(Providers.Records);
@@ -230,8 +243,7 @@ public partial class MainWindow : Window
         _renderer.Request(_model);
     }
 
-    /// <summary>A source published. The preview is cheap and goes at once; the gallery's eight
-    /// renders wait until the flurry of first reads has settled.</summary>
+    /// <summary>A source published: the preview redraws.</summary>
     private void OnLiveUpdated() => Dispatcher.BeginInvoke(new Action(() =>
     {
         _renderer.Request(_model);
@@ -239,7 +251,7 @@ public partial class MainWindow : Window
 
     // ---- the four things that change a layout ------------------------------------------------------
 
-    /// <summary>A widget picked from the gallery lands in the right-hand margin, below whatever is
+    /// <summary>A widget card clicked in Insert lands in the right-hand margin, below whatever is
     /// already there, and is free to drag from that moment
     /// (<see cref="Placement.Spawn"/>). Nothing is arranged, before or after: the canvas has no
     /// column any more, and where a widget sits is the owner's answer.
@@ -398,7 +410,7 @@ public partial class MainWindow : Window
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         // Before anything reads the expansion: the copies of a saved widget redraw from its new file.
         _model.WidgetsChanged();
-        Gallery.Load(_catalog);
+        Insert.Load(_catalog);
         Properties.Attach(_model);
         _sourcesKey = "";
         RebuildLiveSources();
@@ -439,6 +451,10 @@ public partial class MainWindow : Window
         // Not while a box is being typed into: Delete, Enter and Ctrl+Z belong to the text there.
         if (key == Key.S && ctrl) { Apply(); e.Handled = true; return; }
         if (focus is System.Windows.Controls.TextBox) return;
+        // Nor inside a side panel: Delete on a property combo, Enter on a knob or Esc in the colour
+        // picker belong to that control, not to the canvas selection. Layers is the exception: it
+        // lists what is on the canvas, so its Delete, Enter and Esc are the canvas's.
+        if (key is Key.Delete or Key.Enter or Key.Escape && InSidePanel()) return;
         // Enter presses a focused button; Esc ends a canvas drag (the canvas holds the mouse).
         var onButton = focus is System.Windows.Controls.Primitives.ButtonBase;
         var dragging = Mouse.Captured is not null;
@@ -483,6 +499,9 @@ public partial class MainWindow : Window
         }
         e.Handled = true;
     }
+
+    private bool InSidePanel()
+        => Properties.IsKeyboardFocusWithin || Insert.IsKeyboardFocusWithin || Providers.IsKeyboardFocusWithin;
 
     private void Paste()
     {

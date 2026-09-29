@@ -6,9 +6,8 @@ using DeskWall.Core.Values;
 
 namespace DeskWall.Designer.Views;
 
-/// <summary>Builds the two-column (path, value) tree shared by SourcesPanel's value inspector and
-/// BindingPicker's path chooser, so both read the same value tree the same way. Path strings follow
-/// Binding's own syntax exactly (name segments dot-joined, [key]/[index] appended with no dot) so a
+/// <summary>Builds the two-column (path, value) tree of SourcesPanel's value inspector. Path strings
+/// follow Binding's own syntax exactly (name segments dot-joined, [key]/[index] appended with no dot) so a
 /// clicked path round-trips through Binding.Parse.</summary>
 internal static class ValueTreeView
 {
