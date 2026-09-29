@@ -80,6 +80,17 @@
               Background="{DynamicResource SolidBackgroundFillColorSecondaryBrush}">
         <Grid>
           <v:PreviewView x:Name="Preview" />
+          <!-- Widget depth, however it was reached (Enter, double-click, Ctrl+Alt+K, Insert > Edit):
+               what an edit here reaches, and that Apply forks a shipped widget. Top-left, clear of
+               the align strip (top centre) and the shortcut sheet (top right). -->
+          <Border x:Name="DepthBanner" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
+                  Margin="16" MaxWidth="560" CornerRadius="6" BorderThickness="4,1,1,1" Padding="12,7"
+                  Background="{DynamicResource SolidBackgroundFillColorBaseAltBrush}"
+                  BorderBrush="{DynamicResource AccentFillColorDefaultBrush}">
+            <TextBlock x:Name="DepthBannerText" TextWrapping="Wrap" FontSize="13"
+                       AutomationProperties.LiveSetting="Polite"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          </Border>
           <!-- F1 or ?: every key, over the canvas's top-right corner. Not a dialog: the canvas stays
                live under it and the focus stays where it was. Filled from Model.Shortcuts. -->
           <Border x:Name="ShortcutSheet" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top"

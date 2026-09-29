@@ -231,4 +231,26 @@ public class ShellVerbsTests
         Assert.Equal("Edit widget: every copy of it in every layout on this machine follows (2 are on this layout).", DepthText.Follow(2));
         Assert.Equal("Edit widget: every copy of it in every layout on this machine follows (1 is on this layout).", DepthText.Follow(1));
     }
+    /// <summary>Critique 2, P1: widget depth says so however it was reached, and the fork clause is
+    /// there only for a shipped key with no fork yet.</summary>
+    [Fact]
+    public void The_Widget_Depth_Banner_Says_What_Follows_And_When_Apply_Forks()
+    {
+        var m = TwoDials();
+        Assert.Null(DepthText.Banner(m, _ => true));            // layout depth: no banner
+
+        m.Select(["dial-1"]);
+        m.Descend();
+        Assert.Null(DepthText.Banner(m, _ => true));            // copy depth: the breadcrumb says it
+        m.Descend();                                            // Enter again: widget depth
+        var name = Copies.TryFind(m.Finder(), "dial")!.Name;
+        Assert.Equal($"Editing the {name} widget: 2 copies on this layout follow · Apply forks the shipped widget", DepthText.Banner(m, _ => true));
+        Assert.Equal($"Editing the {name} widget: 2 copies on this layout follow", DepthText.Banner(m, _ => false));
+
+        m.Climb(); m.Climb();
+        m.Edit("Remove", l => Copies.Remove(l, "dial-2"));
+        m.Select(["dial-1"]);
+        Assert.True(m.MakeOrEditWidget());                      // Ctrl+Alt+K: the same banner
+        Assert.Equal($"Editing the {name} widget: 1 copy on this layout follows", DepthText.Banner(m, _ => false));
+    }
 }

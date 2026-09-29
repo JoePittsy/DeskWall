@@ -218,6 +218,14 @@ public partial class MainWindow : Window
             _ => "Layout",
         };
         System.Windows.Automation.AutomationProperties.SetName(Breadcrumb, "Editing: " + Breadcrumb.Text);
+
+        var banner = DepthText.Banner(_model);
+        var changed = banner != DepthBannerText.Text;
+        DepthBannerText.Text = banner ?? "";
+        DepthBanner.Visibility = banner is null ? Visibility.Collapsed : Visibility.Visible;
+        if (changed && banner is not null)
+            System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(DepthBannerText)
+                ?.RaiseAutomationEvent(System.Windows.Automation.Peers.AutomationEvents.LiveRegionChanged);
     }
 
     /// <summary>What the top line calls the open layout: the name of the file being edited, ellipsed
@@ -403,7 +411,8 @@ public partial class MainWindow : Window
         SetStatus("A new widget: drag parts and values into its frame. Apply saves it.");
     }
 
-    /// <summary>"Edit": widget depth on the first copy of it in this layout. A widget with no copy
+    /// <summary>"Edit": widget depth on the first copy of it in this layout (the depth banner says
+    /// what that reaches and whether Apply forks a shipped widget, as it does on every route in). A widget with no copy
     /// here has nowhere on the canvas to be drawn, so one is placed as a click on its card would
     /// place it, and taken away again when the canvas is back at layout depth; the widget edits
     /// stay, and Apply saves them.</summary>
@@ -417,8 +426,6 @@ public partial class MainWindow : Window
             _scratchCopy = id;
             SetStatus($"'{template.Name}' is not on this layout: it is shown here while you edit it, and goes when you leave the widget.");
         }
-        else if (!WidgetCatalog.IsUserTemplate(template))
-            SetStatus($"Editing the out-of-the-box '{template.Name}': Apply keeps your version in your own widgets folder, and every copy follows it.");
         _model.SetDepth(Depth.Widget(template.Key, id));
         _model.Select([]);
         Preview.Focus();
