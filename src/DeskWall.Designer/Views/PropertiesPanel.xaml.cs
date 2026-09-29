@@ -80,12 +80,12 @@ public partial class PropertiesPanel : UserControl
         {
             _model.Changed -= Render;
             _model.SelectionChanged -= OnSelectionChanged;
-            _model.DepthChanged -= Render;
+            _model.DepthChanged -= OnDepthChanged;
         }
         _model = model;
         _model.Changed += Render;
         _model.SelectionChanged += OnSelectionChanged;
-        _model.DepthChanged += Render;
+        _model.DepthChanged += OnDepthChanged;
         _templateParentId = _templateChildId = null;
         _openColour = _openChip = null;
         Render();
@@ -121,6 +121,12 @@ public partial class PropertiesPanel : UserControl
     private void OnSelectionChanged()
     {
         if (_model is { Selection.Count: > 0 }) { _templateParentId = null; _templateChildId = null; }
+        _openColour = _openChip = null;
+        Render();
+    }
+
+    private void OnDepthChanged()
+    {
         _openColour = _openChip = null;
         Render();
     }
@@ -234,7 +240,7 @@ public partial class PropertiesPanel : UserControl
     private FrameworkElement PartPicker()
     {
         var prefix = _model!.Depth.CopyId is { } c ? c + "." : "";
-        var combo = new ComboBox { Margin = new Thickness(0, 0, 0, 12), MinWidth = 160, HorizontalAlignment = HorizontalAlignment.Left };
+        var combo = new ComboBox();
         foreach (var part in _model.Parts.Components)
             combo.Items.Add(new ComboBoxItem { Content = part.Id.StartsWith(prefix, StringComparison.Ordinal) ? part.Id[prefix.Length..] : part.Id, Tag = part.Id });
         combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => _model.Selection.Contains((string)i.Tag!));
@@ -243,13 +249,10 @@ public partial class PropertiesPanel : UserControl
             if (combo.SelectedItem is ComboBoxItem { Tag: string id } && !_model.Selection.Contains(id)) _model.Select([id]);
         };
         Identify(combo, "Part", "part");
-        var row = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
-        var label = Label("Part");
-        label.Width = double.NaN;
-        label.Margin = new Thickness(0, 0, 8, 12);
-        DockPanel.SetDock(label, Dock.Left);
-        row.Children.Add(label);
-        row.Children.Add(combo);
+        combo.Margin = new Thickness(0);
+        combo.HorizontalAlignment = HorizontalAlignment.Stretch;
+        var row = Shell("part-row", "Part", combo, false, null, null, null);
+        row.Margin = new Thickness(0, 12, 0, 6);
         return row;
     }
 
@@ -744,11 +747,15 @@ public partial class PropertiesPanel : UserControl
         return toggle;
     }
 
-    /// <summary>Enter commits and gives the focus back; leaving the box commits.</summary>
-    private static void OnCommit(TextBox box, Action commit)
+    /// <summary>Enter commits; leaving the box commits. The rebuild that follows puts the focus back
+    /// in the same row (<see cref="RestoreFocus"/>).</summary>
+    private void OnCommit(TextBox box, Action commit)
     {
-        box.LostFocus += (_, _) => commit();
-        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { commit(); Keyboard.ClearFocus(); } };
+        // A box a rebuild has already replaced says what the row said before it: a Reset from the
+        // row menu would otherwise be undone by the old box losing the focus afterwards.
+        void Guarded() { if (Root.IsAncestorOf(box)) commit(); }
+        box.LostFocus += (_, _) => Guarded();
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Guarded(); e.Handled = true; } };
     }
 
     // ---- the row ---------------------------------------------------------------------------------
@@ -764,8 +771,9 @@ public partial class PropertiesPanel : UserControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(88) });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        // The two icon columns are always there, so every row's value ends at the same edge.
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
@@ -777,12 +785,17 @@ public partial class PropertiesPanel : UserControl
         }
 
         var text = Label(label);
+        // Level with the first line of the value, which stays put when the editor grows (an open
+        // chip search, a two-box row).
+        text.VerticalAlignment = VerticalAlignment.Top;
+        text.Margin = new Thickness(0, 7, 8, 0);
         if (overridden) text.FontWeight = FontWeights.SemiBold;
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
 
         Grid.SetColumn(editor, 2);
-        Grid.SetColumnSpan(editor, bind is null ? 2 : 1);
+        // A chip takes the Bind column too: a bound row has no Bind icon, and its search needs the room.
+        if (editor is BindingChip) Grid.SetColumnSpan(editor, 2);
         grid.Children.Add(editor);
         if (editor is not BindingChip && Primary(editor) is { } primary)
         {

@@ -159,6 +159,26 @@ public class PropertiesPanelTests
         });
     }
 
+    /// <summary>Found in the live pass: Reset from the row menu rebuilds the panel, and the old Size
+    /// box, losing the focus afterwards, used to write its stale "14" straight back.</summary>
+    [Fact]
+    [Trait("Category", "Desktop")]
+    public void A_Box_The_Rebuild_Replaced_Does_Not_Commit_Its_Stale_Text()
+    {
+        OnStaThread(() =>
+        {
+            var m = DialLayout(""", "overrides": { "components.label.size": "14" }""");
+            m.SetDepth(Depth.Copy("dial-1", "dial"));
+            m.Select(["dial-1.label"]);
+            var panel = Panel(m);
+            var old = (TextBox)ById(panel, "dial-1.label/Size");
+            Click(old, "Reset to widget");
+            old.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Assert.Empty(Copy(m, "dial-1").Overrides);
+            Assert.Equal("Reset", m.LastEditLabel);
+        });
+    }
+
     [Fact]
     [Trait("Category", "Desktop")]
     public void A_Colour_From_The_Picker_Is_One_Undo_Entry_And_An_Override_At_Copy_Depth()
