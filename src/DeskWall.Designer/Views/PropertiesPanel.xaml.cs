@@ -1063,7 +1063,9 @@ public partial class PropertiesPanel : UserControl
         var photoName = model.Layout.BaseImage.Length == 0 ? "(none)" : IOPath.GetFileName(model.Layout.BaseImage);
         var browse = ActionButton("Change...", "layout:photo");
         AutomationProperties.SetName(browse, $"Change photo, now {photoName}");
-        browse.Margin = new Thickness(8, 0, 0, 0);
+        // Under the name, not beside it: beside it left the name about 50 px ("imag...").
+        browse.Margin = new Thickness(0, 4, 0, 0);
+        browse.HorizontalAlignment = HorizontalAlignment.Left;
         browse.Click += (_, _) =>
         {
             var dir = IOPath.GetDirectoryName(model.Layout.BaseImage);
@@ -1075,18 +1077,17 @@ public partial class PropertiesPanel : UserControl
             if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
             model.Edit("Set photo", l => l.BaseImage = dlg.FileName);
         };
-        var name = new TextBlock { Text = photoName, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = model.Layout.BaseImage };
+        var name = new TextBlock { Text = photoName, Margin = new Thickness(0, 7, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = model.Layout.BaseImage };
         name.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorPrimaryBrush");
-        var photo = new DockPanel();
-        DockPanel.SetDock(browse, Dock.Right);
-        photo.Children.Add(browse);
+        var photo = new StackPanel();
         photo.Children.Add(name);
+        photo.Children.Add(browse);
         Add(Shell("layout:photo-row", "Photo", photo, false, null, null, null));
 
         var readout = Label(model.Layout.JpegQuality.ToString(CultureInfo.InvariantCulture));
         readout.Width = 32;
         readout.TextAlignment = TextAlignment.Right;
-        var slider = new Slider { Minimum = 60, Maximum = 100, Value = model.Layout.JpegQuality, IsSnapToTickEnabled = true, TickFrequency = 1, SmallChange = 1, LargeChange = 5, VerticalAlignment = VerticalAlignment.Center };
+        var slider = new Slider { Minimum = 60, Maximum = 100, Value = model.Layout.JpegQuality, IsSnapToTickEnabled = true, TickFrequency = 1, SmallChange = 1, LargeChange = 5, VerticalAlignment = VerticalAlignment.Center, MinWidth = 0 };
         slider.ValueChanged += (_, _) => readout.Text = ((int)slider.Value).ToString(CultureInfo.InvariantCulture);
         // One undo entry per drag or key press, not one per pixel of travel.
         void CommitQuality()

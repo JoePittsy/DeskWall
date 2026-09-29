@@ -743,6 +743,45 @@ public partial class MainWindow : Window
         if (_settings.WindowMaximized) WindowState = WindowState.Maximized;
     }
 
+    /// <summary>The most of the left column Layers takes while it sizes to its rows.</summary>
+    private const double LayersShare = 0.28;
+
+    /// <summary>Insert keeps at least this much of the column, however far the splitter goes.</summary>
+    private const double InsertFloor = 280;
+
+    /// <summary>Layers sizes to its rows, capped at a share of the column; once the splitter has been
+    /// moved it is that height (remembered), still leaving Insert its floor.</summary>
+    private void LeftColumn_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var h = LeftColumn.ActualHeight;
+        if (h <= 0) return;
+        if (_settings.LayersHeight is { } fixedAt)
+        {
+            Layers.MaxHeight = double.PositiveInfinity;
+            LayersRow.Height = new GridLength(Math.Max(LayersRow.MinHeight, Math.Min(fixedAt, h - InsertFloor)));
+        }
+        else Layers.MaxHeight = Math.Max(LayersRow.MinHeight, h * LayersShare);
+        LayersRow.MaxHeight = Math.Max(LayersRow.MinHeight, h - InsertFloor);
+    }
+
+    /// <summary>A drag, or the arrow keys on the focused splitter: from here on Layers is the height
+    /// the splitter gives it, not its rows'.</summary>
+    private void LayersSplitter_DragStarted(object sender, RoutedEventArgs e)
+        => Layers.MaxHeight = double.PositiveInfinity;
+
+    private void LayersSplitter_DragCompleted(object sender, RoutedEventArgs e)
+    {
+        var height = LayersRow.ActualHeight;
+        Remember(s => s.LayersHeight = height);
+    }
+
+    private void LayersSplitter_Key(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Up or Key.Down)) return;
+        if (e.RoutedEvent == Keyboard.PreviewKeyDownEvent) LayersSplitter_DragStarted(sender, e);
+        else LayersSplitter_DragCompleted(sender, e);
+    }
+
     private static IReadOnlyList<CRect> MonitorBounds()
     {
         try { return Monitors.Enumerate().Select(m => m.Bounds).ToList(); }

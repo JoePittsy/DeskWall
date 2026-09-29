@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Values;
 
@@ -14,7 +14,9 @@ public enum ValueKind { Fraction, Timestamp, Number, Text, Bool, List }
 /// <param name="Sample">The value as it is now.</param>
 /// <param name="Source">The layout source the value comes from (what a drop adds when it is
 /// missing), or null for a pushed provider, which has nothing to add.</param>
-public sealed record ValueEntry(string Path, string Label, ValueKind Kind, Value Sample, SourceDef? Source);
+/// <param name="Diagnostic">A value about the source rather than about the machine (raw bytes, raw
+/// seconds, sample counts, window lengths): the Data list shows it only when searched for.</param>
+public sealed record ValueEntry(string Path, string Label, ValueKind Kind, Value Sample, SourceDef? Source, bool Diagnostic = false);
 
 /// <summary>Flattens <see cref="LiveSources.Tree"/> into one row per bindable value.</summary>
 public static class ValueCatalog
@@ -70,7 +72,20 @@ public static class ValueCatalog
     }
 
     private static ValueEntry Entry(SourceDef? def, string type, string path, string shape, string? key, ValueKind kind, Value value)
-        => new(path, Labels.TryGetValue(type + "." + shape, out var l) ? string.Format(CultureInfo.InvariantCulture, l.Label, key) : path, kind, value, def);
+        => new(path, Labels.TryGetValue(type + "." + shape, out var l) ? string.Format(CultureInfo.InvariantCulture, l.Label, key) : path, kind, value, def,
+            Diagnostics.Contains(type + "." + shape));
+
+    /// <summary>Values that answer "is the source working" or repeat another value in raw units;
+    /// every one has a readable twin (free GB beside free bytes, Uptime beside uptime seconds).</summary>
+    private static readonly HashSet<string> Diagnostics = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "disks.drives[*].free", "disks.drives[*].total", "disks.drives[*].letter",
+        "system.uptime",
+        "hardware.samples", "hardware.window",
+        "command.exitCode", "command.stderr", "command.running", "command.starts", "command.badLines",
+        "http.status", "http.fromCache",
+        "file.size",
+    };
 
     /// <summary>Whether a value of <paramref name="kind"/> can drive a property edited with
     /// <paramref name="editor"/>. Text-shaped editors take anything that renders as text (a bool

@@ -61,18 +61,25 @@
         <ColumnDefinition Width="320" />
       </Grid.ColumnDefinitions>
 
-      <!-- Layers above Insert (brief 6): what is on the canvas, then what can go on it. -->
-      <Grid Grid.Column="0">
+      <!-- Layers above Insert (brief 6): what is on the canvas, then what can go on it. Layers is as
+           tall as its rows, up to a share of the column (LeftColumn_SizeChanged), so an empty or short
+           layout leaves Insert the room; the splitter between them is the owner's to move, and is
+           remembered. -->
+      <Grid Grid.Column="0" x:Name="LeftColumn" SizeChanged="LeftColumn_SizeChanged">
         <Grid.RowDefinitions>
-          <RowDefinition Height="*" MinHeight="160" />
-          <RowDefinition Height="*" />
+          <RowDefinition x:Name="LayersRow" Height="Auto" MinHeight="72" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" MinHeight="240" />
         </Grid.RowDefinitions>
         <v:LayersPanel x:Name="Layers" Grid.Row="0" AutomationProperties.Name="Layers panel"
                        ToolTip="Tab / Shift+Tab: next / previous. Ctrl+A: all. Ctrl+C, Ctrl+V, Ctrl+D: copy, paste, duplicate. Ctrl+] / Ctrl+[: bring to front / send to back. Delete: remove." />
-        <Border Grid.Row="1" BorderThickness="0,1,0,0"
-                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
-          <v:InsertPanel x:Name="Insert" />
-        </Border>
+        <GridSplitter x:Name="LayersSplitter" Grid.Row="1" Height="10" HorizontalAlignment="Stretch"
+                      ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                      DragStarted="LayersSplitter_DragStarted" DragCompleted="LayersSplitter_DragCompleted"
+                      PreviewKeyDown="LayersSplitter_Key" KeyUp="LayersSplitter_Key"
+                      ToolTip="Drag to share the column between Layers and Insert"
+                      AutomationProperties.Name="Resize Layers and Insert" />
+        <v:InsertPanel x:Name="Insert" Grid.Row="2" />
       </Grid>
 
       <Border Grid.Column="1" BorderThickness="1,0"

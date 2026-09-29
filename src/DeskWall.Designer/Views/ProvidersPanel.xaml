@@ -1,12 +1,15 @@
-<UserControl x:Class="DeskWall.Designer.Views.ProvidersPanel"
+﻿<UserControl x:Class="DeskWall.Designer.Views.ProvidersPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <DockPanel Margin="16,8,16,12">
+  <!-- Closed until something has actually been pushed (it opens itself then): most layouts have
+       no pushed provider, and the empty note and the test box were a quarter of the column. -->
+  <Expander x:Name="Section" IsExpanded="False" Margin="8,4,8,4" AutomationProperties.Name="Pushed values">
+    <Expander.Header>
+      <TextBlock Text="Pushed" Style="{DynamicResource SectionHeader}"
+                 ToolTip="Values another program sends DeskWall. Nothing to declare: bind to one and it appears." />
+    </Expander.Header>
+  <DockPanel Margin="8,4,8,8">
     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
-      <TextBlock DockPanel.Dock="Left" Text="Pushed" FontSize="12" FontWeight="SemiBold"
-                 VerticalAlignment="Center"
-                 ToolTip="Values another program sends DeskWall. Nothing to declare: bind to one and it appears."
-                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
       <Button x:Name="ForgetButton" DockPanel.Dock="Right" Content="Forget" Click="Forget_Click"
               Padding="8,2" FontSize="12" Margin="4,0,0,0" IsEnabled="False"
               ToolTip="Stop remembering what this provider last sent" />
@@ -39,4 +42,5 @@
              MouseDoubleClick="Fields_DoubleClick"
              ToolTip="Double-click a row to copy its binding path" />
   </DockPanel>
+  </Expander>
 </UserControl>

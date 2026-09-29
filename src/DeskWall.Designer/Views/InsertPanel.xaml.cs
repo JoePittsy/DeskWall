@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -171,12 +171,17 @@ public partial class InsertPanel : UserControl
 
     // ---- sections ------------------------------------------------------------------------------
 
+    /// <summary>Data's rows are one line each and its header carries a search box, so it takes the
+    /// larger share (as the XAML starts it): at 1366x768 that is the difference between three rows
+    /// and five.</summary>
+    private const double WidgetsWeight = 1, DataWeight = 2.2;
+
     /// <summary>An open section takes a share of the height; a closed one only its header.</summary>
     private void Section_Toggled(object sender, RoutedEventArgs e)
     {
         if (!IsInitialized || DataSection is null) return;
-        Sections.RowDefinitions[1].Height = WidgetsSection.IsExpanded ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-        Sections.RowDefinitions[2].Height = DataSection.IsExpanded ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        Sections.RowDefinitions[1].Height = WidgetsSection.IsExpanded ? new GridLength(WidgetsWeight, GridUnitType.Star) : GridLength.Auto;
+        Sections.RowDefinitions[2].Height = DataSection.IsExpanded ? new GridLength(DataWeight, GridUnitType.Star) : GridLength.Auto;
     }
 
     private void Search_Changed(object sender, TextChangedEventArgs e)
@@ -278,9 +283,10 @@ public partial class InsertPanel : UserControl
         public static string SampleText(ValueEntry e)
             => e.Sample.ToText(FormatPresets.For(e.Kind) is [var first, ..] ? first.Format : null);
 
+        /// <summary>Everything but the diagnostic values while the box is empty; a search finds those too.</summary>
         public bool Matches(string? query)
-            => string.IsNullOrWhiteSpace(query)
-               || query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w =>
+            => string.IsNullOrWhiteSpace(query) ? !_entry.Diagnostic
+               : query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w =>
                    Label.Contains(w, StringComparison.OrdinalIgnoreCase) || Path.Contains(w, StringComparison.OrdinalIgnoreCase));
 
         public event PropertyChangedEventHandler? PropertyChanged;

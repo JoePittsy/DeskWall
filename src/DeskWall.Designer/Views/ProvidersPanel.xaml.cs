@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -33,6 +33,7 @@ public partial class ProvidersPanel : UserControl
     private IReadOnlyList<ProviderView> _views = [];
     private string? _selected;
     private bool _disposed;
+    private bool _autoOpened;
 
     public ProvidersPanel() : this(ProvidersModel.Default(), new EventBus(SystemClock.Instance, EventBus.DefaultCoalesce, autoWake: false))
     {
@@ -82,6 +83,8 @@ public partial class ProvidersPanel : UserControl
             if (Equals(item.Tag, _selected)) Chooser.SelectedItem = item;
         Chooser.SelectionChanged += Chooser_SelectionChanged;
 
+        // Opens itself the first time a provider has really pushed; after that it is the owner's.
+        if (!_autoOpened && _views.Any(v => v.Remembered)) { Section.IsExpanded = true; _autoOpened = true; }
         Chooser.Visibility = _views.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         EmptyNote.Visibility = _views.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ShowSelected();
@@ -106,6 +109,7 @@ public partial class ProvidersPanel : UserControl
         ForgetButton.IsEnabled = view?.Remembered == true;
         DescribeButton.IsEnabled = view is not null;
         SendButton.IsEnabled = view is not null;
+        Fields.Visibility = view is { Fields.Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
         if (view is null) { TestJson.Text = ""; return; }
 
         foreach (var f in view.Fields)
@@ -137,6 +141,9 @@ public partial class ProvidersPanel : UserControl
         }
         TestJson.Text = Seed(view);
     }
+
+    /// <summary>Whether the section is open (the harness and tests read it).</summary>
+    public bool IsOpen => Section.IsExpanded;
 
     /// <summary>A line the user can edit and send, prefilled from what the provider is known to
     /// publish, because an empty box is a question nobody can answer from memory.</summary>

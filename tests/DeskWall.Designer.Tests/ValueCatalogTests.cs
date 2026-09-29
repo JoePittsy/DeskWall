@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
@@ -103,4 +103,19 @@ public class ValueCatalogTests
     [InlineData(PropertySchema.Editor.Binding, ValueKind.List, true)]
     [InlineData(PropertySchema.Editor.Binding, ValueKind.Text, false)]
     public void Fits(PropertySchema.Editor editor, ValueKind kind, bool fits) => Assert.Equal(fits, ValueCatalog.Fits(editor, kind));
+    /// <summary>Critique 2, P2: the Data list hides values about the source (sample counts, raw bytes
+    /// and seconds) until they are searched for, so the rows that fit are the ones worth dragging.</summary>
+    [Fact]
+    public void Diagnostic_Values_Show_In_The_Data_List_Only_When_Searched_For()
+    {
+        var tree = Rec(("hardware", Rec(("cpu", new NumberValue(0.27)), ("samples", new NumberValue(6)), ("window", new NumberValue(60)))),
+            ("system", Rec(("uptime", new NumberValue(3600)), ("uptimeText", new TextValue("1h")))));
+        var all = ValueCatalog.From(tree, [Def("hardware", "hardware"), Def("system", "system")]);
+        var rows = all.Select(e => new DeskWall.Designer.Views.InsertPanel.DataRow(e)).ToList();
+
+        Assert.Equal(["hardware.cpu", "system.uptimeText"], rows.Where(r => r.Matches("")).Select(r => r.Path));
+        Assert.Equal(["hardware.samples"], rows.Where(r => r.Matches("samples")).Select(r => r.Path));
+        Assert.True(Entry(all, "system.uptime").Diagnostic);
+        Assert.False(Entry(all, "hardware.cpu").Diagnostic);
+    }
 }

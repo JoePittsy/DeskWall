@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DeskWall.Core;
@@ -26,6 +26,10 @@ public sealed class Settings
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
+
+    /// <summary>The Layers panel's height once the owner has moved the splitter under it; null
+    /// means "as tall as its rows, up to a share of the column".</summary>
+    public double? LayersHeight { get; set; }
 
     private static string FilePath => Paths.InRuntime("settings.json");
 

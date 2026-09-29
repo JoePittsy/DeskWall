@@ -1,4 +1,4 @@
-<UserControl x:Class="DeskWall.Designer.Views.InsertPanel"
+﻿<UserControl x:Class="DeskWall.Designer.Views.InsertPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <UserControl.Resources>
@@ -48,7 +48,7 @@
     <Style x:Key="RowButton" TargetType="Button">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Padding" Value="8,4" />
       <Setter Property="Cursor" Value="Hand" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -146,7 +146,7 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
-      <RowDefinition Height="*" />
+      <RowDefinition Height="2.2*" />
     </Grid.RowDefinitions>
 
     <StackPanel Grid.Row="0" Margin="16,8,16,8">
@@ -197,7 +197,7 @@
       </Expander.Header>
       <DockPanel>
         <!-- WPF's TextBox has no placeholder: the hint is a caption behind it, shown while it is empty. -->
-        <Grid DockPanel.Dock="Top" Margin="8,4,8,6">
+        <Grid DockPanel.Dock="Top" Margin="8,2,8,4">
           <TextBox x:Name="SearchBox" TextChanged="Search_Changed"
                    AutomationProperties.Name="Search data"
                    ToolTip="Search the live values by name, such as cpu or drive" />
