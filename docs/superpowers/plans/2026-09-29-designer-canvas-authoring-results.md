@@ -136,3 +136,22 @@ above (the two sequential runs, the plan's run and both confirmations). Every ti
 every forced tick drew 22 components. It also ran resident on the file for 30 s with no ERROR in
 its log. Reading and expanding a v2 file therefore works under native AOT, not only under the
 analyzers.
+
+## Task 2.7: migration, JOES-XPS-17 (2026-09-29, 16:29)
+
+Build installed first: `36613d7` (AOT), via `scripts/publish.ps1 -Aot` from a clean checkout. It read
+the v1 layout and ticked normally (PID 7708).
+
+| Check | Result |
+|---|---|
+| `deskwall migrate --check` (live runtime dir) | `equivalent: yes`, 4 copies. The live layout is customised (clock in Algerian at 312 px, drives, weather and vpn resized and rebound); all of it carried as per-copy overrides. User widgets dir: empty. |
+| `deskwall migrate` | exit 0. `column-system.v1.json` is byte-identical to the original. New file: version 2, 4 copies, 0 loose components. |
+| Daemon reload | `tick LayoutChanged (posted): redrawn 10` right after the write; 0 ERROR lines since. |
+| `frame-state.json` `keysById` | Same 10 ids before and after. Only `clock-1.clock` differs, because the minute changed between the snapshot and the reload. |
+| Render identity | `frame.raw` from forced `--no-apply` ticks in a scratch home, rendered v1 backup, then v2, then v1: `E04C9FC1E647` all three times. |
+| `deskwall verify` | Not run. Desktop icons are hidden on this machine, so there are no shortcut slots to measure. |
+| Designer shows copies in Layers | Left to the owner. An agent does not open the designer on the live runtime dir. |
+
+Rollback: `copy column-system.v1.json column-system.json`.
+
+JOES-PC: not migrated yet.
