@@ -175,7 +175,18 @@ public partial class PreviewView : UserControl
         => _model is null ? [] : Targets.From(_model, _model.Selection);
 
     private void SelectTargets(IEnumerable<Target> targets)
-        => _model?.Select(Targets.ComponentIds(targets));
+        => _model?.Select(targets.SelectMany(Ids).Distinct(StringComparer.Ordinal).ToList());
+
+    /// <summary>What the model's verbs take for a target: a copy's own id (<see cref="Targets.EditIds"/>).</summary>
+    private IReadOnlyList<string> Ids(Target t) => _model is null ? t.ComponentIds : Targets.EditIds(_model.Layout, t);
+
+    /// <summary>The canvas works at layout depth: a press or a nudge while Details has a copy open
+    /// at copy depth acts on the whole copy (moves its origin), as it acted on a whole stamped
+    /// instance before, rather than writing an override on every part.</summary>
+    private void ToLayoutDepth()
+    {
+        if (_model is { Depth.Kind: DepthKind.Copy }) _model.SetDepth(Depth.Layout);
+    }
 
     /// <summary>Where a widget added from the gallery lands, and - while the layout is empty - the
     /// only thing drawn on the canvas besides the photograph. Still the right-hand margin, because
@@ -348,6 +359,7 @@ public partial class PreviewView : UserControl
         base.OnMouseDown(e);
         Focus();
         if (_model is null || e.ChangedButton != MouseButton.Left) return;
+        ToLayoutDepth();
         _downScreen = e.GetPosition(_surface);
         _dragging = false;
         _moving = false;
@@ -454,7 +466,7 @@ public partial class PreviewView : UserControl
                 var to = ResizedBox(handle, p);
                 var corner = Resize.IsCorner(handle);
                 _model.Scale(corner ? "Scale" : "Resize",
-                    _gestureTargets.SelectMany(t => t.ComponentIds).ToList(), _gestureBox, to, corner);
+                    _gestureTargets.SelectMany(Ids).ToList(), _gestureBox, to, corner);
             }
             else if (_moving)
             {
@@ -556,6 +568,7 @@ public partial class PreviewView : UserControl
     public void MoveSelection(string label, int dx, int dy)
     {
         if (_model is null || (dx == 0 && dy == 0)) return;
+        ToLayoutDepth();
         var targets = SelectedTargets();
         if (targets.Count == 0) return;
         _model.MoveGroups(label, Offsets(targets, dx, dy));
@@ -592,13 +605,13 @@ public partial class PreviewView : UserControl
         _ => "Align bottoms",
     };
 
-    private static IReadOnlyList<(IReadOnlyList<string> Ids, int Dx, int Dy)> Offsets(
+    private IReadOnlyList<(IReadOnlyList<string> Ids, int Dx, int Dy)> Offsets(
         IReadOnlyList<Target> targets, int dx, int dy)
-        => targets.Select(t => (t.ComponentIds, dx, dy)).ToList();
+        => targets.Select(t => (Ids(t), dx, dy)).ToList();
 
-    private static IReadOnlyList<(IReadOnlyList<string> Ids, int Dx, int Dy)> Offsets(
+    private IReadOnlyList<(IReadOnlyList<string> Ids, int Dx, int Dy)> Offsets(
         IReadOnlyList<Target> targets, IReadOnlyList<(int Dx, int Dy)> offsets)
-        => targets.Select((t, i) => (t.ComponentIds, offsets[i].Dx, offsets[i].Dy)).ToList();
+        => targets.Select((t, i) => (Ids(t), offsets[i].Dx, offsets[i].Dy)).ToList();
 
     // ---- painting -------------------------------------------------------------------------------
 

@@ -371,6 +371,18 @@ overrides applied:
 the problem through the log and tray (`MissingWidget`, `BrokenWidget`). The designer draws a
 broken-link box at the copy's `x,y`, never a silent blank.
 
+**What the designer writes when a copy is edited on the canvas.** A copy is selected, dragged,
+nudged and deleted as one thing, as a stamped instance was:
+
+- Moving it changes `x`/`y` only; its overrides stay exactly as they were.
+- Resizing it scales its parts in place about the copy's origin, as a stamped instance's components
+  were scaled, and writes the result as overrides: each part's `rect`, plus (on a corner drag) the
+  pixel sizes a corner drag scales (`size`, dial `thickness`, a repeater's `gap` and `cellHeight`).
+  The origin stays put, even for a drag on the top-left grip: the parts' rect overrides carry the
+  move. A copy whose widget is missing has no parts to scale, so its origin follows the box.
+- Deleting it removes the `copies` entry.
+- Details on one of its parts edits that part as an override on this copy, never the widget.
+
 **Where widget files come from.** By key, from `%LOCALAPPDATA%\DeskWall\widgets\` first and then
 the shipped `widgets\` beside the exe. Editing a shipped widget writes the user file under the same
 key, so every copy of it, in every layout on the machine, follows the edit without anything being

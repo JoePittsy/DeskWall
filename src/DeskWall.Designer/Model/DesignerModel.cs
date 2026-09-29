@@ -155,8 +155,25 @@ public sealed class DesignerModel
     public void Select(IEnumerable<string> ids)
     {
         _selection.Clear();
-        foreach (var id in ids) if (Find(id) is not null && !_selection.Contains(id)) _selection.Add(id);
+        foreach (var id in ids) if (Selectable(id) && !_selection.Contains(id)) _selection.Add(id);
         SelectionChanged?.Invoke();
+    }
+
+    /// <summary>A part at the current depth, or (at layout depth) a copy by its id: the canvas selects
+    /// a copy as a whole, including one whose widget is missing and so has no parts at all.</summary>
+    private bool Selectable(string id) => Find(id) is not null || IsCopy(id);
+
+    private bool IsCopy(string id) => Depth.Kind == DepthKind.Layout && Copies.Find(Layout, id) is not null;
+
+    private bool HasCopies => Layout.Copies is { Count: > 0 };
+
+    /// <summary>The widget files on disk changed (the widget editor saved, or one was deleted): drop
+    /// the cached expansion and projection so every copy of them redraws, and tell listeners. Not an
+    /// undo entry: the document did not change, what it links to did.</summary>
+    public void WidgetsChanged()
+    {
+        PruneSelection();
+        AfterChange();
     }
 
     public void ClearSelection() { if (_selection.Count == 0) return; _selection.Clear(); SelectionChanged?.Invoke(); }
@@ -268,7 +285,10 @@ public sealed class DesignerModel
 
     /// <summary>What <see cref="Find"/>, <see cref="Select"/> and the component edits below work
     /// on: the layout itself at layout depth, else the <see cref="Lens"/> projection.</summary>
-    private LayoutFile Parts => _working ?? (Depth.Kind == DepthKind.Layout ? Layout : _projection ??= Lens.Project(this));
+    /// <para>At layout depth a layout with copies is projected too (<see cref="Lens.Project"/>): the
+    /// loose components plus every copy's placed parts, so a copy is moved, scaled and removed by the
+    /// same code as a component. Read it; edit through <see cref="EditAtDepth"/>.</para>
+    public LayoutFile Parts => _working ?? (Depth.Kind == DepthKind.Layout && !HasCopies ? Layout : _projection ??= Lens.Project(this));
 
     /// <summary>A component (at layout depth) or a projected part (at copy and widget depth; read
     /// it, but edit it through <see cref="EditAtDepth"/>).</summary>
@@ -282,7 +302,7 @@ public sealed class DesignerModel
     public void EditAtDepth(string label, Action<LayoutFile> mutate)
     {
         ArgumentNullException.ThrowIfNull(mutate);
-        if (Depth.Kind == DepthKind.Layout) { Edit(label, mutate); return; }
+        if (Depth.Kind == DepthKind.Layout && !HasCopies) { Edit(label, mutate); return; }
         var before = Lens.Project(this);
         var after = Lens.Project(this);
         _working = after;
@@ -291,17 +311,56 @@ public sealed class DesignerModel
         Lens.Commit(this, before, after, label);
     }
 
-    public void Move(IEnumerable<string> ids, int dx, int dy) => EditAtDepth("Move", l =>
+    public void Move(IEnumerable<string> ids, int dx, int dy) => EditAtDepth("Move", l => Offset(l, ids, dx, dy));
+
+    /// <summary>What <paramref name="ids"/> name in <paramref name="l"/> (the layout or projection an
+    /// edit is mutating): components and parts by id, and at layout depth copies by id, each copy
+    /// bringing every part it has. Each thing once, however many of its ids were passed.</summary>
+    private (HashSet<ComponentDef> Parts, List<WidgetCopy> Copies) Resolve(LayoutFile l, IEnumerable<string> ids)
     {
-        foreach (var id in ids) if (Find(id) is { } c) c.Rect = c.Rect.Offset(dx, dy);
-    });
+        var parts = new HashSet<ComponentDef>(ReferenceEqualityComparer.Instance);
+        var copies = new List<WidgetCopy>();
+        foreach (var id in ids)
+        {
+            if (IsCopy(id) && l.Copies?.Find(c => c.Id == id) is { } copy)
+            {
+                if (copies.Contains(copy)) continue;
+                copies.Add(copy);
+                foreach (var c in l.Components) if (IsPartOf(c, copy)) parts.Add(c);
+            }
+            else if (Find(id) is { } c) parts.Add(c);
+        }
+        return (parts, copies);
+    }
+
+    private static bool IsPartOf(ComponentDef c, WidgetCopy copy)
+        => c.Widget == copy.Id && c.Id.StartsWith(copy.Id + ".", StringComparison.Ordinal);
+
+    /// <summary>A copy moves by its origin, with its parts, so its overrides stay as they are.</summary>
+    private void Offset(LayoutFile l, IEnumerable<string> ids, int dx, int dy)
+    {
+        var (parts, copies) = Resolve(l, ids);
+        foreach (var c in parts) c.Rect = c.Rect.Offset(dx, dy);
+        foreach (var copy in copies) { copy.X += dx; copy.Y += dy; }
+    }
 
     /// <summary>Put one component's rect somewhere exactly. Named SetRect and not Resize so the
-    /// canvas's <see cref="Model.Resize"/> maths is reachable by name from in here.</summary>
-    public void SetRect(string id, Rect newRect) => EditAtDepth("Resize", l =>
+    /// canvas's <see cref="Model.Resize"/> maths is reachable by name from in here.
+    /// <para>A copy's id (layout depth) is a <see cref="Scale"/> of the whole copy from its bounds to
+    /// <paramref name="newRect"/>, sizes left alone: an edge drag.</para></summary>
+    public void SetRect(string id, Rect newRect)
     {
-        if (Find(id) is { } c) c.Rect = new Rect(newRect.X, newRect.Y, Math.Max(4, newRect.W), Math.Max(4, newRect.H));
-    });
+        if (IsCopy(id))
+        {
+            var bounds = Copies.Bounds(Copies.Find(Layout, id)!, Expanded(), Finder());
+            Scale("Resize", [id], bounds, new Rect(newRect.X, newRect.Y, Math.Max(4, newRect.W), Math.Max(4, newRect.H)), scaleSizes: false);
+            return;
+        }
+        EditAtDepth("Resize", l =>
+        {
+            if (Find(id) is { } c) c.Rect = new Rect(newRect.X, newRect.Y, Math.Max(4, newRect.W), Math.Max(4, newRect.H));
+        });
+    }
 
     public void SetZ(string id, int z) => EditAtDepth("Set Z", l => { if (Find(id) is { } c) c.Z = z; });
 
@@ -386,7 +445,11 @@ public sealed class DesignerModel
     public void Remove(IEnumerable<string> ids)
     {
         var set = ids.ToHashSet();
-        EditAtDepth("Remove", l => l.Components.RemoveAll(c => set.Contains(c.Id)));
+        EditAtDepth("Remove", l =>
+        {
+            l.Components.RemoveAll(c => set.Contains(c.Id));
+            if (Depth.Kind == DepthKind.Layout) l.Copies?.RemoveAll(c => set.Contains(c.Id));   // its parts go with it
+        });
         if (_selection.RemoveAll(set.Contains) > 0) SelectionChanged?.Invoke();
     }
 
@@ -401,12 +464,12 @@ public sealed class DesignerModel
     {
         ArgumentNullException.ThrowIfNull(moves);
         if (moves.All(m => m.Dx == 0 && m.Dy == 0)) return;
-        EditAtDepth(label, _ =>
+        EditAtDepth(label, l =>
         {
             foreach (var (ids, dx, dy) in moves)
             {
                 if (dx == 0 && dy == 0) continue;
-                foreach (var id in ids) if (Find(id) is { } c) c.Rect = c.Rect.Offset(dx, dy);
+                Offset(l, ids, dx, dy);
             }
         });
     }
@@ -420,9 +483,18 @@ public sealed class DesignerModel
     {
         ArgumentNullException.ThrowIfNull(ids);
         if (ids.Count == 0 || from == to || from.W <= 0 || from.H <= 0) return;
-        EditAtDepth(label, _ =>
+        EditAtDepth(label, l =>
         {
-            foreach (var id in ids) if (Find(id) is { } c) Resize.Apply(c, from, to, scaleSizes);
+            var (parts, copies) = Resolve(l, ids);
+            foreach (var c in parts) Resize.Apply(c, from, to, scaleSizes);
+            // A copy with parts keeps its origin and gets rect (and size) overrides, as a stamped
+            // instance's components were scaled in place. One with none (its widget is missing)
+            // has nothing to scale: its box follows the gesture.
+            foreach (var copy in copies.Where(copy => !l.Components.Any(c => IsPartOf(c, copy))))
+            {
+                var r = Resize.Map(new Rect(copy.X, copy.Y, 1, 1), from, to);
+                copy.X = r.X; copy.Y = r.Y;
+            }
         });
     }
 
@@ -491,6 +563,6 @@ public sealed class DesignerModel
 
     private void PruneSelection()
     {
-        if (_selection.RemoveAll(id => Find(id) is null) > 0) SelectionChanged?.Invoke();
+        if (_selection.RemoveAll(id => !Selectable(id)) > 0) SelectionChanged?.Invoke();
     }
 }

@@ -249,7 +249,10 @@ public partial class MainWindow : Window
     }
 
     private void SelectCopy(string copyId)
-        => _model.Select(Copies.Components(_model.Expanded(), copyId).Select(c => c.Id).ToList());
+    {
+        _model.SetDepth(Depth.Layout);
+        _model.Select([copyId]);
+    }
 
     // ---- commands ------------------------------------------------------------------------------------
 
@@ -354,6 +357,8 @@ public partial class MainWindow : Window
     private void ReloadCatalog()
     {
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
+        // Before anything reads the expansion: the copies of a saved widget redraw from its new file.
+        _model.WidgetsChanged();
         Gallery.Load(_catalog);
         Knobs.Attach(_model);
         _sourcesKey = "";
@@ -387,7 +392,7 @@ public partial class MainWindow : Window
             case Key.Z when ctrl && !typing: _model.Undo(); e.Handled = true; break;
             case Key.Y when ctrl && !typing: _model.Redo(); e.Handled = true; break;
             case Key.Delete when !typing: RemoveSelection(); e.Handled = true; break;
-            case Key.Escape when !typing: _model.ClearSelection(); e.Handled = true; break;
+            case Key.Escape when !typing: _model.ClearSelection(); _model.SetDepth(Depth.Layout); e.Handled = true; break;
         }
     }
 

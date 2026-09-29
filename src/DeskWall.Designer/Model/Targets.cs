@@ -83,7 +83,17 @@ public static class Targets
         ArgumentNullException.ThrowIfNull(componentIds);
         var wanted = componentIds.ToHashSet(StringComparer.Ordinal);
         if (wanted.Count == 0) return [];
-        return all.Where(t => t.ComponentIds.Any(wanted.Contains)).ToList();
+        return all.Where(t => wanted.Contains(t.Id) || t.ComponentIds.Any(wanted.Contains)).ToList();
+    }
+
+    /// <summary>The ids the model's verbs (Select, MoveGroups, Scale, Remove) take for a target: a
+    /// copy's own id, so it is selected, moved and scaled as one thing (and one whose widget is
+    /// missing, with no parts, is still reachable); a loose component's or a v1 stamped group's
+    /// component ids.</summary>
+    public static IReadOnlyList<string> EditIds(LayoutFile layout, Target target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return target.IsWidget && Copies.Find(layout, target.Id) is not null ? [target.Id] : target.ComponentIds;
     }
 
     /// <summary>The topmost target under a canvas point, or null for empty wallpaper. Later wins:

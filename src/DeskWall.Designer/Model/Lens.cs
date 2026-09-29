@@ -39,7 +39,7 @@ public static partial class Lens
                 return parts;
             }
             case DepthKind.Layout:
-                return Clone(model.Layout);
+                return LayoutParts(model);
             default:
                 return new LayoutFile { BaseImage = "" };   // the copy or widget went; PruneDepth climbs out
         }
@@ -64,15 +64,13 @@ public static partial class Lens
         switch (depth.Kind)
         {
             case DepthKind.Layout:
-                model.Edit(label, l => { l.Components = after.Components; l.Sources = after.Sources; l.Copies = after.Copies; });
+                CommitLayout(model, before, after, label);
                 return;
             case DepthKind.Copy when FindCopy(model.Layout, depth.CopyId) is { } copy && Template(model, copy.Widget) is { } template:
             {
                 var local = Clone(after);
                 Unplace(local, copy.Id + ".", copy.X, copy.Y, copy.Z);
-                var overrides = Overrides.Diff(WidgetExpander.Baseline(template, copy.Knobs), local);
-                var unseen = Unseen(template, copy, overrides);
-                foreach (var (key, value) in unseen) overrides.TryAdd(key, value);
+                var overrides = CopyOverrides(template, copy, local);
                 model.Edit(label, l => FindCopy(l, copy.Id)!.Overrides = overrides);
                 return;
             }
@@ -181,9 +179,11 @@ public static partial class Lens
     private static WidgetCopy? FindCopy(LayoutFile layout, string? copyId)
         => copyId is null ? null : layout.Copies?.Find(c => c.Id == copyId);
 
-    private static WidgetTemplate? Template(DesignerModel model, string key)
+    private static WidgetTemplate? Template(DesignerModel model, string key) => TryTemplate(model.Finder(), key);
+
+    private static WidgetTemplate? TryTemplate(Func<string, WidgetTemplate?> find, string key)
     {
-        try { return model.Finder()(key); }
+        try { return find(key); }
 #pragma warning disable CA1031 // a widget that fails to load has nothing to project; the canvas shows the broken link
         catch (Exception) { return null; }
 #pragma warning restore CA1031
@@ -202,6 +202,75 @@ public static partial class Lens
         var parts = WidgetExpander.Baseline(template, copy.Knobs);
         foreach (var (key, value) in copy.Overrides.OrderBy(o => IsHidden(o.Key))) KnobSets.Apply(parts, key, value);
         return parts;
+    }
+
+    /// <summary>Layout depth, for a layout with copies: the layout, plus every copy's parts (knobs and
+    /// overrides applied) placed at its origin as copy depth places them, with <c>Widget</c> set to
+    /// the copy's id. So the model's Move, Scale, SetRect and Remove reach a copy's parts unchanged,
+    /// and <see cref="CommitLayout"/> turns them back into the copy's position and overrides. A copy
+    /// whose widget is missing has no parts here; it is still in <c>Copies</c>, which the model's
+    /// verbs move and remove directly.</summary>
+    private static LayoutFile LayoutParts(DesignerModel model)
+    {
+        var parts = Clone(model.Layout);
+        if (parts.Copies is not { Count: > 0 } copies) return parts;
+        var find = model.Finder();
+        foreach (var copy in copies)
+        {
+            if (TryTemplate(find, copy.Widget) is not { } template) continue;
+            var own = CopyParts(template, copy);
+            Place(own, copy.Id + ".", copy.X, copy.Y, copy.Z);
+            foreach (var c in own.Components) { c.Widget = copy.Id; parts.Components.Add(c); }
+        }
+        return parts;
+    }
+
+    /// <summary>The inverse of <see cref="LayoutParts"/>: loose components back into the layout, and
+    /// for each copy its (possibly moved) origin from <c>after.Copies</c> and, only when its parts
+    /// changed relative to that origin, new overrides against the knob-applied baseline. A pure move
+    /// therefore changes <c>x</c>/<c>y</c> and nothing else; a resize writes rect (and, on a corner
+    /// drag, size) overrides; a copy removed from <c>Copies</c> takes its parts with it.</summary>
+    private static void CommitLayout(DesignerModel model, LayoutFile before, LayoutFile after, string label)
+    {
+        var copyIds = (model.Layout.Copies ?? []).Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        var loose = model.Layout.Components.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        bool PartOf(ComponentDef c, string copyId) => !loose.Contains(c.Id) && c.Widget == copyId;
+        bool IsPart(ComponentDef c) => !loose.Contains(c.Id) && c.Widget is { } w && copyIds.Contains(w);
+
+        var copies = after.Copies;
+        if (copies is not null)
+        {
+            var find = model.Finder();
+            foreach (var copy in copies)
+            {
+                if (FindCopy(model.Layout, copy.Id) is not { } was || TryTemplate(find, copy.Widget) is not { } template) continue;
+                var sources = CopyParts(template, was).Sources;
+                var then = Local(before.Components.Where(c => PartOf(c, copy.Id)), was, sources);
+                var now = Local(after.Components.Where(c => PartOf(c, copy.Id)), copy, sources);
+                if (then.ToJson() != now.ToJson()) copy.Overrides = CopyOverrides(template, was, now);
+            }
+        }
+        var components = after.Components.Where(c => !IsPart(c)).ToList();
+        model.Edit(label, l => { l.Components = components; l.Sources = after.Sources; l.Copies = copies; });
+    }
+
+    /// <summary>A copy's placed parts in template-local terms, with the copy's sources beside them
+    /// so <see cref="Overrides.Diff"/> keeps its source overrides.</summary>
+    private static LayoutFile Local(IEnumerable<ComponentDef> parts, WidgetCopy at, List<SourceDef> sources)
+    {
+        var local = Clone(new LayoutFile { BaseImage = "", Components = parts.ToList(), Sources = sources });
+        foreach (var c in local.Components) c.Widget = null;
+        Unplace(local, at.Id + ".", at.X, at.Y, at.Z);
+        return local;
+    }
+
+    /// <summary>The overrides that give <paramref name="local"/>: the diff against the baseline, plus
+    /// the existing ones it cannot regenerate (<see cref="Unseen"/>).</summary>
+    private static Dictionary<string, PropertyValue> CopyOverrides(WidgetTemplate template, WidgetCopy copy, LayoutFile local)
+    {
+        var overrides = Overrides.Diff(WidgetExpander.Baseline(template, copy.Knobs), local);
+        foreach (var (key, value) in Unseen(template, copy, overrides)) overrides.TryAdd(key, value);
+        return overrides;
     }
 
     /// <summary>The copy's overrides that <see cref="Overrides.Diff"/> cannot regenerate: those that
