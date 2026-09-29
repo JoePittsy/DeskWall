@@ -92,13 +92,19 @@ public partial class LayersPanel : UserControl
         line.Children.Add(bar);
         line.Children.Add(Text(row.Name, 14, "TextFillColorPrimaryBrush"));
         if (row.Detail.Length > 0) line.Children.Add(Text(row.Detail, 12, "TextFillColorSecondaryBrush", 6));
+        // Two different facts, told apart by shape as well as by word: "changed here" (this copy has
+        // its own values; Reset puts them back) is a filled dot and plain text, "edited widget" (the
+        // widget itself is your fork of a shipped one; every copy has it) an outlined pill.
         if (row.HasOverride && row.Kind != LayerKind.Orphan)
         {
-            var dot = new Ellipse { Width = 7, Height = 7, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "Overridden on this copy" };
+            var dot = new Ellipse { Width = 7, Height = 7, Margin = new Thickness(8, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
             dot.SetResourceReference(Shape.FillProperty, "AccentFillColorDefaultBrush");
-            line.Children.Add(dot);
+            var changed = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = ChangedTip(row), Background = Brushes.Transparent };
+            changed.Children.Add(dot);
+            changed.Children.Add(Text(ChangedHere, 12, "TextFillColorSecondaryBrush"));
+            line.Children.Add(changed);
         }
-        if (row.IsForkedShipped) line.Children.Add(Badge("edited", null, "Your edited version of a shipped widget (as the Insert card says)"));
+        if (row.IsForkedShipped) line.Children.Add(Badge(EditedWidget, null, "The widget itself is your edited version of a shipped one: every copy of it shows your edit"));
         if (row.IsBroken) line.Children.Add(Badge("broken", "SystemFillColorCriticalBackgroundBrush", $"Widget '{row.Name}' is missing or fails to load"));
         if (row.IsOrphan) line.Children.Add(Badge("orphan", "SystemFillColorCautionBackgroundBrush",
             row.Kind == LayerKind.Orphan ? "The widget no longer has what this names; it is kept, and applies again if it comes back" : "Has an override the widget no longer matches"));
@@ -120,16 +126,27 @@ public partial class LayersPanel : UserControl
         return t;
     }
 
+    internal const string ChangedHere = "changed here", EditedWidget = "edited widget";
+
+    private static string ChangedTip(LayerRow row) => row.Kind == LayerKind.Copy
+        ? "This copy has values of its own; the widget and its other copies do not. Reset puts them back."
+        : "This part has a value of its own on this copy. Reset puts it back.";
+
     /// <summary>A state word. With a background it is a pill of the InfoBar's own severity fill with
     /// primary text: the severity colours as text fall under 4.5:1 on the selected row in the light
-    /// theme (caution measured 4.36:1), their background fills under primary text do not. "edited"
-    /// is accent text, over 8:1 in both themes.</summary>
+    /// theme (caution measured 4.36:1), their background fills under primary text do not. "edited
+    /// widget" is accent text in an accent outline, over 8:1 in both themes.</summary>
     private static Border Badge(string text, string? background, string tip)
     {
         var t = Text(text, 12, background is null ? "AccentTextFillColorPrimaryBrush" : "TextFillColorPrimaryBrush");
         t.FontWeight = FontWeights.SemiBold;
         var pill = new Border { Child = t, CornerRadius = new CornerRadius(4), Padding = new Thickness(5, 0, 5, 1), Margin = new Thickness(8, 0, 0, 0), ToolTip = tip, VerticalAlignment = VerticalAlignment.Center };
         if (background is not null) pill.SetResourceReference(Border.BackgroundProperty, background);
+        else
+        {
+            pill.BorderThickness = new Thickness(1);
+            pill.SetResourceReference(Border.BorderBrushProperty, "AccentFillColorDefaultBrush");
+        }
         return pill;
     }
 
@@ -143,8 +160,8 @@ public partial class LayersPanel : UserControl
             case LayerKind.Orphan: parts.Add($"orphan {row.Detail} {row.Name}"); break;
             default: parts.Add(row.Name); parts.Add(row.Detail); break;
         }
-        if (row.HasOverride && row.Kind != LayerKind.Orphan) parts.Add("overridden");
-        if (row.IsForkedShipped) parts.Add("edited version of a shipped widget");
+        if (row.HasOverride && row.Kind != LayerKind.Orphan) parts.Add(ChangedHere);
+        if (row.IsForkedShipped) parts.Add(EditedWidget + ", your version of a shipped one");
         if (row.IsBroken) parts.Add("broken widget");
         if (row.IsOrphan && row.Kind == LayerKind.Copy) parts.Add("has orphan overrides");
         return string.Join(", ", parts);

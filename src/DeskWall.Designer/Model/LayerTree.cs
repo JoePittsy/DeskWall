@@ -20,7 +20,9 @@ public enum LayerKind
 
 /// <summary>One row of the Layers panel.</summary>
 /// <param name="Name">What the row says: the widget's name for a copy (its key when the widget is
-/// missing), the part or component id, or the orphan override key.</param>
+/// missing), followed by what tells it from its siblings when the layout has more than one copy
+/// of that widget ("Hardware dial · GPU", <see cref="LayerTree.Distinguish"/>); the part or
+/// component id; or the orphan override key.</param>
 /// <param name="Detail">A secondary word: the copy id, or the component type.</param>
 /// <param name="SelectId">What <see cref="DesignerModel.Select"/> takes for this row: the copy id, the
 /// expanded part id ("&lt;copy&gt;.&lt;part&gt;"), the component id; for a child, its repeater's id
@@ -87,6 +89,7 @@ public static class LayerTree
             var copy = copies[n];
             var parts = Enumerable.Range(0, components.Count).Where(i => components[i].Widget == copy.Id).ToList();
             var row = CopyRow(copy, parts.Select(i => components[i]).ToList(), expansion, find, isForked);
+            if (Distinguish(copies, copy, find) is { } says) row = row with { Name = row.Name + " · " + says };
             if (parts.Count == 0) top.Add((row, int.MaxValue, n));
             else
             {
@@ -95,6 +98,26 @@ public static class LayerTree
             }
         }
         return Front(top);
+    }
+
+    /// <summary>What tells <paramref name="copy"/> from the other copies of its widget in
+    /// <paramref name="copies"/>: its value of the first knob (in the widget's order) on which they
+    /// do not all agree, as a human reads it ("GPU", part 0 of a composite choice). Null for the only
+    /// copy of its widget, or when every knob agrees (the copy id beside the name tells them apart).</summary>
+    public static string? Distinguish(IReadOnlyList<WidgetCopy> copies, WidgetCopy copy, Func<string, WidgetTemplate?> find)
+    {
+        ArgumentNullException.ThrowIfNull(copies);
+        ArgumentNullException.ThrowIfNull(copy);
+        var siblings = copies.Where(c => string.Equals(c.Widget, copy.Widget, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (siblings.Count < 2 || Copies.TryFind(find, copy.Widget) is not { } template) return null;
+        foreach (var knob in template.Knobs)
+        {
+            if (siblings.Select(c => Copies.KnobValue(c, knob)).Distinct(StringComparer.Ordinal).Count() < 2) continue;
+            var value = Copies.KnobValue(copy, knob);
+            var shown = value.Split("||")[0].Trim();
+            return shown.Length > 0 ? shown : null;
+        }
+        return null;
     }
 
     private static List<LayerRow> Front(IEnumerable<(LayerRow Row, int Z, int Order)> rows)

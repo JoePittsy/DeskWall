@@ -54,6 +54,40 @@ public class LayerTreeTests
 
     private static LayerRow Row(IReadOnlyList<LayerRow> rows, string key) => LayerTree.Flatten(rows).Single(r => r.Key == key);
 
+    /// <summary>Critique 3, P2-b: four "Hardware dial" rows said nothing about which was which.</summary>
+    [Fact]
+    public void Copies_Of_One_Widget_Are_Named_By_The_Knob_That_Tells_Them_Apart()
+    {
+        var layout = LayoutFile.Parse("""
+            { "version": 2, "baseImage": "x.jpg", "sources": [], "components": [],
+              "copies": [
+                { "id": "dial-1", "widget": "dial", "x": 0, "y": 0 },
+                { "id": "dial-2", "widget": "dial", "x": 0, "y": 100, "knobs": { "metric": "GPU||hardware.gpu||x||gpu" } },
+                { "id": "dial-3", "widget": "dial", "x": 0, "y": 200, "knobs": { "metric": "GPU||hardware.gpu||x||gpu", "warnAt": "0.5" } },
+                { "id": "drives-1", "widget": "drives", "x": 0, "y": 300 } ] }
+            """);
+        WidgetTemplate? Find(string key) => key switch
+        {
+            "dial" => new WidgetTemplate
+            {
+                Name = "Hardware dial", Key = "dial", Description = "d", Width = 80, Height = 80, Components = Dial().Components,
+                Knobs =
+                [
+                    new Knob("metric", "Metric", KnobType.Choice, "CPU||hardware.cpu||x||cpu", [], ["CPU||hardware.cpu||x||cpu", "GPU||hardware.gpu||x||gpu"], null, null),
+                    new Knob("warnAt", "Warn at", KnobType.Number, "0.9", [], null, 0, 1),
+                ],
+            },
+            "drives" => Drives(),
+            _ => null,
+        };
+        var rows = LayerTree.Build(layout, WidgetExpander.Expand(layout, Find), Find, _ => false);
+        Assert.Equal("Hardware dial · CPU", Row(rows, "dial-1").Name);
+        Assert.Equal("Hardware dial · GPU", Row(rows, "dial-2").Name);
+        Assert.Equal("Hardware dial · GPU", Row(rows, "dial-3").Name);   // Metric differs first, so Metric names them
+        Assert.Equal("Drives", Row(rows, "drives-1").Name);                    // the only one of its widget
+        Assert.Null(LayerTree.Distinguish([layout.Copies![0], layout.Copies[0]], layout.Copies[0], Find));   // nothing differs
+    }
+
     [Fact]
     public void The_Override_Dot_Is_On_The_Overridden_Part_Only()
     {
