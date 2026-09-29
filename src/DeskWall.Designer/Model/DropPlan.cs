@@ -11,8 +11,9 @@ public sealed record DropTarget(int X, int Y, string? PartId = null);
 
 /// <summary>One thing a drop can do. Either <see cref="Create"/> is set (a new part, bound to the
 /// value, centred on the drop point when applied) or <see cref="Property"/> is (bind that property
-/// of the target part to <see cref="Value"/>).</summary>
-public sealed record DropOption(string Label, ComponentDef? Create, string? Property, PropertyValue Value);
+/// of the target part to <see cref="Value"/>), or at copy depth <see cref="Knob"/> is as well (set
+/// that knob of the copy to <see cref="Choice"/>, which is what gives the property this value).</summary>
+public sealed record DropOption(string Label, ComponentDef? Create, string? Property, PropertyValue Value, string? Knob = null, string? Choice = null);
 
 /// <summary>What dropping a live value (brief section 3, "Binding by dragging") offers, worked out
 /// without touching the document, so the canvas can show the options in a popover and then
@@ -24,7 +25,13 @@ public sealed record DropOption(string Label, ComponentDef? Create, string? Prop
 /// property offers one option per preset. A part whose property already shows this value offers the
 /// Text options instead, which is how dropping "CPU load" on its own dial gives the "27%" in the
 /// middle; a part with nothing that fits offers the empty-canvas options.</item>
-/// <item>At copy depth nothing that creates a part is offered: a copy's overrides cannot add one.</item>
+/// <item>At layout depth a drop on a placed copy's part is a drop on empty canvas: a new loose part
+/// at that point. A copy's insides are bound only at copy depth, where it is visibly open.</item>
+/// <item>At copy depth nothing that creates a part is offered: a copy's overrides cannot add one.
+/// On a property a knob sets, the knob choice that gives this value comes first ("Set Metric to
+/// GPU"), then the override, labelled as one; <see cref="Note"/> says which was done.</item>
+/// <item>At widget depth a drop outside the widget's frame (<see cref="Insert.InFrame"/>) offers
+/// nothing: the frame hugs its parts, so a stray drop would grow every copy.</item>
 /// </list>
 /// Applying is one undo entry, and adds the value's source to the layout (or to the widget, at
 /// widget depth) when it is not there already.</summary>
@@ -45,19 +52,72 @@ public sealed class DropPlan
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(value);
         ArgumentNullException.ThrowIfNull(target);
-        if (target.PartId is { } id && model.Find(id) is { } part)
+        if (!Insert.InFrame(model, target.X, target.Y)) return new(value, target, []);
+        var layoutDepth = model.Depth.Kind == DepthKind.Layout;
+        if (target.PartId is { } id && model.Find(id) is { } part
+            && !(layoutDepth && part.Widget is { } w && Copies.Find(model.Layout, w) is not null))
         {
             var prop = PropertySchema.For(part).FirstOrDefault(p => Bindable.Contains(p.Name) && Fits(p, value.Kind));
             if (prop is null) return new(value, target, CanvasOptions(model, value));
             var current = prop.Get(part);
             if (current?.Binding is { } b && SamePath(b, value.Path))
                 return new(value, target, model.Depth.Kind == DepthKind.Copy ? [] : TextOptions(value));
-            IReadOnlyList<DropOption> options = prop.Name == "Text"
-                ? FormatPresets.For(value.Kind).Select(p => new DropOption("Show as " + p.Label, null, prop.Name, Bound(value, p.Format))).ToList()
-                : [new DropOption("Bind " + prop.Name.ToLowerInvariant(), null, prop.Name, Bound(value, null))];
+            var onCopy = model.Depth.Kind == DepthKind.Copy;
+            List<DropOption> options = prop.Name == "Text"
+                ? FormatPresets.For(value.Kind).Select(p => new DropOption((onCopy ? OverrideShowAs : "Show as ") + p.Label, null, prop.Name, Bound(value, p.Format))).ToList()
+                : [new DropOption(onCopy ? OverridePrefix : "Bind " + prop.Name.ToLowerInvariant(), null, prop.Name, Bound(value, null))];
+            if (onCopy && KnobOption(model, part.Id, prop.Name, value) is { } knob) options.Insert(0, knob);
             return new(value, target, options);
         }
-        return new(value, target, CanvasOptions(model, value));
+        // A copy's part at layout depth is not a target: the drop makes a loose part there.
+        return new(value, target with { PartId = null }, CanvasOptions(model, value));
+    }
+
+    /// <summary>What the last <see cref="Apply"/> did to a copy, in a sentence for the status line
+    /// (an override written or taken off, or a knob set); null when it touched no copy.</summary>
+    public string? Note { get; private set; }
+
+    /// <summary>How an override option's label starts at copy depth.</summary>
+    public const string OverridePrefix = "Override on this copy";
+
+    /// <summary>The same, for a text format option ("Override on this copy: show as 27%").</summary>
+    public const string OverrideShowAs = OverridePrefix + ": show as ";
+
+    /// <summary>At copy depth, a knob of the copy's widget that sets <paramref name="property"/> of
+    /// <paramref name="partId"/> and has a choice under which that property shows
+    /// <paramref name="value"/> (format aside): "Set Metric to GPU". Null when there is none.</summary>
+    private static DropOption? KnobOption(DesignerModel model, string partId, string property, ValueEntry value)
+    {
+        if (model.Depth.CopyId is not { } copyId || Copies.Find(model.Layout, copyId) is not { } copy
+            || Copies.TryFind(model.Finder(), copy.Widget) is not { } template) return null;
+        var key = OverrideKey(copyId, partId, property);
+        foreach (var knob in template.Knobs)
+        {
+            if (knob.Choices is not { Count: > 0 } choices || !knob.Sets.Any(s => string.Equals(SetPath(s), key, StringComparison.OrdinalIgnoreCase))) continue;
+            foreach (var choice in choices)
+            {
+                var knobs = new Dictionary<string, string>(copy.Knobs, StringComparer.Ordinal) { [knob.Id] = choice };
+                if (KnobSets.Get(WidgetExpander.Baseline(template, knobs), key)?.Binding is { } b && SamePath(b, value.Path))
+                    return new DropOption($"Set {knob.Label} to {choice.Split("||")[0]}", null, property, Bound(value, null), knob.Id, choice);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>A knob <c>sets</c> entry's target path, without its <c>=bind:</c> or <c>:{token}</c> tail.</summary>
+    private static string SetPath(string set)
+    {
+        var bind = set.IndexOf("=bind:", StringComparison.Ordinal);
+        if (bind >= 0) return set[..bind];
+        var token = set.LastIndexOf(":{", StringComparison.Ordinal);
+        return token >= 0 ? set[..token] : set;
+    }
+
+    /// <summary>The override key for a projected part's property: <c>components.dial.fraction</c>.</summary>
+    private static string OverrideKey(string copyId, string partId, string property)
+    {
+        var local = partId.StartsWith(copyId + ".", StringComparison.Ordinal) ? partId[(copyId.Length + 1)..] : partId;
+        return $"components.{local}.{char.ToLowerInvariant(property[0])}{property[1..]}";
     }
 
     /// <summary>Do <paramref name="option"/> (one of <see cref="Options"/>) as one undo entry.
@@ -66,6 +126,7 @@ public sealed class DropPlan
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(option);
+        Note = null;
         return option.Create is { } create ? ApplyCreate(model, create, option.Label) : ApplyBind(model, option);
     }
 
@@ -93,7 +154,8 @@ public sealed class DropPlan
         var label = "Bind " + Value.Label;
         if (model.Depth is { Kind: DepthKind.Copy, CopyId: { } copyId })
         {
-            BindOnCopy(model, copyId, partId, property, option.Value, label);
+            if (option is { Knob: { } knob, Choice: { } choice }) SetKnobOnCopy(model, copyId, partId, property, knob, choice, option.Label);
+            else BindOnCopy(model, copyId, partId, property, option.Value, label);
             return partId;
         }
         model.EditAtDepth(label, l =>
@@ -113,8 +175,7 @@ public sealed class DropPlan
     private void BindOnCopy(DesignerModel model, string copyId, string partId, string property, PropertyValue value, string label)
     {
         if (model.Layout.Copies?.Find(c => c.Id == copyId) is not { } copy || model.Finder()(copy.Widget) is not { } template) return;
-        var local = partId.StartsWith(copyId + ".", StringComparison.Ordinal) ? partId[(copyId.Length + 1)..] : partId;
-        var key = $"components.{local}.{char.ToLowerInvariant(property[0])}{property[1..]}";
+        var key = OverrideKey(copyId, partId, property);
         var baseline = KnobSets.Get(WidgetExpander.Baseline(template, copy.Knobs), key);
         var matchesWidget = baseline is not null && Overrides.Same(baseline, value);
         var current = copy.Overrides.GetValueOrDefault(key);
@@ -127,6 +188,23 @@ public sealed class DropPlan
             if (matchesWidget) c.Overrides.Remove(key);
             else c.Overrides[key] = value;
         });
+        Note = matchesWidget
+            ? $"{Value.Label} is the widget's own again on this copy: its override is gone."
+            : $"{OverridePrefix}: {Value.Label}. The widget and its other copies are unchanged; Reset in the properties panel takes it off.";
+    }
+
+    /// <summary>The knob route at copy depth: the copy's knob takes the choice (one undo entry), and
+    /// an override of the same property goes, or it would go on hiding what the knob now says.</summary>
+    private void SetKnobOnCopy(DesignerModel model, string copyId, string partId, string property, string knobId, string choice, string label)
+    {
+        if (Copies.Find(model.Layout, copyId) is not { } copy || Copies.TryFind(model.Finder(), copy.Widget) is not { } template) return;
+        var key = OverrideKey(copyId, partId, property);
+        model.Edit(label, l =>
+        {
+            Copies.SetKnob(l, template, copyId, knobId, choice);
+            Copies.Find(l, copyId)!.Overrides.Remove(key);
+        });
+        Note = label + " on this copy.";
     }
 
     /// <summary>The sources the value's source would join: the widget's at widget depth, else the

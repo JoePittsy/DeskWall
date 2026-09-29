@@ -81,6 +81,10 @@ public static partial class Lens
                 if (FindCopy(model.Layout, depth.CopyId) is { } origin) Unplace(local, origin.Id + ".", origin.X, origin.Y, origin.Z);
                 var (dx, dy) = Hug(local, out var width, out var height);
                 var edited = With(template, local.Components, local.Sources, width ?? template.Width, height ?? template.Height);
+                // A frame that more than doubles in one edit is nearly always a part that landed far
+                // from the rest; every copy grows with it, so it is said, not just done.
+                if (template.Components.Count > 0 && (long)edited.Width * edited.Height > 2L * template.Width * template.Height)
+                    model.Notify($"The {template.Name} widget grew from {template.Width}x{template.Height} to {edited.Width}x{edited.Height}, and every copy with it. Ctrl+Z takes it back.");
                 model.Edit(label, (l, edits) =>
                 {
                     edits[key] = edited;

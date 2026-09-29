@@ -303,7 +303,7 @@ public partial class SourcesPanel : UserControl
             var box = new TextBox { Text = values[field.Key], ToolTip = field.Hint ?? values[field.Key] };
             void Do() => Commit(def.Name, field.Key, box.Text.Trim());
             box.LostFocus += (_, _) => Do();
-            box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Do(); Keyboard.ClearFocus(); } };
+            box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Do(); Window.GetWindow(box)?.Focus(); } };
             System.Windows.Automation.AutomationProperties.SetName(box, field.Label);
             row.Children.Add(box);
         }

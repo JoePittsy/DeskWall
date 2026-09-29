@@ -128,13 +128,14 @@ public partial class MainWindow : Window
     /// made here and the Insert panel is the first thing seen, which is the whole first-run story.</summary>
     private void Open(DisplaySignature signature, LayoutResolution? resolution)
     {
-        if (_model is not null) { _model.Changed -= OnModelChanged; _model.DepthChanged -= OnDepthChanged; }
+        if (_model is not null) { _model.Changed -= OnModelChanged; _model.DepthChanged -= OnDepthChanged; _model.Notice -= SetStatus; }
 
         var target = ShellState.OpenFrom(resolution, signature, LoadAuthored, DefaultBaseImage,
             WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir));
         _model = new DesignerModel(target.Layout, target.Signature, target.Path);
         _model.Changed += OnModelChanged;
         _model.DepthChanged += OnDepthChanged;
+        _model.Notice += SetStatus;
         _backupBeforeApply = target.Migrated;
 
         ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
@@ -362,8 +363,24 @@ public partial class MainWindow : Window
     private bool Apply()
     {
         // A knob commits on LostFocus; Ctrl+S never moves focus, so without this the value being
-        // typed is not in the document that gets written.
+        // typed is not in the document that gets written. Focus goes back afterwards (to the canvas
+        // when what had it is gone, as a committed knob's row is rebuilt): with none, WPF routes no
+        // key anywhere and Esc could not climb.
+        var focused = Keyboard.FocusedElement;
         Keyboard.ClearFocus();
+        try { return Save(); }
+        finally { RestoreFocus(focused, Preview); }
+    }
+
+    /// <summary>Focus <paramref name="element"/> again if it is still on screen, else <paramref name="fallback"/>.</summary>
+    internal static void RestoreFocus(IInputElement? element, UIElement fallback)
+    {
+        if (element is UIElement { IsVisible: true, Focusable: true } u && PresentationSource.FromVisual(u) is not null && u.Focus()) return;
+        fallback.Focus();
+    }
+
+    private bool Save()
+    {
         var created = _model.Path is null;
         var dest = _model.Path ?? ShellState.LayoutPathFor(_model.Signature);
         try

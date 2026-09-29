@@ -53,13 +53,37 @@ public static class Insert
     /// overrides cannot add a part (Ctrl+Alt+K edits its widget).</summary>
     public static bool CanAddPart(DesignerModel model) => model.Depth.Kind != DepthKind.Copy;
 
+    /// <summary>How far outside its frame a drop at widget depth still counts as inside, in canvas px.</summary>
+    public const int FrameMargin = 16;
+
+    /// <summary>What a drop at widget depth is refused with.</summary>
+    public const string OutsideFrame = "Drop inside the widget, or press Esc to leave it.";
+
+    /// <summary>At widget depth, the widget's frame on the canvas: its origin copy's position (0, 0
+    /// with no copy) and the widget's size. Null at the other depths, or for a widget that cannot be read.</summary>
+    public static Rect? Frame(DesignerModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (model.Depth is not { Kind: DepthKind.Widget, WidgetKey: { } key } || Copies.TryFind(model.Finder(), key) is not { } t) return null;
+        var origin = model.Depth.CopyId is { } id ? Copies.Find(model.Layout, id) : null;
+        return new Rect(origin?.X ?? 0, origin?.Y ?? 0, t.Width, t.Height);
+    }
+
+    /// <summary>Whether a drop at (x, y) may go in: anywhere except, at widget depth, further than
+    /// <see cref="FrameMargin"/> outside the frame. The frame hugs its parts (brief section 3), so a
+    /// part dropped across the canvas would grow the widget, and every copy of it, to reach it.</summary>
+    public static bool InFrame(DesignerModel model, double x, double y)
+        => Frame(model) is not { } f
+           || (x >= f.X - FrameMargin && x < f.Right + FrameMargin && y >= f.Y - FrameMargin && y < f.Bottom + FrameMargin);
+
     /// <summary>A new part of <paramref name="kind"/> centred on (x, y), as one undo entry: a loose
     /// component at layout depth, a part of the widget at widget depth. Returns its id, or null at copy
-    /// depth. Text is centred in its box, so the word lands where it was dropped.</summary>
+    /// depth, and outside the frame at widget depth (<see cref="InFrame"/>). Text is centred in its
+    /// box, so the word lands where it was dropped.</summary>
     public static string? Part(DesignerModel model, PartKind kind, int x, int y)
     {
         ArgumentNullException.ThrowIfNull(model);
-        if (!CanAddPart(model)) return null;
+        if (!CanAddPart(model) || !InFrame(model, x, y)) return null;
         var def = WidgetDocument.NewPart(kind);
         if (def is TextDef text) text.Align = PropertyValue.Literal("center");
         def.Rect = def.Rect with { X = x - def.Rect.W / 2, Y = y - def.Rect.H / 2 };

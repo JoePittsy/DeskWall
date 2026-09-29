@@ -51,6 +51,12 @@ public sealed class DesignerModel
     /// <summary>Raised by <see cref="SetDepth"/> when the depth actually changes.</summary>
     public event Action? DepthChanged;
 
+    /// <summary>A sentence about an edit that the shell's status line should show (a widget frame
+    /// that grew a lot in one edit). Raised before the edit's <see cref="Changed"/>.</summary>
+    public event Action<string>? Notice;
+
+    internal void Notify(string message) => Notice?.Invoke(message);
+
     // ---- widgets and depth (the Phase 2 seam) ------------------------------------------------
 
     private readonly Dictionary<string, WidgetTemplate> _widgetEdits = new(StringComparer.OrdinalIgnoreCase);

@@ -418,10 +418,10 @@ public partial class PreviewView : UserControl
                 if (was is not null && _model.Depth.Kind == DepthKind.Layout) _model.Select([was]);
                 break;
         }
-
-        static bool Inside(CRect? r, double x, double y)
-            => r is { } b && x >= b.X && x < b.Right && y >= b.Y && y < b.Bottom;
     }
+
+    private static bool Inside(CRect? r, double x, double y)
+        => r is { } b && x >= b.X && x < b.Right && y >= b.Y && y < b.Bottom;
 
     // ---- the grid ---------------------------------------------------------------------------------
 
@@ -587,6 +587,14 @@ public partial class PreviewView : UserControl
         var canvas = _surface.ToCanvas(_downScreen);
         var hit = Targets.Hit(AllTargets(), canvas.X, canvas.Y);
         var adding = (Keyboard.Modifiers & AddToSelectionModifier) != 0;
+
+        // Empty wallpaper outside the open copy or widget climbs one depth, as a click outside an
+        // instance does in Figma. A double-click there then finishes the climb (OnDoubleClick).
+        if (hit is null && _model.Depth.Kind != DepthKind.Layout && !Inside(OpenBounds(), canvas.X, canvas.Y))
+        {
+            _model.Climb();
+            return;
+        }
 
         if (hit is null)
         {
@@ -798,10 +806,23 @@ public partial class PreviewView : UserControl
 
     private void DragEffect(DragEventArgs e)
     {
-        e.Effects = e.Data.GetData(InsertPanel.DataFormat) is { } payload && CanDrop(payload, e.GetPosition(_surface))
-            ? DragDropEffects.Copy
-            : DragDropEffects.None;
+        var at = e.GetPosition(_surface);
+        var payload = e.Data.GetData(InsertPanel.DataFormat);
+        e.Effects = payload is not null && CanDrop(payload, at) ? DragDropEffects.Copy : DragDropEffects.None;
+        // A refused drop is never delivered (OLE sends DragLeave, not Drop), so the reason goes up
+        // while the pointer is outside, once each time it leaves the frame.
+        var outside = payload is not null && _model is not null && !InFrame(at);
+        if (outside && !_saidOutside) Status?.Invoke(Insert.OutsideFrame);
+        _saidOutside = outside;
         e.Handled = true;
+    }
+
+    private bool _saidOutside;
+
+    private bool InFrame(Point screen)
+    {
+        var (cx, cy) = _view.ToCanvas(screen.X, screen.Y);
+        return _model is null || Insert.InFrame(_model, cx, cy);
     }
 
     protected override void OnDrop(DragEventArgs e)
@@ -820,15 +841,24 @@ public partial class PreviewView : UserControl
         if (_model is null) return false;
         return payload switch
         {
-            PartKind => Insert.CanAddPart(_model),
+            PartKind => Insert.CanAddPart(_model) && InFrame(screen),
             WidgetTemplate => _model.Depth.Kind == DepthKind.Layout,
             ValueEntry value => Plan(value, screen).Options.Count > 0,
             _ => false,
         };
     }
 
-    /// <summary>The keyboard's insert (Enter in the Insert panel): as if dropped at the middle of the pane.</summary>
-    public bool InsertAtCentre(object payload) => DropAt(payload, new Point(_view.Width / 2, _view.Height / 2));
+    /// <summary>The keyboard's insert (Enter in the Insert panel): as if dropped at the middle of the
+    /// pane, or at widget depth at the middle of the widget's frame, which is where it has to go.</summary>
+    public bool InsertAtCentre(object payload)
+    {
+        if (_model is not null && Insert.Frame(_model) is { } frame)
+        {
+            var (sx, sy, sw, sh) = _view.ToScreen(frame);
+            return DropAt(payload, new Point(sx + sw / 2, sy + sh / 2));
+        }
+        return DropAt(payload, new Point(_view.Width / 2, _view.Height / 2));
+    }
 
     /// <summary>Put <paramref name="payload"/> (an <see cref="InsertPanel.DataFormat"/> payload) on the
     /// canvas at <paramref name="screen"/>, as one undo entry, and select it:
@@ -863,7 +893,7 @@ public partial class PreviewView : UserControl
             case PartKind kind:
                 if (Insert.Part(_model, kind, x, y) is not { } id)
                 {
-                    Status?.Invoke(CopyCannotGainParts);
+                    Status?.Invoke(Insert.InFrame(_model, cx, cy) ? CopyCannotGainParts : Insert.OutsideFrame);
                     return false;
                 }
                 _model.Select([id]);
@@ -875,7 +905,8 @@ public partial class PreviewView : UserControl
                 var plan = Plan(value, screen);
                 if (plan.Options.Count == 0)
                 {
-                    Status?.Invoke(_model.Depth.Kind == DepthKind.Copy ? CopyCannotGainParts : $"Nothing here can show {value.Label}.");
+                    Status?.Invoke(!Insert.InFrame(_model, cx, cy) ? Insert.OutsideFrame
+                        : _model.Depth.Kind == DepthKind.Copy ? CopyCannotGainParts : $"Nothing here can show {value.Label}.");
                     return false;
                 }
                 var applied = ApplyOption(plan, 0);
@@ -901,6 +932,8 @@ public partial class PreviewView : UserControl
         try { id = plan.Apply(_model!, plan.Options[index]); }
         finally { _inserting = false; }
         _model!.Select([id]);
+        // Every override a drop writes is said out loud: it changes this copy and nothing else.
+        if (plan.Note is { } note) Status?.Invoke(note);
         return id;
     }
 
