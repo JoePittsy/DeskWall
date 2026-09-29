@@ -92,4 +92,29 @@ public class TargetsTests
         Assert.Equal(["clock-1.time", "clock-1.date", "dial-1.bar", "byhand"], Targets.ComponentIds(targets));
         Assert.Equal(["clock-1.time", "clock-1.date"], Targets.ComponentIds([targets[0], targets[0]]));
     }
+
+    /// <summary>v2: one target per copy, from the model's expansion, and a copy whose widget is gone
+    /// is still a 172x40 box at its origin rather than nothing (plan D1, brief 5). The shipped dial
+    /// is used so no other test's user-dir widget can stand in for it.</summary>
+    [Fact]
+    public void A_Copy_Is_One_Target_And_A_Broken_Copy_Is_Still_A_Box()
+    {
+        var model = new DesignerModel(LayoutFile.Parse("""
+            { "version": 2, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "text", "id": "byhand", "rect": [500, 400, 50, 50], "text": "x" } ],
+              "copies": [ { "id": "dial-1", "widget": "dial", "x": 3312, "y": 400 },
+                          { "id": "gone-1", "widget": "no-such-widget", "x": 100, "y": 200 } ] }
+            """), new Core.Display.DisplaySignature("TEST", 3440, 1440, 100), null);
+
+        var targets = Targets.All(model);
+
+        Assert.Equal(["byhand", "dial-1", "gone-1"], targets.Select(t => t.Id));
+        var dial = targets[1];
+        Assert.True(dial.IsWidget);
+        Assert.All(dial.ComponentIds, id => Assert.StartsWith("dial-1.", id));
+        Assert.Equal((3312, 400), (dial.Bounds.X, dial.Bounds.Y));
+        Assert.Equal(new Rect(100, 200, 172, 40), targets[2].Bounds);
+        Assert.Empty(targets[2].ComponentIds);
+        Assert.Equal(["dial-1"], Targets.From(model, [dial.ComponentIds[0]]).Select(t => t.Id));
+    }
 }

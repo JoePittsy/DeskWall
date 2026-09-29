@@ -92,7 +92,7 @@ public class ShellStateTests
     [Fact]
     public void Nothing_Registered_Anywhere_Opens_A_New_Layout_For_This_Display()
     {
-        var target = ShellState.OpenFrom(null, Rdp, _ => throw new InvalidOperationException("must not read a file"), DefaultBase);
+        var target = ShellState.OpenFrom(null, Rdp, _ => throw new InvalidOperationException("must not read a file"), DefaultBase, NoWidgets);
 
         Assert.Null(target.Path);
         Assert.Equal(Rdp, target.Signature);
@@ -100,17 +100,98 @@ public class ShellStateTests
         Assert.Empty(target.Layout.Components);
     }
 
+    private static readonly Func<string, DeskWall.Core.Widgets.WidgetTemplate?> NoWidgets = _ => null;
+
+    private static LayoutFile V2WithACopy() => LayoutFile.Parse("""
+        { "version": 2, "baseImage": "C:\\x.jpg", "sources": [], "components": [],
+          "copies": [ { "id": "dial-1", "widget": "dial", "x": 3312, "y": 400 } ] }
+        """);
+
+    /// <summary>The store's resolution is the <em>expansion</em> since v2: a document opened from it
+    /// would have no copies left to edit, and Apply would write the flattened parts back. So even an
+    /// exact match opens the file itself.</summary>
     [Fact]
-    public void An_Exact_Match_Opens_Its_Own_File_Unchanged()
+    public void An_Exact_Match_Opens_The_File_Not_The_Expansion()
     {
-        var layout = Authored();
-        var resolution = new LayoutResolution(layout, @"C:\x\layouts\ultrawide.json", Console, Scaled: false);
+        var expanded = new LayoutFile { Version = 2, BaseImage = "C:\\x.jpg" };
+        var resolution = new LayoutResolution(expanded, @"C:\x\layouts\ultrawide.json", Console, Scaled: false);
 
-        var target = ShellState.OpenFrom(resolution, Console, _ => throw new InvalidOperationException("already loaded"), DefaultBase);
+        var target = ShellState.OpenFrom(resolution, Console, _ => V2WithACopy(), DefaultBase, NoWidgets);
 
-        Assert.Same(layout, target.Layout);
+        Assert.Equal("dial-1", Assert.Single(target.Layout.Copies!).Id);
+        Assert.False(target.Migrated);
         Assert.Equal(@"C:\x\layouts\ultrawide.json", target.Path);
         Assert.Equal(Console, target.Signature);
+    }
+
+    [Fact]
+    public void A_V1_File_Opens_Migrated_And_Says_So()
+    {
+        var resolution = new LayoutResolution(Authored(), @"C:\x\layouts\ultrawide.json", Console, Scaled: false);
+
+        var target = ShellState.OpenFrom(resolution, Console, _ => Authored(), DefaultBase, NoWidgets);
+
+        Assert.True(target.Migrated);
+        Assert.Equal(2, target.Layout.Version);
+        Assert.Equal(new Rect(3220, 40, 172, 60), target.Layout.Components.Single().Rect);   // loose stays loose
+    }
+
+    /// <summary>A stamped v1 instance becomes a linked copy in memory, through the real migrator and
+    /// the repo's widgets.</summary>
+    [Fact]
+    public void A_Stamped_V1_Starter_Opens_As_Copies()
+    {
+        var root = DeskWall.Designer.Tests.Widgets.TestRepo.Root;
+        var v1 = Path.Combine(root, "tests", "fixtures", "layouts-v1", "clock-disks.json");
+        var resolution = new LayoutResolution(LayoutFile.Load(v1), v1, Console, Scaled: false);
+
+        var target = ShellState.OpenFrom(resolution, Console, LayoutFile.Load, DefaultBase,
+            DeskWall.Core.Widgets.WidgetCatalog.Finder(DeskWall.Designer.Tests.Widgets.TestRepo.WidgetsDir));
+
+        Assert.True(target.Migrated);
+        Assert.Equal(["clock-1", "drives-1"], target.Layout.Copies!.Select(c => c.Id));
+        Assert.Empty(target.Layout.Components);
+        Assert.Null(target.Layout.Widgets);
+    }
+
+    [Fact]
+    public void The_V1_Backup_Uses_The_Daemons_Name_And_Is_Written_Once()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "backup-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "column-system.json");
+            Authored().Save(file);
+            var v1Bytes = File.ReadAllBytes(file);
+
+            Assert.Equal(Path.Combine(dir, "column-system.v1.json"), ShellState.BackupPath(file));
+            Assert.Equal(ShellState.BackupPath(file), ShellState.BackupV1(file));
+            Assert.Equal(v1Bytes, File.ReadAllBytes(ShellState.BackupPath(file)));
+
+            // A second call never overwrites the only v1 copy.
+            V2WithACopy().Save(file);
+            Assert.Null(ShellState.BackupV1(file));
+            Assert.Equal(v1Bytes, File.ReadAllBytes(ShellState.BackupPath(file)));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>The file went v2 on disk after opening (`deskwall migrate` ran meanwhile): there is
+    /// no v1 left to back up, and a v2 file saved under .v1.json would mislead a rollback.</summary>
+    [Fact]
+    public void A_File_That_Is_Already_V2_On_Disk_Is_Not_Backed_Up()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "backup-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "column-system.json");
+            V2WithACopy().Save(file);
+            Assert.Null(ShellState.BackupV1(file));
+            Assert.False(File.Exists(ShellState.BackupPath(file)));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
     }
 
     /// <summary>The RDP case, and the whole point: the store matched a layout authored at 3440x1440
@@ -124,7 +205,7 @@ public class ShellStateTests
         var resolution = new LayoutResolution(scaled, @"C:\x\layouts\ultrawide.json", Console, Scaled: true);
         var reads = new List<string>();
 
-        var target = ShellState.OpenFrom(resolution, Rdp, p => { reads.Add(p); return Authored(); }, DefaultBase);
+        var target = ShellState.OpenFrom(resolution, Rdp, p => { reads.Add(p); return Authored(); }, DefaultBase, NoWidgets);
 
         Assert.Equal([@"C:\x\layouts\ultrawide.json"], reads);
         Assert.Equal(@"C:\x\layouts\ultrawide.json", target.Path);
@@ -142,7 +223,7 @@ public class ShellStateTests
         var scaled = LayoutScaler.Scale(Authored(), Console, Rdp);
         var resolution = new LayoutResolution(scaled, @"C:\x\layouts\ultrawide.json", Console, Scaled: true);
 
-        var target = ShellState.OpenFrom(resolution, Rdp, _ => null, DefaultBase);
+        var target = ShellState.OpenFrom(resolution, Rdp, _ => null, DefaultBase, NoWidgets);
 
         Assert.Null(target.Path);
         Assert.Equal(Rdp, target.Signature);
@@ -167,7 +248,7 @@ public class ShellStateTests
             Assert.NotNull(resolution);
             Assert.True(resolution!.Scaled);                           // closest match, not exact
 
-            var target = ShellState.OpenFrom(resolution, Rdp, p => LayoutFile.Load(p), DefaultBase);
+            var target = ShellState.OpenFrom(resolution, Rdp, p => LayoutFile.Load(p), DefaultBase, NoWidgets);
 
             Assert.Equal(file, target.Path);
             Assert.Equal(Console, target.Signature);

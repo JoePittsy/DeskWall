@@ -59,6 +59,10 @@ public partial class MainWindow : Window
     private DateTime _transientUntil;
     private bool _allowClose;
 
+    /// <summary>The open document is the in-memory v2 migration of a v1 file, and the first Apply
+    /// has not happened yet: it writes <c>&lt;file&gt;.v1.json</c> before overwriting anything.</summary>
+    private bool _backupBeforeApply;
+
     public MainWindow(LayoutStore store, Settings settings, DisplaySignature signature, LayoutResolution? resolution)
     {
         InitializeComponent();
@@ -98,14 +102,16 @@ public partial class MainWindow : Window
     {
         if (_model is not null) _model.Changed -= OnModelChanged;
 
-        var target = ShellState.OpenFrom(resolution, signature, LoadAuthored, DefaultBaseImage);
+        var target = ShellState.OpenFrom(resolution, signature, LoadAuthored, DefaultBaseImage,
+            WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir));
         _model = new DesignerModel(target.Layout, target.Signature, target.Path);
         _model.Changed += OnModelChanged;
+        _backupBeforeApply = target.Migrated;
 
         ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
 
         Preview.Attach(_model, _renderer);
-        Knobs.Attach(_model, _catalog);
+        Knobs.Attach(_model);
         Gallery.Load(_catalog);
 
         RebuildLiveSources();
@@ -148,24 +154,25 @@ public partial class MainWindow : Window
     /// Only a layout with no file yet has no name.</summary>
     private string LayoutLabel() => _model.Path is null ? "New layout" : Path.GetFileName(_model.Path);
 
+    /// <summary>Copies per widget key in the open layout.</summary>
     private Dictionary<string, int> Counts()
     {
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        if (_model.Layout.Widgets is not { } widgets) return counts;
-        foreach (var record in widgets.Values)
-            counts[record.Template] = counts.GetValueOrDefault(record.Template) + 1;
+        foreach (var copy in _model.Layout.Copies ?? [])
+            counts[copy.Widget] = counts.GetValueOrDefault(copy.Widget) + 1;
         return counts;
     }
 
-    /// <summary>The running sources: the layout's, plus one of each source every catalogue widget
-    /// wants. The extras are what makes a gallery card a real render rather than an empty field -
-    /// the weather card cannot show a temperature unless something is fetching one -
-    /// and the layout's own definition always wins on a name clash, so adding the widget changes
-    /// nothing. Rebuilt only when the set actually differs: doing it on every knob turn would
-    /// restart the weather fetch on each keystroke.</summary>
+    /// <summary>The running sources: the expansion's (the layout's own, then every copy's, merged the
+    /// way the daemon merges them), plus one of each source every catalogue widget wants. The extras
+    /// are what makes a gallery card a real render rather than an empty field - the weather card
+    /// cannot show a temperature unless something is fetching one - and the layout's own definition
+    /// always wins on a name clash, so adding the widget changes nothing. Rebuilt only when the set
+    /// actually differs: doing it on every knob turn would restart the weather fetch on each
+    /// keystroke.</summary>
     private void RebuildLiveSources()
     {
-        var defs = new List<SourceDef>(_model.Layout.Sources);
+        var defs = new List<SourceDef>(_model.Expanded().Layout.Sources);
         foreach (var source in _catalog.SelectMany(t => t.Sources))
             if (!defs.Any(d => string.Equals(d.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
                 defs.Add(source);
@@ -205,19 +212,17 @@ public partial class MainWindow : Window
     /// browser window would look like nothing had happened.</para></summary>
     private void Add(WidgetTemplate template)
     {
+        // Where it lands is read before the edit: the expansion is the model's, cached per change.
+        var region = Arranger.Column(_model.Signature.Width, _model.Signature.Height);
+        var at = Placement.Spawn(region, Targets.All(_model).Select(t => t.Bounds).ToList(), template.Width, template.Height);
         string? added = null;
-        _model.Edit($"Add {template.Name}", l =>
-        {
-            var region = Arranger.Column(_model.Signature.Width, _model.Signature.Height);
-            var at = Placement.Spawn(region, Targets.All(l).Select(t => t.Bounds).ToList(), template.Width, template.Height);
-            added = WidgetInstance.Add(l, template, new CRect(at.X, at.Y, 0, 0));
-        });
-        if (added is not null) SelectInstance(added);
+        _model.Edit($"Add {template.Name}", l => added = Copies.Add(l, template, at.X, at.Y));
+        if (added is not null) SelectCopy(added);
     }
 
-    private void Remove(string instanceId)
+    private void Remove(string copyId)
     {
-        _model.Edit("Remove widget", l => WidgetInstance.Remove(l, instanceId));
+        _model.Edit("Remove widget", l => Copies.Remove(l, copyId));
         _model.ClearSelection();
     }
 
@@ -225,21 +230,26 @@ public partial class MainWindow : Window
     /// undo entry. One at a time would be a surprise now that three can be selected at once.</summary>
     private void RemoveSelection()
     {
-        var targets = Targets.From(_model.Layout, _model.Selection);
+        var targets = Targets.From(_model, _model.Selection);
         if (targets.Count == 0) return;
         _model.Edit(targets.Count > 1 ? "Remove widgets" : "Remove widget", l =>
         {
             foreach (var target in targets)
             {
-                if (target.IsWidget) WidgetInstance.Remove(l, target.Id);
-                else l.Components.RemoveAll(c => c.Id == target.Id);
+                if (!target.IsWidget) l.Components.RemoveAll(c => c.Id == target.Id);
+                else if (!Copies.Remove(l, target.Id))
+                {
+                    // A v1 stamped instance that did not migrate: its components are the widget.
+                    l.Components.RemoveAll(c => c.Widget == target.Id);
+                    l.Widgets?.Remove(target.Id);
+                }
             }
         });
         _model.ClearSelection();
     }
 
-    private void SelectInstance(string instanceId)
-        => _model.Select(WidgetInstance.Components(_model.Layout, instanceId).Select(c => c.Id).ToList());
+    private void SelectCopy(string copyId)
+        => _model.Select(Copies.Components(_model.Expanded(), copyId).Select(c => c.Id).ToList());
 
     // ---- commands ------------------------------------------------------------------------------------
 
@@ -265,7 +275,11 @@ public partial class MainWindow : Window
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
                 _model.Path = dest;
             }
+            // Before the first write over a file opened as v1: the same backup `deskwall migrate`
+            // makes, so the owner can roll back (plan D5).
+            if (_backupBeforeApply && !created) ShellState.BackupV1(dest);
             _model.Save();
+            _backupBeforeApply = false;
             if (created) _store.Set(_model.Signature, dest);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -315,10 +329,13 @@ public partial class MainWindow : Window
     private void DeleteTemplate(WidgetTemplate template)
     {
         if (template.Path is null) return;
+        // Copies are linked (plan D1): they follow the file, so deleting it is not harmless any more.
+        var n = Counts().GetValueOrDefault(template.Key);
+        var copies = n == 1 ? "1 copy on this wallpaper" : $"{n} copies on this wallpaper";
         var question = template.OverridesShipped
-            ? $"Put '{template.Name}' back to the out-of-the-box version? Your edits to it are deleted. "
-              + "Copies already on a wallpaper stay exactly as they are."
-            : $"Delete the widget '{template.Name}'? Copies already on a wallpaper stay exactly as they are.";
+            ? $"Put '{template.Name}' back to the out-of-the-box version? Your edits to it are deleted"
+              + (n > 0 ? $", and {copies} change back with it." : ".")
+            : $"Delete the widget '{template.Name}'?" + (n > 0 ? $" {copies} will show as missing." : "");
         var answer = MessageBox.Show(this, question, "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes) return;
         try { File.Delete(template.Path); }
@@ -338,7 +355,7 @@ public partial class MainWindow : Window
     {
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         Gallery.Load(_catalog);
-        Knobs.Attach(_model, _catalog);
+        Knobs.Attach(_model);
         _sourcesKey = "";
         RebuildLiveSources();
         RefreshChrome();

@@ -14,7 +14,7 @@ public class LayoutMigratorTests(ITestOutputHelper output)
     [InlineData("steam-recent.json")]
     public void The_Repo_V1_Layouts_Migrate_Equivalent(string file)
     {
-        var v1 = LayoutFile.Load(Path.Combine(Repo.Root, "layouts", file));
+        var v1 = LayoutFile.Load(Path.Combine(Repo.Root, "tests", "fixtures", "layouts-v1", file));
         var before = v1.ToJson();
         var r = LayoutMigrator.Migrate(v1, Repo.Shipped());
         foreach (var n in r.Notes) output.WriteLine(n);
@@ -31,7 +31,7 @@ public class LayoutMigratorTests(ITestOutputHelper output)
     [Fact]
     public void Migrating_Twice_Is_A_No_Op()
     {
-        var once = LayoutMigrator.Migrate(LayoutFile.Load(Path.Combine(Repo.Root, "layouts", "column-system.json")), Repo.Shipped());
+        var once = LayoutMigrator.Migrate(LayoutFile.Load(Path.Combine(Repo.Root, "tests", "fixtures", "layouts-v1", "column-system.json")), Repo.Shipped());
         var twice = LayoutMigrator.Migrate(once.V2, Repo.Shipped());
         Assert.Same(once.V2, twice.V2);
         Assert.True(twice.Equivalent);

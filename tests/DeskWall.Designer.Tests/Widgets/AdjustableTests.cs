@@ -185,10 +185,11 @@ public class AdjustableTests
         var template = doc.ToTemplate();
 
         var layout = new LayoutFile { BaseImage = "" };
-        var instance = WidgetInstance.Add(layout, template, new Core.Rect(0, 0, 0, 0));
-        WidgetInstance.SetKnob(layout, template, instance, template.Knobs[0].Id, "120");
+        var copy = Copies.Add(layout, template, 0, 0);
+        Copies.SetKnob(layout, template, copy, template.Knobs[0].Id, "120");
 
-        Assert.Equal(120, layout.Sources.Single(s => s.Name == "feed").EverySeconds);
+        var expanded = WidgetExpander.Expand(layout, _ => template).Layout;
+        Assert.Equal(120, expanded.Sources.Single(s => s.Name == "feed").EverySeconds);
     }
 
     // ---- the target going away ---------------------------------------------------------------------
