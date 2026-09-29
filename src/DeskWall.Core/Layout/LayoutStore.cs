@@ -21,7 +21,7 @@ public sealed class LayoutStore
     private readonly Action<string>? _onError;
     private readonly Func<string, WidgetTemplate?>? _find;
     // Tick thread only, like everything else on the store: written by Resolve, read by WatchPaths.
-    private IReadOnlyList<string> _widgetKeys = [];
+    private HashSet<string> _widgetKeys = [];
     private Dictionary<string, string> _entries = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="onError">Where a rejected or unreadable layout file is reported. The daemon
@@ -102,13 +102,12 @@ public sealed class LayoutStore
         // One lookup per resolve: its cache lives exactly as long as this call, so the next
         // activation re-reads a widget file the owner has just edited.
         var find = _find ?? DefaultFinder();
-        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        _widgetKeys = [];
+        // Filled as each file loads, so even a resolve that throws leaves its keys watched.
+        var keys = _widgetKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         LayoutFile? Load(string p)
         {
             if (loaded.TryGetValue(p, out var cached)) return cached;
             var file = TryLoad(p, find, keys);
-            _widgetKeys = [.. keys];
             loaded[p] = file;
             return file;
         }
@@ -160,9 +159,10 @@ public sealed class LayoutStore
             return null;
         }
         // Before LayoutScaler.Scale (plan D4): the scaler, resolve and render only see components.
-        file = Expand(file, path, find, _onError, out var keys);
-        widgetKeys.UnionWith(keys);
-        return file;
+        // Keys go in before the expansion, not from its result, so an expander that throws on this
+        // file still leaves the widget files it names watched: the fix to one of them reactivates.
+        if (file.Copies is { } copies) widgetKeys.UnionWith(copies.Select(c => c.Widget));
+        return Expand(file, path, find, _onError, out _);
     }
 
     private string Resolve(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(_baseDir, p));

@@ -307,10 +307,13 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     private Active? Activate(MonitorInfo monitor)
     {
         store.Reload();      // layouts.json may have been written by a second process (deskwall layouts set)
-        var res = store.Resolve(monitor.Signature);
-        // After the resolve, not before: it may now name a layout in a directory nobody was watching,
-        // and only the resolve knows which widget files that layout's copies read.
-        _watcher?.Rescan();
+        LayoutResolution? res;
+        // After the resolve, not before: layouts.json may now name a layout in a directory nobody was
+        // watching, and only the resolve knows which widget files that layout's copies read. In a
+        // finally, so a resolve that throws still leaves the new layout's folder watched and the
+        // owner's fix to it still wakes the daemon.
+        try { res = store.Resolve(monitor.Signature); }
+        finally { _watcher?.Rescan(); }
         if (res is null)
         {
             _announced = null;
