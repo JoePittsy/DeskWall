@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model;
 using DeskWall.Designer.Model.Widgets;
 using CRect = DeskWall.Core.Rect;
@@ -24,15 +26,18 @@ namespace DeskWall.Designer.Views;
 /// <para>
 /// It still shows no coordinates, no rulers and no numbers: the canvas is a photograph, and every
 /// pixel of chrome over it has to earn its place. The grid is off until asked for, the align strip
-/// exists only while two or more things are selected, and the grips only while something is.
+/// exists only while two or more things are selected, the grips only while something is, and the
+/// smart guides only while a drag is snapping to one.
+/// </para>
+/// <para>
+/// Zoom (Task 3.1) is continuous from 1/8 to 16, and above 1 the renderer draws the pane at the zoom
+/// rather than this view upscaling a bitmap.
 /// </para>
 /// </summary>
 public partial class PreviewView : UserControl
 {
-    /// <summary>Hold this while dragging and the gesture lands on the grid; let go of it and the
-    /// gesture is pixel-exact. One named constant, used by moves and by resizes alike, because
-    /// this is deliberately the opposite way round from Figma (where snapping is the default and a
-    /// modifier suspends it) and flipping or rebinding it should be one edit.</summary>
+    /// <summary>Hold this while dragging and the gesture lands on the grid. One named constant, used
+    /// by moves and by resizes alike.</summary>
     public const ModifierKeys SnapModifier = ModifierKeys.Shift;
 
     /// <summary>Hold this and a click adds to or takes away from the selection instead of
@@ -47,6 +52,10 @@ public partial class PreviewView : UserControl
 
     /// <summary>Pixels per press with <see cref="CoarseNudgeModifier"/> held.</summary>
     public const int CoarseNudge = 10;
+
+    /// <summary>The most a copy is zoomed to when the canvas goes to its depth, or Shift+2 fits a
+    /// selection: an 80 px dial at 16x would fill a monitor with one arc.</summary>
+    public const double FitCap = 8;
 
     /// <summary>Screen pixels of travel before a press becomes a drag rather than a click. Below
     /// this a hand that wobbles would move a widget it only meant to select.</summary>
@@ -69,9 +78,8 @@ public partial class PreviewView : UserControl
     /// grid is drawn at a coarser multiple instead. Below it a grid is a grey haze, not a grid.</summary>
     private const double MinGridPixels = 6;
 
-    /// <summary>How much of the canvas must stay in the pane, in screen pixels, however far it is
-    /// panned at 1:1. A view that can be scrolled into blank grey is a view that gets lost.</summary>
-    private const double KeepVisible = 120;
+    /// <summary>Ctrl+wheel: the zoom factor per notch.</summary>
+    private const double WheelZoomStep = 1.2;
 
     private static readonly Handle[] Corners =
         [Handle.TopLeft, Handle.TopRight, Handle.BottomRight, Handle.BottomLeft];
@@ -82,10 +90,11 @@ public partial class PreviewView : UserControl
     private DesignerModel? _model;
     private PreviewRenderer? _renderer;
     private WriteableBitmap? _bitmap;
+    private PreviewFrame? _frame;
     private IReadOnlyList<Target>? _targets;
 
-    private bool _oneToOne;               // false: the whole wallpaper fitted to the pane; true: 1:1
-    private Vector _pan;                  // the 1:1 view's offset from centred
+    private Viewport _view = new(1, 0, 0, 0, 0);
+    private bool _fitted = true;          // the view is "fit all", and follows the pane when it resizes
     private int _spacing = Placement.DefaultSpacing;
     private string? _hover;
 
@@ -127,18 +136,31 @@ public partial class PreviewView : UserControl
     /// over a 172 px document zoomed to fit the pane is the loudest thing on screen.</summary>
     public bool ShowEmptyHint { get; set; } = true;
 
+    /// <summary>Where the canvas is looking. Changes with every zoom and pan.</summary>
+    public Viewport View => _view;
+
+    /// <summary>Raised after the zoom or pan changes (for a zoom readout elsewhere in the shell).</summary>
+    public event Action? ViewChanged;
+
     public void Attach(DesignerModel model, PreviewRenderer renderer)
     {
-        if (_model is not null) { _model.Changed -= OnModelChanged; _model.SelectionChanged -= OnSelectionChanged; }
+        if (_model is not null)
+        {
+            _model.Changed -= OnModelChanged;
+            _model.SelectionChanged -= OnSelectionChanged;
+            _model.DepthChanged -= OnDepthChanged;
+        }
         if (_renderer is not null) _renderer.Rendered -= OnRendered;
         _model = model;
         _renderer = renderer;
         _model.Changed += OnModelChanged;
         _model.SelectionChanged += OnSelectionChanged;
+        _model.DepthChanged += OnDepthChanged;
         _renderer.Rendered += OnRendered;
         _targets = null;
+        _fitted = true;
         PlaceView();
-        _renderer.Request(_model);
+        RequestFrame();
         Redraw();
     }
 
@@ -147,22 +169,32 @@ public partial class PreviewView : UserControl
     private void OnModelChanged()
     {
         _targets = null;
-        if (_model is not null) _renderer?.Request(_model);
+        RequestFrame();
         Redraw();
     }
 
     private void OnSelectionChanged() => Redraw();
 
+    private void RequestFrame()
+    {
+        if (_model is null || _renderer is null) return;
+        // ponytail: the viewport is in DIPs and rendered one pixel per DIP, which is exact at 100%
+        // scaling (both of the owner's displays). At 125%+ WPF upscales the frame a little; pass the
+        // DPI scale into the zoom and the bitmap's DPI if a scaled display ever needs it.
+        _renderer.Request(_model, _view.Zoom > 1 ? _view : null);
+    }
+
     private void OnRendered(PreviewFrame frame)
     {
+        _frame = frame;
         if (_bitmap is null || _bitmap.PixelWidth != frame.Width || _bitmap.PixelHeight != frame.Height)
         {
             // Pbgra32, not Bgra32: Core's surface is already premultiplied, so this is a straight copy.
             _bitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Pbgra32, null);
             _surface.Bitmap = _bitmap;
-            PlaceView();
         }
         _bitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), frame.Bgra, frame.Width * 4, 0);
+        _surface.FrameView = frame.View;
         Redraw();
     }
 
@@ -172,7 +204,11 @@ public partial class PreviewView : UserControl
         => _targets ??= _model is null ? [] : Targets.All(_model);
 
     private IReadOnlyList<Target> SelectedTargets()
-        => _model is null ? [] : Targets.From(_model, _model.Selection);
+    {
+        if (_model is null || _model.Selection.Count == 0) return [];
+        var wanted = _model.Selection.ToHashSet(StringComparer.Ordinal);
+        return AllTargets().Where(t => wanted.Contains(t.Id) || t.ComponentIds.Any(wanted.Contains)).ToList();
+    }
 
     private void SelectTargets(IEnumerable<Target> targets)
         => _model?.Select(targets.SelectMany(Ids).Distinct(StringComparer.Ordinal).ToList());
@@ -195,80 +231,93 @@ public partial class PreviewView : UserControl
     private CRect SpawnRegion()
         => _model is null ? default : Arranger.Column(_model.Signature.Width, _model.Signature.Height);
 
-    // ---- the two views -------------------------------------------------------------------------
+    private CRect CanvasRect() => _model is null ? default : new CRect(0, 0, _model.Signature.Width, _model.Signature.Height);
 
-    private void ZoomToggle_Click(object sender, RoutedEventArgs e)
+    // ---- zoom and pan (plan Task 3.1) --------------------------------------------------------------
+
+    /// <summary>Fit the whole wallpaper in the pane (Shift+1). Keeps fitting as the pane resizes.</summary>
+    public void FitAll() => SetView(_view.Fit(CanvasRect()), fitted: true);
+
+    /// <summary>Fit the selection in the pane (Shift+2), else the whole wallpaper. Capped at
+    /// <see cref="FitCap"/>.</summary>
+    public void FitSelection()
     {
-        _oneToOne = !_oneToOne;
-        ZoomToggle.Content = _oneToOne ? "Fit" : "100%";
-        ZoomToggle.ToolTip = _oneToOne ? "Fit the whole wallpaper in the pane" : "Show the wallpaper at its real size";
-        if (_oneToOne) CentreOnSelection();
-        PlaceView();
+        var selected = SelectedTargets();
+        if (selected.Count > 0) SetView(_view.Fit(Placement.Bounds(selected.Select(t => t.Bounds)), FitCap));
+        else FitAll();
+    }
+
+    /// <summary>One step in (Ctrl+plus) or out (Ctrl+minus) of <see cref="Viewport.Steps"/>, about
+    /// the pane's centre.</summary>
+    public void ZoomIn() => SetView(_view.Step(zoomIn: true));
+
+    public void ZoomOut() => SetView(_view.Step(zoomIn: false));
+
+    /// <summary>An exact zoom (1 is 100%, Ctrl+0), about the pane's centre.</summary>
+    public void ZoomTo(double zoom) => SetView(_view.ZoomAbout(zoom, _view.Width / 2, _view.Height / 2));
+
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) => ZoomIn();
+
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) => ZoomOut();
+
+    private void ZoomLabel_Click(object sender, RoutedEventArgs e) => FitAll();
+
+    /// <summary>The one way the view changes: clamp so some of the canvas stays in the pane, round
+    /// the origin to whole pixels (a viewport frame drawn at a fractional offset would be resampled,
+    /// which is the blur rendering at the zoom exists to avoid), and ask for a frame when the renderer
+    /// is drawing viewports (above 1) or was until now.</summary>
+    private void SetView(Viewport view, bool fitted = false)
+    {
+        if (_model is null || view.Width <= 0 || view.Height <= 0) return;
+        var clamped = view.Clamp(_model.Signature.Width, _model.Signature.Height);
+        _view = clamped with { OriginX = Math.Round(clamped.OriginX), OriginY = Math.Round(clamped.OriginY) };
+        _fitted = fitted;
+        _surface.Zoom = _view.Zoom;
+        _surface.Origin = new Point(_view.OriginX, _view.OriginY);
+        ZoomLabel.Content = string.Format(CultureInfo.CurrentCulture, "{0:0}%", _view.Zoom * 100);
+        if (_view.Zoom > 1 || _frame?.View is not null) RequestFrame();
+        ViewChanged?.Invoke();
         Redraw();
     }
 
-    /// <summary>Whole wallpaper: the frame fits the pane. 1:1: real size, panned with the wheel.</summary>
+    /// <summary>The pane changed size (or the view is new): refit when fitted, otherwise keep what
+    /// is at the centre where it is.</summary>
     private void PlaceView()
     {
         if (_model is null) return;
-        double w = _model.Signature.Width, h = _model.Signature.Height;
         double vw = _surface.ActualWidth, vh = _surface.ActualHeight;
-        if (w <= 0 || h <= 0 || vw <= 0 || vh <= 0) return;
-
-        if (_oneToOne)
-        {
-            ClampPan();
-            _surface.Zoom = 1.0;
-            _surface.Origin = new Point((vw - w) / 2 + _pan.X, (vh - h) / 2 + _pan.Y);
-        }
-        else
-        {
-            _pan = default;
-            _surface.Zoom = Math.Max(0.02, Math.Min((vw - 48) / w, (vh - 48) / h));
-            _surface.Origin = new Point((vw - w * _surface.Zoom) / 2, (vh - h * _surface.Zoom) / 2);
-        }
+        if (vw <= 0 || vh <= 0 || _model.Signature.Width <= 0 || _model.Signature.Height <= 0) return;
+        var sized = _view.Width <= 0 ? new Viewport(1, 0, 0, vw, vh) : _view.Resized(vw, vh);
+        if (_fitted) SetView(sized.Fit(CanvasRect()), fitted: true);
+        else SetView(sized);
     }
 
-    /// <summary>Switching to 1:1 puts what the owner is working on in the middle of the pane, or
-    /// the margin the widgets live in when nothing is selected. Landing on the middle of a
-    /// 3440-wide photograph instead would show him a patch of sky.</summary>
-    private void CentreOnSelection()
-    {
-        if (_model is null) return;
-        var focus = Placement.Bounds(SelectedTargets().Select(t => t.Bounds));
-        if (focus.W == 0 && focus.H == 0) focus = SpawnRegion();
-        _pan = new Vector(
-            _model.Signature.Width / 2.0 - (focus.X + focus.W / 2.0),
-            _model.Signature.Height / 2.0 - (focus.Y + focus.H / 2.0));
-    }
-
-    private void ClampPan()
-    {
-        if (_model is null) return;
-        double w = _model.Signature.Width, h = _model.Signature.Height;
-        double vw = _surface.ActualWidth, vh = _surface.ActualHeight;
-        if (vw <= 0 || vh <= 0) return;
-        _pan = new Vector(Clamp(_pan.X, (vw - w) / 2, w, vw), Clamp(_pan.Y, (vh - h) / 2, h, vh));
-
-        static double Clamp(double pan, double centred, double canvas, double viewport)
-        {
-            var lo = KeepVisible - canvas - centred;
-            var hi = viewport - KeepVisible - centred;
-            return Math.Clamp(pan, Math.Min(lo, hi), Math.Max(lo, hi));
-        }
-    }
-
-    /// <summary>At 1:1 the wallpaper is several times the size of the pane, so the wheel pans it:
-    /// vertically, or horizontally with Shift held. Fitted, there is nothing off screen to reach.</summary>
+    /// <summary>Ctrl+wheel zooms about the pointer. The plain wheel pans the canvas when it is larger
+    /// than the pane: vertically, or horizontally with Shift held.</summary>
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);
-        if (!_oneToOne || _model is null) return;
+        if (_model is null) return;
+        var p = e.GetPosition(_surface);
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            SetView(_view.ZoomAbout(_view.Zoom * Math.Pow(WheelZoomStep, e.Delta / 120.0), p.X, p.Y));
+            e.Handled = true;
+            return;
+        }
         var by = e.Delta * 0.6;
-        _pan += (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? new Vector(by, 0) : new Vector(0, by);
-        PlaceView();
-        Redraw();
+        var sideways = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        var extent = sideways ? _model.Signature.Width * _view.Zoom : _model.Signature.Height * _view.Zoom;
+        if (extent <= (sideways ? _view.Width : _view.Height)) return;
+        SetView(sideways ? _view.Pan(by, 0) : _view.Pan(0, by));
         e.Handled = true;
+    }
+
+    /// <summary>What a click can land on depends on the depth, whatever changed it.</summary>
+    private void OnDepthChanged()
+    {
+        _targets = null;
+        Redraw();
     }
 
     // ---- the grid ---------------------------------------------------------------------------------
@@ -359,13 +408,23 @@ public partial class PreviewView : UserControl
         base.OnMouseDown(e);
         Focus();
         if (_model is null || e.ChangedButton != MouseButton.Left) return;
-        ToLayoutDepth();
         _downScreen = e.GetPosition(_surface);
+        e.Handled = true;
+        BeginGesture(_downScreen);
+    }
+
+    /// <summary>A press at <paramref name="screen"/>: a grip starts a resize, a target a move (and
+    /// selects it), empty wallpaper a rubber band. Public for the harness and the shell, which drive
+    /// the canvas without a real pointer; <see cref="DragTo"/> and <see cref="EndGesture"/> finish it.</summary>
+    public void BeginGesture(Point screen)
+    {
+        if (_model is null) return;
+        ToLayoutDepth();
+        _downScreen = screen;
         _dragging = false;
         _moving = false;
         _banding = false;
         _resizing = null;
-        e.Handled = true;
 
         // A grip first: it sits outside the thing it scales, so a press there would otherwise be
         // read as a press on whatever happens to be behind it.
@@ -425,7 +484,14 @@ public partial class PreviewView : UserControl
             Track(p);
             return;
         }
+        DragTo(p);
+    }
 
+    /// <summary>The gesture in progress has reached <paramref name="p"/>: the ghosts and the band
+    /// follow it. Nothing is written until <see cref="EndGesture"/>.</summary>
+    public void DragTo(Point p)
+    {
+        if (_model is null || (!_moving && !_banding && _resizing is null)) return;
         if (!_dragging
             && Math.Abs(p.X - _downScreen.X) < DragSlop
             && Math.Abs(p.Y - _downScreen.Y) < DragSlop) return;
@@ -448,7 +514,8 @@ public partial class PreviewView : UserControl
             var band = CanvasRect(_downScreen, p);
             _surface.BandRect = band;
             var caught = Targets.Within(AllTargets(), band).Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
-            var keep = Targets.From(_model, _bandBase);
+            var baseIds = _bandBase.ToHashSet(StringComparer.Ordinal);
+            var keep = AllTargets().Where(t => baseIds.Contains(t.Id) || t.ComponentIds.Any(baseIds.Contains)).ToList();
             SelectTargets(keep.Concat(AllTargets().Where(t => caught.Contains(t.Id) && keep.All(k => k.Id != t.Id))));
         }
         Redraw();
@@ -458,9 +525,15 @@ public partial class PreviewView : UserControl
     {
         base.OnMouseUp(e);
         if (e.ChangedButton != MouseButton.Left) return;
+        EndGesture(e.GetPosition(_surface));
+    }
+
+    /// <summary>Finish the gesture at <paramref name="p"/>: a move or a resize is written as one undo
+    /// entry, snapped as it was drawn.</summary>
+    public void EndGesture(Point p)
+    {
         if (_model is not null && _dragging)
         {
-            var p = e.GetPosition(_surface);
             if (_resizing is { } handle)
             {
                 var to = ResizedBox(handle, p);
@@ -542,20 +615,28 @@ public partial class PreviewView : UserControl
     // ---- keyboard ------------------------------------------------------------------------------
 
     /// <summary>Arrow keys nudge whatever is selected, one pixel a press and
-    /// <see cref="CoarseNudge"/> with <see cref="CoarseNudgeModifier"/> held. Handled here rather
-    /// than on the window so that arrow keys still belong to the gallery list and the knobs when
-    /// the focus is in them; clicking the canvas is what gives them to the canvas.</summary>
+    /// <see cref="CoarseNudge"/> with <see cref="CoarseNudgeModifier"/> held; Shift+1 fits all,
+    /// Shift+2 fits the selection, Ctrl+plus and Ctrl+minus step the zoom and Ctrl+0 is 100%.
+    /// Handled here rather than on the window so that arrow keys still belong to the gallery list
+    /// and the knobs when the focus is in them; clicking the canvas is what gives them to the canvas.</summary>
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
         if (e.Handled || _model is null) return;
-        var step = (Keyboard.Modifiers & CoarseNudgeModifier) != 0 ? CoarseNudge : 1;
+        var mods = Keyboard.Modifiers;
+        var ctrl = (mods & ModifierKeys.Control) != 0;
+        var step = (mods & CoarseNudgeModifier) != 0 ? CoarseNudge : 1;
         switch (e.Key)
         {
             case Key.Left: MoveSelection("Nudge", -step, 0); e.Handled = true; break;
             case Key.Right: MoveSelection("Nudge", step, 0); e.Handled = true; break;
             case Key.Up: MoveSelection("Nudge", 0, -step); e.Handled = true; break;
             case Key.Down: MoveSelection("Nudge", 0, step); e.Handled = true; break;
+            case Key.D1 when mods == ModifierKeys.Shift: FitAll(); e.Handled = true; break;
+            case Key.D2 when mods == ModifierKeys.Shift: FitSelection(); e.Handled = true; break;
+            case Key.OemPlus or Key.Add when ctrl: ZoomIn(); e.Handled = true; break;
+            case Key.OemMinus or Key.Subtract when ctrl: ZoomOut(); e.Handled = true; break;
+            case Key.D0 or Key.NumPad0 when ctrl: ZoomTo(1); e.Handled = true; break;
             case Key.Escape when _dragging: Reset(); e.Handled = true; break;
             default: break;
         }
@@ -618,12 +699,13 @@ public partial class PreviewView : UserControl
     private void Redraw()
     {
         var selected = SelectedTargets();
+        var depth = _model?.Depth.Kind ?? DepthKind.Layout;
         _surface.CanvasW = _model?.Signature.Width ?? 0;
         _surface.CanvasH = _model?.Signature.Height ?? 0;
         _surface.Grid = GridToggle.IsChecked == true ? _spacing : 0;
         // Empty counts loose components too: a layout carried over from before widgets has plenty
         // on it, and telling its owner to "add a widget to start" over the top of it would be a lie.
-        _surface.Empty = ShowEmptyHint && _model is not null && AllTargets().Count == 0;
+        _surface.Empty = ShowEmptyHint && depth == DepthKind.Layout && _model is not null && AllTargets().Count == 0;
         _surface.Hint = _surface.Empty ? SpawnRegion() : null;
         _surface.Selected = selected.Select(t => t.Bounds).ToList();
         _surface.SelectionBox = selected.Count > 1 ? Placement.Bounds(selected.Select(t => t.Bounds)) : null;
@@ -648,6 +730,9 @@ public partial class PreviewView : UserControl
     private sealed class Surface : FrameworkElement
     {
         public WriteableBitmap? Bitmap { get; set; }
+
+        /// <summary>The viewport <see cref="Bitmap"/> was rendered for, or null for a whole-canvas frame.</summary>
+        public Viewport? FrameView { get; set; }
         public double Zoom { get; set; } = 1;
         public Point Origin { get; set; }
         public int CanvasW { get; set; }
@@ -679,7 +764,7 @@ public partial class PreviewView : UserControl
 
             var frame = ToScreen(new CRect(0, 0, CanvasW, CanvasH));
             dc.DrawRectangle(Themed("SolidBackgroundFillColorTertiaryBrush", Brushes.DimGray), null, frame);
-            if (Bitmap is not null) dc.DrawImage(Bitmap, frame);
+            if (Bitmap is not null) dc.DrawImage(Bitmap, BitmapRect(frame));
 
             DrawGrid(dc, frame);
 
@@ -689,7 +774,6 @@ public partial class PreviewView : UserControl
             // photograph is the one thing this surface is guaranteed to be.
             var halo = Stroke(Color.FromArgb(150, 0, 0, 0), 3.5);
             var outline = new Pen(accent, 1.75);
-
             if (Empty && Hint is { } hint) DrawEmptyState(dc, frame, hint);
 
             if (Hover is { } h)
@@ -736,6 +820,20 @@ public partial class PreviewView : UserControl
             DrawHandles(dc);
         }
 
+        /// <summary>Where the frame's bitmap goes on screen. A whole-canvas frame covers the canvas.
+        /// A viewport frame covers the canvas area it was rendered for, mapped through the current
+        /// view: normally the pane exactly (1:1, no resampling), and during a pan or zoom that has not
+        /// re-rendered yet, the old pixels stretched into place until the new frame lands.</summary>
+        private Rect BitmapRect(Rect frame)
+        {
+            if (FrameView is not { } fv || Bitmap is null) return frame;
+            // The renderer rounds the origin; the view does too, so this is whole pixels when they agree.
+            var left = -Math.Round(fv.OriginX) / fv.Zoom;
+            var top = -Math.Round(fv.OriginY) / fv.Zoom;
+            return new Rect(Origin.X + left * Zoom, Origin.Y + top * Zoom,
+                Bitmap.PixelWidth / fv.Zoom * Zoom, Bitmap.PixelHeight / fv.Zoom * Zoom);
+        }
+
         /// <summary>The grid, in canvas pixels, at a coarser multiple when the zoom would otherwise
         /// pack the lines into a haze. Only how many lines are drawn changes - what snapping rounds
         /// to is the spacing the owner chose, whatever the zoom.</summary>
@@ -746,16 +844,17 @@ public partial class PreviewView : UserControl
             while (step * Zoom < MinGridPixels) step *= 2;
 
             var pen = Stroke(Color.FromArgb(40, 255, 255, 255), 1);
+            var pane = new Rect(0, 0, ActualWidth, ActualHeight);
             dc.PushClip(new RectangleGeometry(frame));
             for (var x = step; x < CanvasW; x += step)
             {
                 var at = Math.Round(Origin.X + x * Zoom) + 0.5;
-                if (at >= frame.X && at <= frame.Right) dc.DrawLine(pen, new Point(at, frame.Y), new Point(at, frame.Bottom));
+                if (at >= Math.Max(frame.X, pane.X) && at <= Math.Min(frame.Right, pane.Right)) dc.DrawLine(pen, new Point(at, frame.Y), new Point(at, frame.Bottom));
             }
             for (var y = step; y < CanvasH; y += step)
             {
                 var at = Math.Round(Origin.Y + y * Zoom) + 0.5;
-                if (at >= frame.Y && at <= frame.Bottom) dc.DrawLine(pen, new Point(frame.X, at), new Point(frame.Right, at));
+                if (at >= Math.Max(frame.Y, pane.Y) && at <= Math.Min(frame.Bottom, pane.Bottom)) dc.DrawLine(pen, new Point(frame.X, at), new Point(frame.Right, at));
             }
             dc.Pop();
         }

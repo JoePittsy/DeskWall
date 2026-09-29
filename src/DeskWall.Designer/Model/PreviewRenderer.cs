@@ -13,9 +13,15 @@ namespace DeskWall.Designer.Model;
 /// <summary>One rendered preview: the pixels Core produced, and the resolved components behind
 /// them. The resolved list is the canvas's hit map - its rects are canvas (physical) pixels, the
 /// same coordinates the model stores. <paramref name="Problems"/> is what the expansion skipped (a
-/// missing or broken widget, an orphan override or knob), for the canvas to show.</summary>
+/// missing or broken widget, an orphan override or knob), for the canvas to show.
+/// <para><paramref name="View"/> is null for a whole-canvas frame (<paramref name="Width"/> x
+/// <paramref name="Height"/> is the canvas, drawn 1:1 and scaled by WPF at zoom 1 or below). Above
+/// zoom 1 it is the viewport the frame was rendered for: the pixels are that pane, at that zoom
+/// (plan Task 3.1). <paramref name="Resolved"/> is the 1:1 resolve either way;
+/// <paramref name="Drawn"/> is what was painted, which above zoom 1 is the same components
+/// transformed into the viewport.</para></summary>
 public sealed record PreviewFrame(int Width, int Height, byte[] Bgra, IReadOnlyList<Resolved> Resolved, TimeSpan RenderTime,
-    IReadOnlyList<ExpandProblem> Problems);
+    IReadOnlyList<ExpandProblem> Problems, Viewport? View = null, IReadOnlyList<Resolved>? Drawn = null);
 
 /// <summary>Turns the model into pixels on a background thread and hands the frame to the UI.
 /// Coalesces bursts: requests inside 50 ms collapse into one, at most one render is in flight and
@@ -46,7 +52,9 @@ public sealed class PreviewRenderer : IDisposable
     /// <summary>What a render needs, captured at request time. <paramref name="Find"/> is
     /// <see cref="DesignerModel.Finder"/>, which copies the widget overlay when it is called, so the
     /// render thread expands against the widgets as they were at the request.</summary>
-    private sealed record Snapshot(string Json, DisplaySignature Signature, Func<string, WidgetTemplate?> Find);
+    private sealed record Snapshot(string Json, DisplaySignature Signature, Func<string, WidgetTemplate?> Find, Viewport? View);
+
+    private Viewport? _view;
 
     /// <param name="valueTree">the live values to resolve bindings against; ValueTree.Empty before
     /// any source has run.</param>
@@ -63,14 +71,26 @@ public sealed class PreviewRenderer : IDisposable
     /// (the UI thread), otherwise on the render thread.</summary>
     public event Action<PreviewFrame>? Rendered;
 
-    /// <summary>Ask for a frame. Safe from any thread; cheap enough to call on every mouse move.</summary>
+    /// <summary>Ask for a frame at the viewport last passed to <see cref="Request(DesignerModel, Viewport?)"/>
+    /// (none: the whole canvas). Safe from any thread; cheap enough to call on every mouse move.</summary>
     public void Request(DesignerModel model)
     {
+        Viewport? view;
+        lock (_gate) view = _view;
+        Request(model, view);
+    }
+
+    /// <summary>Ask for a frame for <paramref name="view"/>, and remember it for later
+    /// <see cref="Request(DesignerModel)"/> calls. At zoom 1 or below (or null) the frame is the whole
+    /// canvas; above, it is the viewport rendered at its zoom.</summary>
+    public void Request(DesignerModel model, Viewport? view)
+    {
         ArgumentNullException.ThrowIfNull(model);
-        var snap = new Snapshot(model.ToJson(), model.Signature, model.Finder());
+        var snap = new Snapshot(model.ToJson(), model.Signature, model.Finder(), view);
         lock (_gate)
         {
             if (_disposed) return;
+            _view = view;
             _latest = snap;
             _debounce.Change(DebounceMs, Timeout.Infinite);
         }
@@ -180,6 +200,9 @@ public sealed class PreviewRenderer : IDisposable
             catch (Exception ex) { error = Describe("base image", ex); }
         }
 
+        if (snap.View is { Zoom: > 1 } view && error is null && layout is not null)
+            return RenderView(snap, view, layout, baseRaw, resolved, problems, sw);
+
         Surface? frame = null;
         try
         {
@@ -194,9 +217,53 @@ public sealed class PreviewRenderer : IDisposable
             if (error is not null) DrawError(frame, error);
             var bgra = new byte[w * 4 * h];
             frame.CopyTo(bgra);
-            return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed, problems);
+            return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed, problems, null, resolved);
         }
         finally { frame?.Dispose(); }
+    }
+
+    /// <summary>Above zoom 1: the layout transformed into the viewport (<see cref="LayoutScaler.Transform"/>),
+    /// resolved, and painted onto a viewport-sized surface over the base stretched to the zoomed
+    /// canvas, which Direct2D clips to the surface. Text, arcs and bars are drawn at the zoom, so
+    /// they stay crisp; only the photograph is upscaled. The hit map stays the 1:1 resolve.</summary>
+    private PreviewFrame RenderView(Snapshot snap, Viewport view, LayoutFile layout, string? baseRaw,
+        IReadOnlyList<Resolved> resolved, IReadOnlyList<ExpandProblem> problems, Stopwatch sw)
+    {
+        var w = Math.Max(1, (int)Math.Ceiling(view.Width));
+        var h = Math.Max(1, (int)Math.Ceiling(view.Height));
+        int ox = (int)Math.Round(view.OriginX), oy = (int)Math.Round(view.OriginY);
+        var canvas = new Rect(ox, oy, (int)Math.Round(snap.Signature.Width * view.Zoom), (int)Math.Round(snap.Signature.Height * view.Zoom));
+        var pane = new Rect(0, 0, w, h);
+        string? error = null;
+        IReadOnlyList<Resolved> drawn = Array.Empty<Resolved>();
+        try { drawn = LayoutResolver.Resolve(LayoutScaler.Transform(layout, view.Zoom, ox, oy), _valueTree()); }
+        catch (Exception ex) { error = Describe("resolve", ex); }
+
+        using var frame = Surface.Create(w, h);
+        if (baseRaw is not null)
+        {
+            try
+            {
+                using var photo = Surface.LoadRaw(baseRaw);
+                frame.DrawSurface(photo, canvas, Fit.Stretch, resample: Resample.Fast);
+            }
+            catch (Exception ex) { error ??= Describe("base image", ex); }
+        }
+        else frame.FillRect(canvas, new Color(255, 32, 32, 32));
+
+        foreach (var c in drawn.OrderBy(c => c.Z))
+        {
+            // Off the pane entirely: skip it. The margin is the rect's own height, which covers a
+            // text shadow ring and a trailing run wider than its box without measuring the text.
+            var r = c.Rect;
+            if (!new Rect(r.X - r.H, r.Y - r.H, r.W + 2 * r.H, r.H * 3).Intersects(pane)) continue;
+            try { FrameRenderer.Draw(frame, c); }
+            catch (Exception ex) { Debug.WriteLine($"preview: component '{c.Id}' failed: {ex.Message}"); }
+        }
+        if (error is not null) DrawError(frame, error);
+        var bgra = new byte[w * 4 * h];
+        frame.CopyTo(bgra);
+        return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed, problems, view, drawn);
     }
 
     /// <summary>Last resort: even producing the error frame failed (out of memory, a COM fault).

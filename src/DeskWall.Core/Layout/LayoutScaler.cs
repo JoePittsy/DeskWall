@@ -19,6 +19,23 @@ public static class LayoutScaler
         return copy;
     }
 
+    /// <summary>Scale every rect and pixel size by <paramref name="scale"/> about (0, 0), then move
+    /// the top-level rects by (<paramref name="dx"/>, <paramref name="dy"/>): the designer's zoomed
+    /// canvas, which resolves and renders the layout at the zoom rather than upscaling a bitmap.
+    /// The same rules as <see cref="Scale"/> (repeater children scale but do not move; a bound
+    /// value or <c>"auto"</c> is left alone). The source is untouched.</summary>
+    public static LayoutFile Transform(LayoutFile source, double scale, int dx, int dy)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var copy = LayoutFile.Parse(source.ToJson());
+        foreach (var c in copy.Components)
+        {
+            ScaleComponent(c, scale, scale, scale);
+            c.Rect = c.Rect.Offset(dx, dy);
+        }
+        return copy;
+    }
+
     private static void ScaleComponent(ComponentDef c, double sx, double sy, double sm)
     {
         c.Rect = c.Rect.Scale(sx, sy);
