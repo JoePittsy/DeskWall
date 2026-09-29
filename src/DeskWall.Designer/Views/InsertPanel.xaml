@@ -1,6 +1,7 @@
 ﻿<UserControl x:Class="DeskWall.Designer.Views.InsertPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v="clr-namespace:DeskWall.Designer.Views">
   <UserControl.Resources>
     <!-- The card IS the button. A phone home screen adds a widget when you tap the widget, and a
          column of eight Add buttons would be eight more controls saying what the card already is;
@@ -140,13 +141,15 @@
   </UserControl.Resources>
 
   <!-- Parts on top (four, always in reach), then Widgets and Data, each collapsible: the rows of an
-       open section share what height is left. No tabs, so building a widget out of parts and data
-       never costs a switch. -->
+       open section share what height is left, each keeping a floor (one whole card; three data rows)
+       and the splitter between them moving the rest. No tabs, so building a widget out of parts and
+       data never costs a switch. -->
   <Grid x:Name="Sections" Margin="0,8,0,0">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="2.2*" />
+      <RowDefinition x:Name="WidgetsShare" Height="*" MinHeight="{x:Static v:InsertPanel.WidgetsFloor}" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition x:Name="DataShare" Height="2.2*" MinHeight="{x:Static v:InsertPanel.DataFloor}" />
     </Grid.RowDefinitions>
 
     <StackPanel Grid.Row="0" Margin="16,8,16,8">
@@ -189,7 +192,12 @@
       </DockPanel>
     </Expander>
 
-    <Expander x:Name="DataSection" Grid.Row="2" IsExpanded="True" Margin="8,0,8,8"
+    <GridSplitter x:Name="SectionsSplitter" Grid.Row="2" Height="6" HorizontalAlignment="Stretch" Margin="8,0"
+                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="Transparent"
+                  ToolTip="Drag to share the height between Widgets and Data"
+                  AutomationProperties.Name="Resize Widgets and Data" />
+
+    <Expander x:Name="DataSection" Grid.Row="3" IsExpanded="True" Margin="8,0,8,8"
               Expanded="Section_Toggled" Collapsed="Section_Toggled"
               AutomationProperties.Name="Data">
       <Expander.Header>

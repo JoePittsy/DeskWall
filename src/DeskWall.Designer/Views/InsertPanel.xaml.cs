@@ -176,12 +176,27 @@ public partial class InsertPanel : UserControl
     /// and five.</summary>
     private const double WidgetsWeight = 1, DataWeight = 2.2;
 
-    /// <summary>An open section takes a share of the height; a closed one only its header.</summary>
+    /// <summary>The least an open Widgets section is given: its header and one whole card (a
+    /// two-line description), so the list never shows only slices of cards (critique 3, P2-c).</summary>
+    public const double WidgetsFloor = 150;
+
+    /// <summary>The least an open Data section is given: its header, the search box and three rows.</summary>
+    public const double DataFloor = 176;
+
+    /// <summary>What the whole panel needs at the least: Parts and both floors. The shell keeps this
+    /// much of the column for it however far Layers is dragged.</summary>
+    public const double Floor = 76 + WidgetsFloor + 6 + DataFloor;
+
+    /// <summary>An open section takes a share of the height, down to its floor; a closed one only its
+    /// header. The splitter only means something between two open sections.</summary>
     private void Section_Toggled(object sender, RoutedEventArgs e)
     {
         if (!IsInitialized || DataSection is null) return;
-        Sections.RowDefinitions[1].Height = WidgetsSection.IsExpanded ? new GridLength(WidgetsWeight, GridUnitType.Star) : GridLength.Auto;
-        Sections.RowDefinitions[2].Height = DataSection.IsExpanded ? new GridLength(DataWeight, GridUnitType.Star) : GridLength.Auto;
+        WidgetsShare.Height = WidgetsSection.IsExpanded ? new GridLength(WidgetsWeight, GridUnitType.Star) : GridLength.Auto;
+        WidgetsShare.MinHeight = WidgetsSection.IsExpanded ? WidgetsFloor : 0;
+        DataShare.Height = DataSection.IsExpanded ? new GridLength(DataWeight, GridUnitType.Star) : GridLength.Auto;
+        DataShare.MinHeight = DataSection.IsExpanded ? DataFloor : 0;
+        SectionsSplitter.Visibility = WidgetsSection.IsExpanded && DataSection.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Search_Changed(object sender, TextChangedEventArgs e)
