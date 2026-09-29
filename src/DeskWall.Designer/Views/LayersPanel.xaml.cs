@@ -19,7 +19,7 @@ namespace DeskWall.Designer.Views;
 /// only, and climbs to layout depth when the row it was asked for is not selectable at the current one.</para></summary>
 public partial class LayersPanel : UserControl
 {
-    private sealed record Entry(TreeViewItem Item, LayerRow Row, Border Bar);
+    private sealed record Entry(TreeViewItem Item, LayerRow Row, Border Bar, FrameworkElement Line, int Level);
 
     private DesignerModel? _model;
     private readonly Dictionary<string, Entry> _rows = new();
@@ -34,6 +34,18 @@ public partial class LayersPanel : UserControl
     {
         InitializeComponent();
         Tree.PreviewMouseLeftButtonDown += Tree_PreviewMouseLeftButtonDown;
+        Tree.SizeChanged += (_, _) => { foreach (var e in _rows.Values) Fit(e); };
+    }
+
+    /// <summary>What one level of the tree indents a row by, expander included (Fluent TreeViewItem).</summary>
+    private const double Indent = 24;
+
+    /// <summary>A row is never wider than the tree: its name trims, so the markers after it stay in
+    /// view ("Hardware dial · GPU temperature" plus "edited widget" is wider than the column).</summary>
+    private void Fit(Entry e)
+    {
+        e.Line.MaxWidth = Math.Max(80, Tree.ActualWidth - (e.Level + 1) * Indent - 12);
+        if (e.Line is Panel { Children: [_, TextBlock name, ..] }) name.MaxWidth = Math.Max(40, e.Line.MaxWidth - 9);
     }
 
     /// <summary>The rows on show, front first.</summary>
@@ -72,7 +84,7 @@ public partial class LayersPanel : UserControl
         {
             Tree.Items.Clear();
             _rows.Clear();
-            foreach (var row in Rows) Tree.Items.Add(Item(row));
+            foreach (var row in Rows) Tree.Items.Add(Item(row, 0));
             if (focusedKey is not null && _rows.TryGetValue(focusedKey, out var e))
             {
                 e.Item.IsSelected = true;
@@ -84,29 +96,36 @@ public partial class LayersPanel : UserControl
         ApplySelection();
     }
 
-    private TreeViewItem Item(LayerRow row)
+    private TreeViewItem Item(LayerRow row, int level)
     {
         var bar = new Border { Width = 3, Height = 16, CornerRadius = new CornerRadius(1.5), Margin = new Thickness(0, 0, 6, 0), Visibility = Visibility.Hidden };
         bar.SetResourceReference(Border.BackgroundProperty, "AccentFillColorDefaultBrush");
-        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        // Bar, name and detail, then the markers, which wrap under the name when the row is wider than
+        // the tree ("Hardware dial · GPU" with both markers is): the name keeps its words, the markers
+        // stay in view. Only a name wider than the tree on its own trims.
+        var line = new WrapPanel { Orientation = Orientation.Horizontal };
         line.Children.Add(bar);
-        line.Children.Add(Text(row.Name, 14, "TextFillColorPrimaryBrush"));
-        if (row.Detail.Length > 0) line.Children.Add(Text(row.Detail, 12, "TextFillColorSecondaryBrush", 6));
+        var name = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, ToolTip = row.Name };
+        name.Inlines.Add(Run(row.Name, 14, "TextFillColorPrimaryBrush"));
+        if (row.Detail.Length > 0) name.Inlines.Add(Run("  " + row.Detail, 12, "TextFillColorSecondaryBrush"));
+        line.Children.Add(name);
+        var markers = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 1) };
+        line.Children.Add(markers);
         // Two different facts, told apart by shape as well as by word: "changed here" (this copy has
         // its own values; Reset puts them back) is a filled dot and plain text, "edited widget" (the
         // widget itself is your fork of a shipped one; every copy has it) an outlined pill.
         if (row.HasOverride && row.Kind != LayerKind.Orphan)
         {
-            var dot = new Ellipse { Width = 7, Height = 7, Margin = new Thickness(8, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
+            var dot = new Ellipse { Width = 7, Height = 7, Margin = new Thickness(9, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
             dot.SetResourceReference(Shape.FillProperty, "AccentFillColorDefaultBrush");
             var changed = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = ChangedTip(row), Background = Brushes.Transparent };
             changed.Children.Add(dot);
             changed.Children.Add(Text(ChangedHere, 12, "TextFillColorSecondaryBrush"));
-            line.Children.Add(changed);
+            markers.Children.Add(changed);
         }
-        if (row.IsForkedShipped) line.Children.Add(Badge(EditedWidget, null, "The widget itself is your edited version of a shipped one: every copy of it shows your edit"));
-        if (row.IsBroken) line.Children.Add(Badge("broken", "SystemFillColorCriticalBackgroundBrush", $"Widget '{row.Name}' is missing or fails to load"));
-        if (row.IsOrphan) line.Children.Add(Badge("orphan", "SystemFillColorCautionBackgroundBrush",
+        if (row.IsForkedShipped) markers.Children.Add(Badge(EditedWidget, null, "The widget itself is your edited version of a shipped one: every copy of it shows your edit"));
+        if (row.IsBroken) markers.Children.Add(Badge("broken", "SystemFillColorCriticalBackgroundBrush", $"Widget '{row.Name}' is missing or fails to load"));
+        if (row.IsOrphan) markers.Children.Add(Badge("orphan", "SystemFillColorCautionBackgroundBrush",
             row.Kind == LayerKind.Orphan ? "The widget no longer has what this names; it is kept, and applies again if it comes back" : "Has an override the widget no longer matches"));
 
         line.Margin = new Thickness(2, 1, 6, 1);
@@ -114,9 +133,18 @@ public partial class LayersPanel : UserControl
         AutomationProperties.SetName(item, SpokenName(row));
         item.Expanded += (_, e) => { if (e.OriginalSource == item) _expanded.Add(row.Key); };
         item.Collapsed += (_, e) => { if (e.OriginalSource == item) _expanded.Remove(row.Key); };
-        foreach (var child in row.Children) item.Items.Add(Item(child));
-        _rows[row.Key] = new Entry(item, row, bar);
+        foreach (var child in row.Children) item.Items.Add(Item(child, level + 1));
+        var entry = new Entry(item, row, bar, line, level);
+        _rows[row.Key] = entry;
+        Fit(entry);
         return item;
+    }
+
+    private static System.Windows.Documents.Run Run(string text, double size, string brush)
+    {
+        var r = new System.Windows.Documents.Run(text) { FontSize = size };
+        r.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, brush);
+        return r;
     }
 
     private static TextBlock Text(string text, double size, string brush, double left = 0)

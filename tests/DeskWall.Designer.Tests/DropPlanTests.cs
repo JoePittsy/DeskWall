@@ -137,6 +137,7 @@ public class DropPlanTests
         var text = Assert.IsType<TextDef>(m.Find(plan.Apply(m, plan.Options[0])));
         Assert.Equal("hardware.cpu | \"{0:0%}\"", Bind(text.Text));
         Assert.Equal(new Rect(440, 288, 120, 24), text.Rect);
+        Assert.Equal("none", text.Effect.LiteralText);
     }
 
     [Fact]
