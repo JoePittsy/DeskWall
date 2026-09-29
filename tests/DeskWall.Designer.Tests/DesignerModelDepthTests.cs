@@ -67,16 +67,7 @@ public class DesignerModelDepthTests
         var m = Model();
         m.Edit("Add", l => l.Components.Add(new TextDef { Id = "hello", Rect = new Rect(10, 10, 50, 20), Text = PropertyValue.Literal("hi") }));
 
-        // What Make widget does in one edit (Lens.MakeWidget, Task 2.4): a new widget, a copy of it,
-        // and the loose part gone.
-        var made = "made-1";
-        var dial = m.Finder()("dial")!;
-        m.Edit("Make widget", (l, edits) =>
-        {
-            edits["made"] = Recolour(dial, "label", "#FF000000");
-            l.Copies!.Add(new WidgetCopy { Id = made, Widget = "made" });
-            l.Components.RemoveAll(c => c.Id == "hello");
-        });
+        var made = Lens.MakeWidget(m, ["hello"]);
         Assert.Contains(m.Layout.Copies!, c => c.Id == made);
         Assert.Single(m.WidgetEdits);
 

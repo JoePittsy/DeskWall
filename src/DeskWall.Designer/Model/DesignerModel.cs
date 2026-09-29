@@ -146,6 +146,7 @@ public sealed class DesignerModel
         ArgumentNullException.ThrowIfNull(depth);
         if (depth == Depth) return;
         Depth = depth;
+        _projection = null;
         DepthChanged?.Invoke();
     }
 
@@ -184,6 +185,7 @@ public sealed class DesignerModel
     private void AfterChange()
     {
         _expanded = null;
+        _projection = null;
         PruneDepth();
         Changed?.Invoke();
     }
@@ -250,6 +252,7 @@ public sealed class DesignerModel
         Layout = LayoutFile.Parse(snapshot.Json);
         Signature = snapshot.Signature;
         RestoreWidgetEdits(snapshot.WidgetEditsJson);
+        _projection = null;   // before PruneSelection reads it
     }
 
     private void RestoreWidgetEdits(string json)
@@ -258,30 +261,58 @@ public sealed class DesignerModel
         foreach (var (key, t) in ParseWidgetEdits(json)) _widgetEdits[key] = t;
     }
 
-    public ComponentDef? Find(string id) => Layout.Components.FirstOrDefault(c => c.Id == id);
+    // ---- the lens: the parts at the current depth -----------------------------------------------
 
-    public void Move(IEnumerable<string> ids, int dx, int dy) => Edit("Move", l =>
+    private LayoutFile? _projection;   // Lens.Project at copy or widget depth, until the next change
+    private LayoutFile? _working;      // the projection an EditAtDepth is mutating
+
+    /// <summary>What <see cref="Find"/>, <see cref="Select"/> and the component edits below work
+    /// on: the layout itself at layout depth, else the <see cref="Lens"/> projection.</summary>
+    private LayoutFile Parts => _working ?? (Depth.Kind == DepthKind.Layout ? Layout : _projection ??= Lens.Project(this));
+
+    /// <summary>A component (at layout depth) or a projected part (at copy and widget depth; read
+    /// it, but edit it through <see cref="EditAtDepth"/>).</summary>
+    public ComponentDef? Find(string id) => Parts.Components.FirstOrDefault(c => c.Id == id);
+
+    /// <summary><see cref="Edit"/> at layout depth. At copy and widget depth, mutate the
+    /// projection (<see cref="Lens.Project"/>) instead and <see cref="Lens.Commit"/> it: overrides on the copy,
+    /// or the overlay template. One undo entry either way (none at those depths when nothing
+    /// changed). Every component edit on this class goes through here, so the canvas's move, scale,
+    /// z-order, add, duplicate and remove work unchanged at every depth.</summary>
+    public void EditAtDepth(string label, Action<LayoutFile> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        if (Depth.Kind == DepthKind.Layout) { Edit(label, mutate); return; }
+        var before = Lens.Project(this);
+        var after = Lens.Project(this);
+        _working = after;
+        try { mutate(after); }
+        finally { _working = null; }
+        Lens.Commit(this, before, after, label);
+    }
+
+    public void Move(IEnumerable<string> ids, int dx, int dy) => EditAtDepth("Move", l =>
     {
         foreach (var id in ids) if (Find(id) is { } c) c.Rect = c.Rect.Offset(dx, dy);
     });
 
     /// <summary>Put one component's rect somewhere exactly. Named SetRect and not Resize so the
     /// canvas's <see cref="Model.Resize"/> maths is reachable by name from in here.</summary>
-    public void SetRect(string id, Rect newRect) => Edit("Resize", l =>
+    public void SetRect(string id, Rect newRect) => EditAtDepth("Resize", l =>
     {
         if (Find(id) is { } c) c.Rect = new Rect(newRect.X, newRect.Y, Math.Max(4, newRect.W), Math.Max(4, newRect.H));
     });
 
-    public void SetZ(string id, int z) => Edit("Set Z", l => { if (Find(id) is { } c) c.Z = z; });
+    public void SetZ(string id, int z) => EditAtDepth("Set Z", l => { if (Find(id) is { } c) c.Z = z; });
 
-    public void BringToFront(string id) => Edit("Bring to front", l =>
+    public void BringToFront(string id) => EditAtDepth("Bring to front", l =>
     {
         if (Find(id) is not { } c) return;
         var max = l.Components.Where(o => o != c).Select(o => o.Z).DefaultIfEmpty(0).Max();
         c.Z = max + 1;
     });
 
-    public void SendToBack(string id) => Edit("Send to back", l =>
+    public void SendToBack(string id) => EditAtDepth("Send to back", l =>
     {
         if (Find(id) is not { } c) return;
         var min = l.Components.Where(o => o != c).Select(o => o.Z).DefaultIfEmpty(0).Min();
@@ -289,7 +320,7 @@ public sealed class DesignerModel
     });
 
     /// <summary>Adds the component, making its id unique with a -2, -3, ... suffix if needed.</summary>
-    public void Add(ComponentDef def) => Edit("Add", l =>
+    public void Add(ComponentDef def) => EditAtDepth("Add", l =>
     {
         var baseId = def.Id;
         var id = baseId; var n = 2;
@@ -309,7 +340,7 @@ public sealed class DesignerModel
         if (originals.Count == 0) return Array.Empty<string>();
         var clones = Clone(originals);
         var made = new List<string>(clones.Count);
-        Edit("Duplicate", l =>
+        EditAtDepth("Duplicate", l =>
         {
             var taken = AllIds(l).ToHashSet(StringComparer.Ordinal);
             foreach (var c in clones)
@@ -355,7 +386,7 @@ public sealed class DesignerModel
     public void Remove(IEnumerable<string> ids)
     {
         var set = ids.ToHashSet();
-        Edit("Remove", l => l.Components.RemoveAll(c => set.Contains(c.Id)));
+        EditAtDepth("Remove", l => l.Components.RemoveAll(c => set.Contains(c.Id)));
         if (_selection.RemoveAll(set.Contains) > 0) SelectionChanged?.Invoke();
     }
 
@@ -370,7 +401,7 @@ public sealed class DesignerModel
     {
         ArgumentNullException.ThrowIfNull(moves);
         if (moves.All(m => m.Dx == 0 && m.Dy == 0)) return;
-        Edit(label, _ =>
+        EditAtDepth(label, _ =>
         {
             foreach (var (ids, dx, dy) in moves)
             {
@@ -389,7 +420,7 @@ public sealed class DesignerModel
     {
         ArgumentNullException.ThrowIfNull(ids);
         if (ids.Count == 0 || from == to || from.W <= 0 || from.H <= 0) return;
-        Edit(label, _ =>
+        EditAtDepth(label, _ =>
         {
             foreach (var id in ids) if (Find(id) is { } c) Resize.Apply(c, from, to, scaleSizes);
         });
