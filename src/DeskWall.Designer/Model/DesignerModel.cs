@@ -1,7 +1,11 @@
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Widgets;
+using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Model;
 
@@ -15,13 +19,15 @@ public sealed class DesignerModel
     /// <summary>What an undo entry holds. The canvas size is in here and not in a parallel stack
     /// because the widget editor's <c>Fit to parts</c> moves the components AND changes the size in
     /// one <see cref="Edit"/>: two stacks would let a single Ctrl+Z put back one and not the
-    /// other.</summary>
-    private readonly record struct Snapshot(string Json, DisplaySignature Signature);
+    /// other. The widget overlay is in here for the same reason: Make widget adds a copy AND a
+    /// widget in one edit, and its undo has to take both away.</summary>
+    private readonly record struct Snapshot(string Json, DisplaySignature Signature, string WidgetEditsJson);
 
     private readonly List<Snapshot> _undo = new();
-    private readonly Stack<Snapshot> _redo = new();
+    private readonly List<Snapshot> _redo = new();   // top is the end, like _undo
     private readonly List<string> _selection = new();
     private string _savedJson;
+    private string _savedEditsJson = EmptyEdits;
 
     public DesignerModel(LayoutFile layout, DisplaySignature signature, string? path)
     {
@@ -37,7 +43,7 @@ public sealed class DesignerModel
     /// changes; a widget document's is the widget's own size, which <see cref="ResizeCanvas"/> edits.</summary>
     public DisplaySignature Signature { get; private set; }
     public string? Path { get; set; }
-    public bool Dirty => Layout.ToJson() != _savedJson;
+    public bool Dirty => Layout.ToJson() != _savedJson || WidgetEditsJson() != _savedEditsJson;
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public IReadOnlyList<string> Selection => _selection;
@@ -54,9 +60,63 @@ public sealed class DesignerModel
     private Expansion? _expanded;
 
     /// <summary>The widget overlay: widgets edited in this document and not yet applied, by key.
-    /// Apply writes each to <c>WidgetCatalog.UserDir\&lt;key&gt;.json</c> (the fork, plan D2). Empty
-    /// until <c>lane/p2-document</c> gives it mutators and puts it in the undo snapshot.</summary>
+    /// <see cref="Save"/> writes each to <c>WidgetCatalog.UserDir\&lt;key&gt;.json</c> (the fork, plan
+    /// D2). Changed only inside <see cref="Edit(string, Action{LayoutFile, IDictionary{string, WidgetTemplate}})"/>,
+    /// so it is undone with the layout. Entries stay after a save: the overlay is the document's
+    /// view of each widget it has touched.</summary>
     public IReadOnlyDictionary<string, WidgetTemplate> WidgetEdits => _widgetEdits;
+
+    private const string EmptyEdits = "{}";
+
+    /// <summary>The overlay as one canonical string (keys sorted, each value the widget file's
+    /// JSON), for the undo snapshot and <see cref="Dirty"/>.</summary>
+    private string WidgetEditsJson() => EditsJson(_widgetEdits);
+
+    private static string EditsJson(IReadOnlyDictionary<string, WidgetTemplate> edits)
+    {
+        if (edits.Count == 0) return EmptyEdits;
+        var o = new JsonObject();
+        foreach (var (key, t) in edits.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase))
+            o[key] = JsonNode.Parse(WidgetTemplateWriter.ToJson(t));
+        return o.ToJsonString();
+    }
+
+    private static Dictionary<string, WidgetTemplate> ParseWidgetEdits(string json)
+    {
+        var result = new Dictionary<string, WidgetTemplate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, node) in JsonNode.Parse(json)!.AsObject())
+            result[key] = TemplateFromJson(key, node!.ToJsonString());
+        return result;
+    }
+
+    /// <summary>The inverse of <see cref="WidgetTemplateWriter.ToJson"/>, for a template that was
+    /// valid when it went in (so no second copy of <see cref="WidgetTemplate.Load"/>'s checks).</summary>
+    private static WidgetTemplate TemplateFromJson(string key, string json)
+    {
+        var f = JsonSerializer.Deserialize(json, WidgetJsonContext.Default.WidgetTemplateFile)!;
+        return new WidgetTemplate
+        {
+            Name = f.Name!,
+            Key = key,
+            Description = f.Description!,
+            Width = f.Size![0],
+            Height = f.Size[1],
+            Anchor = f.Anchor ?? "top",
+            Requires = f.Requires,
+            Sources = f.Sources ?? [],
+            Components = f.Components ?? [],
+            Knobs = (f.Knobs ?? []).Select(k => new Knob(k.Id!, k.Label ?? k.Id!, Enum.Parse<KnobType>(k.Type!, ignoreCase: true),
+                k.Default ?? "", k.Sets ?? [], k.Choices, k.Min, k.Max)).ToList(),
+        };
+    }
+
+    private static WidgetTemplate? TryFind(Func<string, WidgetTemplate?> find, string key)
+    {
+        try { return find(key); }
+#pragma warning disable CA1031 // a widget file that fails to load counts as absent here
+        catch (Exception) { return null; }
+#pragma warning restore CA1031
+    }
 
     /// <summary>A widget lookup by key: the overlay first, then <see cref="WidgetCatalog.UserDir"/>,
     /// then <see cref="WidgetCatalog.ShippedDir"/>. The overlay is copied when this is called, so
@@ -86,6 +146,7 @@ public sealed class DesignerModel
         ArgumentNullException.ThrowIfNull(depth);
         if (depth == Depth) return;
         Depth = depth;
+        _projection = null;
         DepthChanged?.Invoke();
     }
 
@@ -103,15 +164,46 @@ public sealed class DesignerModel
     // ---- editing -------------------------------------------------------------------------
 
     /// <summary>Snapshot, mutate the live LayoutFile, notify.</summary>
-    public void Edit(string label, Action<LayoutFile> mutate)
+    public void Edit(string label, Action<LayoutFile> mutate) => Edit(label, (l, _) => mutate(l));
+
+    /// <summary>The same, with the widget overlay (<see cref="WidgetEdits"/>) as well: one undo
+    /// entry over the layout and the widgets together. Put a new <see cref="WidgetTemplate"/> in,
+    /// never mutate one that is already there.</summary>
+    public void Edit(string label, Action<LayoutFile, IDictionary<string, WidgetTemplate>> mutate)
     {
+        ArgumentNullException.ThrowIfNull(mutate);
         _undo.Add(Capture());
         if (_undo.Count > UndoCap) _undo.RemoveAt(0);
         _redo.Clear();
-        mutate(Layout);
+        mutate(Layout, _widgetEdits);
         LastEditLabel = label;
+        AfterChange();
+    }
+
+    /// <summary>Every change ends here: the caches go, a depth whose copy or widget went climbs
+    /// out, and then listeners hear about it.</summary>
+    private void AfterChange()
+    {
         _expanded = null;
+        _projection = null;
+        PruneDepth();
         Changed?.Invoke();
+    }
+
+    /// <summary>Climb out of a copy or widget that no longer exists (an undo of Make widget, a redo
+    /// of Remove): a copy depth whose copy went goes to layout depth; a widget depth whose widget
+    /// went does too, and one whose origin copy went stays on the widget with no copy.</summary>
+    private void PruneDepth()
+    {
+        var copyGone = Depth.CopyId is { } id && Layout.Copies?.Exists(c => c.Id == id) != true;
+        var next = Depth.Kind switch
+        {
+            DepthKind.Copy when copyGone => Depth.Layout,
+            DepthKind.Widget when Depth.WidgetKey is not { } key || (!_widgetEdits.ContainsKey(key) && TryFind(Finder(), key) is null) => Depth.Layout,
+            DepthKind.Widget when copyGone => Depth.Widget(Depth.WidgetKey!, null),
+            _ => Depth,
+        };
+        SetDepth(next);
     }
 
     public string? LastEditLabel { get; private set; }
@@ -136,56 +228,91 @@ public sealed class DesignerModel
     public void Undo()
     {
         if (!CanUndo) return;
-        _redo.Push(Capture());
+        _redo.Add(Capture());
         Restore(_undo[^1]);
         _undo.RemoveAt(_undo.Count - 1);
         PruneSelection();
-        _expanded = null;
-        Changed?.Invoke();
+        AfterChange();
     }
 
     public void Redo()
     {
         if (!CanRedo) return;
         _undo.Add(Capture());
-        Restore(_redo.Pop());
+        Restore(_redo[^1]);
+        _redo.RemoveAt(_redo.Count - 1);
         PruneSelection();
-        _expanded = null;
-        Changed?.Invoke();
+        AfterChange();
     }
 
-    private Snapshot Capture() => new(Layout.ToJson(), Signature);
+    private Snapshot Capture() => new(Layout.ToJson(), Signature, WidgetEditsJson());
 
     private void Restore(Snapshot snapshot)
     {
         Layout = LayoutFile.Parse(snapshot.Json);
         Signature = snapshot.Signature;
+        RestoreWidgetEdits(snapshot.WidgetEditsJson);
+        _projection = null;   // before PruneSelection reads it
     }
 
-    public ComponentDef? Find(string id) => Layout.Components.FirstOrDefault(c => c.Id == id);
+    private void RestoreWidgetEdits(string json)
+    {
+        _widgetEdits.Clear();
+        foreach (var (key, t) in ParseWidgetEdits(json)) _widgetEdits[key] = t;
+    }
 
-    public void Move(IEnumerable<string> ids, int dx, int dy) => Edit("Move", l =>
+    // ---- the lens: the parts at the current depth -----------------------------------------------
+
+    private LayoutFile? _projection;   // Lens.Project at copy or widget depth, until the next change
+    private LayoutFile? _working;      // the projection an EditAtDepth is mutating
+
+    /// <summary>What <see cref="Find"/>, <see cref="Select"/> and the component edits below work
+    /// on: the layout itself at layout depth, else the <see cref="Lens"/> projection.</summary>
+    private LayoutFile Parts => _working ?? (Depth.Kind == DepthKind.Layout ? Layout : _projection ??= Lens.Project(this));
+
+    /// <summary>A component (at layout depth) or a projected part (at copy and widget depth; read
+    /// it, but edit it through <see cref="EditAtDepth"/>).</summary>
+    public ComponentDef? Find(string id) => Parts.Components.FirstOrDefault(c => c.Id == id);
+
+    /// <summary><see cref="Edit"/> at layout depth. At copy and widget depth, mutate the
+    /// projection (<see cref="Lens.Project"/>) instead and <see cref="Lens.Commit"/> it: overrides on the copy,
+    /// or the overlay template. One undo entry either way (none at those depths when nothing
+    /// changed). Every component edit on this class goes through here, so the canvas's move, scale,
+    /// z-order, add, duplicate and remove work unchanged at every depth.</summary>
+    public void EditAtDepth(string label, Action<LayoutFile> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        if (Depth.Kind == DepthKind.Layout) { Edit(label, mutate); return; }
+        var before = Lens.Project(this);
+        var after = Lens.Project(this);
+        _working = after;
+        try { mutate(after); }
+        finally { _working = null; }
+        Lens.Commit(this, before, after, label);
+    }
+
+    public void Move(IEnumerable<string> ids, int dx, int dy) => EditAtDepth("Move", l =>
     {
         foreach (var id in ids) if (Find(id) is { } c) c.Rect = c.Rect.Offset(dx, dy);
     });
 
     /// <summary>Put one component's rect somewhere exactly. Named SetRect and not Resize so the
     /// canvas's <see cref="Model.Resize"/> maths is reachable by name from in here.</summary>
-    public void SetRect(string id, Rect newRect) => Edit("Resize", l =>
+    public void SetRect(string id, Rect newRect) => EditAtDepth("Resize", l =>
     {
         if (Find(id) is { } c) c.Rect = new Rect(newRect.X, newRect.Y, Math.Max(4, newRect.W), Math.Max(4, newRect.H));
     });
 
-    public void SetZ(string id, int z) => Edit("Set Z", l => { if (Find(id) is { } c) c.Z = z; });
+    public void SetZ(string id, int z) => EditAtDepth("Set Z", l => { if (Find(id) is { } c) c.Z = z; });
 
-    public void BringToFront(string id) => Edit("Bring to front", l =>
+    public void BringToFront(string id) => EditAtDepth("Bring to front", l =>
     {
         if (Find(id) is not { } c) return;
         var max = l.Components.Where(o => o != c).Select(o => o.Z).DefaultIfEmpty(0).Max();
         c.Z = max + 1;
     });
 
-    public void SendToBack(string id) => Edit("Send to back", l =>
+    public void SendToBack(string id) => EditAtDepth("Send to back", l =>
     {
         if (Find(id) is not { } c) return;
         var min = l.Components.Where(o => o != c).Select(o => o.Z).DefaultIfEmpty(0).Min();
@@ -193,7 +320,7 @@ public sealed class DesignerModel
     });
 
     /// <summary>Adds the component, making its id unique with a -2, -3, ... suffix if needed.</summary>
-    public void Add(ComponentDef def) => Edit("Add", l =>
+    public void Add(ComponentDef def) => EditAtDepth("Add", l =>
     {
         var baseId = def.Id;
         var id = baseId; var n = 2;
@@ -213,7 +340,7 @@ public sealed class DesignerModel
         if (originals.Count == 0) return Array.Empty<string>();
         var clones = Clone(originals);
         var made = new List<string>(clones.Count);
-        Edit("Duplicate", l =>
+        EditAtDepth("Duplicate", l =>
         {
             var taken = AllIds(l).ToHashSet(StringComparer.Ordinal);
             foreach (var c in clones)
@@ -259,7 +386,7 @@ public sealed class DesignerModel
     public void Remove(IEnumerable<string> ids)
     {
         var set = ids.ToHashSet();
-        Edit("Remove", l => l.Components.RemoveAll(c => set.Contains(c.Id)));
+        EditAtDepth("Remove", l => l.Components.RemoveAll(c => set.Contains(c.Id)));
         if (_selection.RemoveAll(set.Contains) > 0) SelectionChanged?.Invoke();
     }
 
@@ -274,7 +401,7 @@ public sealed class DesignerModel
     {
         ArgumentNullException.ThrowIfNull(moves);
         if (moves.All(m => m.Dx == 0 && m.Dy == 0)) return;
-        Edit(label, _ =>
+        EditAtDepth(label, _ =>
         {
             foreach (var (ids, dx, dy) in moves)
             {
@@ -293,7 +420,7 @@ public sealed class DesignerModel
     {
         ArgumentNullException.ThrowIfNull(ids);
         if (ids.Count == 0 || from == to || from.W <= 0 || from.H <= 0) return;
-        Edit(label, _ =>
+        EditAtDepth(label, _ =>
         {
             foreach (var id in ids) if (Find(id) is { } c) Resize.Apply(c, from, to, scaleSizes);
         });
@@ -303,23 +430,63 @@ public sealed class DesignerModel
 
     public string ToJson() => Layout.ToJson();
 
+    /// <summary>Write every overlay widget to <c>WidgetCatalog.UserDir\&lt;key&gt;.json</c> (a shipped
+    /// key is forked, plan D2: every copy of it on the machine follows), then the layout. Each is a
+    /// temp file then a rename. Widgets first, so a layout is never on disk ahead of the widgets
+    /// it was drawn with.</summary>
     public void Save()
     {
         if (Path is null) throw new InvalidOperationException("no path; use Save As");
+        var disk = WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
+        var before = _widgetEdits.Keys.ToDictionary(k => k, k => TryFind(disk, k), StringComparer.OrdinalIgnoreCase);
+        if (_widgetEdits.Count > 0) Directory.CreateDirectory(WidgetCatalog.UserDir);
+        foreach (var (key, t) in _widgetEdits)
+            WriteAtomically(System.IO.Path.Combine(WidgetCatalog.UserDir, key + ".json"), WidgetTemplateWriter.ToJson(t));
         Layout.Save(Path);
         _savedJson = Layout.ToJson();
-        _expanded = null;
-        Changed?.Invoke();
+        _savedEditsJson = WidgetEditsJson();
+        KeepHistoryTrue(before);
+        AfterChange();
     }
 
-    /// <summary>Discard unsaved edits: reload from the saved JSON. Keeps the undo history so the
-    /// revert itself can be undone.</summary>
-    public void RevertToSaved() => Edit("Revert", l =>
+    /// <summary>An undo entry that does not have a widget in its overlay meant "as on disk". The
+    /// save just changed the disk, so each such entry gets the widget as it was before the save:
+    /// otherwise an undo past an Apply would show (and the next Apply keep) the new fork.</summary>
+    private void KeepHistoryTrue(Dictionary<string, WidgetTemplate?> before)
     {
-        var saved = LayoutFile.Parse(_savedJson);
-        l.Components = saved.Components;
-        l.Sources = saved.Sources;
-        l.BaseImage = saved.BaseImage; l.BaseFit = saved.BaseFit; l.Encode = saved.Encode; l.JpegQuality = saved.JpegQuality;
+        foreach (var stack in new[] { _undo, _redo })
+            for (var i = 0; i < stack.Count; i++)
+            {
+                var edits = ParseWidgetEdits(stack[i].WidgetEditsJson);
+                var patched = false;
+                foreach (var (key, was) in before)
+                    if (was is not null && edits.TryAdd(key, was)) patched = true;
+                if (patched) stack[i] = stack[i] with { WidgetEditsJson = EditsJson(edits) };
+            }
+    }
+
+    private static void WriteAtomically(string path, string text)
+    {
+        var tmp = path + ".tmp";
+        try
+        {
+            File.WriteAllText(tmp, text);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
+    }
+
+    /// <summary>Discard unsaved edits: the layout and the widget overlay as last saved. Keeps the
+    /// undo history so the revert itself can be undone.</summary>
+    public void RevertToSaved() => Edit("Revert", (_, edits) =>
+    {
+        Layout = LayoutFile.Parse(_savedJson);
+        edits.Clear();
+        foreach (var (key, t) in ParseWidgetEdits(_savedEditsJson)) edits[key] = t;
     });
 
     private void PruneSelection()
