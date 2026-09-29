@@ -1,4 +1,4 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
@@ -44,6 +44,10 @@ public sealed class SourceRegistry
     public SourceSnapshot Get(string name) => _snaps.TryGetValue(name, out var s) ? s : SourceSnapshot.Initial(name);
 
     public void Set(SourceSnapshot s) => _snaps[s.Name] = s;
+
+    /// <summary>Stop publishing a source that is no longer declared (the designer's running set
+    /// dropped it). Silent about a name it does not have.</summary>
+    public void Remove(string name) { _snaps.Remove(name); _stale.Remove(name); }
 
     /// <summary>The pushed providers currently published. The caller reports a clash with a
     /// layout source from this; the registry does not throw over one.</summary>

@@ -63,7 +63,6 @@ public partial class MainWindow : Window
     private IReadOnlyList<WidgetTemplate> _catalog;
     private DesignerModel _model = null!;
     private LiveSources? _live;
-    private string _sourcesKey = "";
     private string? _transient;
     private DateTime _transientUntil;
     private bool _allowClose;
@@ -236,9 +235,11 @@ public partial class MainWindow : Window
     /// however many panels show a value. In order, the first of a name winning: at widget depth the
     /// widget's own; the expansion's (the layout's own, then every copy's, merged the way the daemon
     /// merges them); the Insert panel's local defaults (<see cref="Insert.DefaultSources"/>); one of
-    /// each source a catalogue widget wants, so adding a widget draws at once. Rebuilt only when the
-    /// set actually differs: doing it on every knob turn would restart the weather fetch on each
-    /// keystroke.</summary>
+    /// each source a catalogue widget wants, so adding a widget draws at once.
+    /// <para>One instance for the window's life, changed in place (<see cref="LiveSources.Update"/>):
+    /// a source whose name, type and settings are unchanged keeps running whatever the order, so a
+    /// depth change (which reorders the list) never restarts the hardware sampler, and a knob turn
+    /// never restarts the weather fetch.</para></summary>
     private void RebuildLiveSources()
     {
         var defs = new List<SourceDef>();
@@ -247,22 +248,16 @@ public partial class MainWindow : Window
             if (!defs.Any(d => string.Equals(d.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
                 defs.Add(source);
 
-        var key = string.Join(";", defs.Select(s =>
-            $"{s.Name}|{s.Type}|{s.EverySeconds}|{string.Join(",", s.Settings.Select(kv => kv.Key + "=" + kv.Value))}"));
-        if (key == _sourcesKey && _live is not null) return;
-        _sourcesKey = key;
-
-        var previous = _live;
-        if (previous is not null) previous.Updated -= OnLiveUpdated;
-        _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
-        _live.Updated += OnLiveUpdated;
-        Properties.Live = _live;
-        Insert.Live = _live;
-        Sources.Live = _live;
-        // A rebuilt set starts with no providers, so the ones already on screen have to be put
-        // back or a bound component would fall back to its default on the next source edit.
-        _live.SetProviders(Providers.Records);
-        previous?.Dispose();
+        if (_live is null)
+        {
+            _live = new LiveSources(defs, Secrets.Default(), SystemClock.Instance);
+            _live.Updated += OnLiveUpdated;
+            Properties.Live = _live;
+            Insert.Live = _live;
+            Sources.Live = _live;
+            _live.SetProviders(Providers.Records);
+        }
+        else if (!_live.Update(defs)) return;
         _renderer.Request(_model);
     }
 

@@ -48,6 +48,18 @@ file sealed class SignallingSource : ISource, ISignalSource
     }
 }
 
+/// <summary>A source whose reads the test answers: each RefreshAsync waits for <see cref="Answer"/>.</summary>
+file sealed class GatedSource(string name) : ISource, IDisposable
+{
+    public TaskCompletionSource<int> Answer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public int Disposals;
+    public string Name => name;
+    public DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now) => lastRefresh is null ? now : now.AddHours(1);
+    public async ValueTask<DeskWall.Core.Values.RecordValue> RefreshAsync(CancellationToken ct)
+        => new(new Dictionary<string, DeskWall.Core.Values.Value> { ["n"] = new DeskWall.Core.Values.NumberValue(await Answer.Task) });
+    public void Dispose() => Disposals++;
+}
+
 public class LiveSourcesTests
 {
     private static Secrets NoSecrets() => new(Path.Combine(Path.GetTempPath(), "deskwall-tests", "home-designer", "no-such-secrets.json"));
@@ -175,5 +187,62 @@ public class LiveSourcesTests
 
         Assert.False(fake.Refreshed.Wait(TimeSpan.FromMilliseconds(300)));
         Assert.Equal(0, fake.Refreshes);
+    }
+    private static SourceDef Def(string name, string setting = "a")
+        => new() { Name = name, Type = "time", Settings = new Dictionary<string, string> { ["k"] = setting } };
+
+    /// <summary>Widget depth reorders the window's source list; the hardware sampler must not
+    /// restart because of it (critique 2: live data went blank for 9.8 s going in).</summary>
+    [Fact]
+    public void Update_With_The_Same_Sources_In_Another_Order_Restarts_Nothing()
+    {
+        var made = new List<GatedSource>();
+        using var live = new LiveSources([Def("a"), Def("b"), Def("c")], NoSecrets(), new FixedClock(DateTimeOffset.UtcNow),
+            d => { var g = new GatedSource(d.Name); made.Add(g); return g; });
+
+        var changed = live.Update([Def("c"), Def("a"), Def("b")]);
+
+        Assert.False(changed);
+        Assert.Equal(3, made.Count);
+        Assert.All(made, g => Assert.Equal(0, g.Disposals));
+    }
+
+    [Fact]
+    public async Task Update_Replaces_Only_A_Changed_Source_And_Keeps_Its_Values_Until_The_New_One_Reads()
+    {
+        var made = new List<GatedSource>();
+        using var live = new LiveSources([Def("a"), Def("b")], NoSecrets(), new FixedClock(DateTimeOffset.UtcNow),
+            d => { var g = new GatedSource(d.Name); made.Add(g); return g; });
+        made[0].Answer.SetResult(1);
+        made[1].Answer.SetResult(2);
+        await live.RefreshNowAsync("a");
+        await live.RefreshNowAsync("b");
+
+        Assert.True(live.Update([Def("b"), Def("a", "changed")]));
+
+        Assert.Equal(3, made.Count);
+        Assert.Equal(1, made[0].Disposals);   // the old "a"
+        Assert.Equal(0, made[1].Disposals);   // "b" kept
+        var n = ((DeskWall.Core.Values.RecordValue)live.Tree().Get("a")!).Get("n");
+        Assert.Equal("1", n!.ToText(null));   // still the old read, not a blank
+
+        made[2].Answer.SetResult(3);
+        await live.RefreshNowAsync("a");
+        Assert.Equal("3", ((DeskWall.Core.Values.RecordValue)live.Tree().Get("a")!).Get("n")!.ToText(null));
+    }
+
+    [Fact]
+    public async Task Update_Stops_Publishing_A_Source_No_Longer_Listed()
+    {
+        var made = new List<GatedSource>();
+        using var live = new LiveSources([Def("a"), Def("b")], NoSecrets(), new FixedClock(DateTimeOffset.UtcNow),
+            d => { var g = new GatedSource(d.Name) ; g.Answer.SetResult(1); made.Add(g); return g; });
+        await live.RefreshNowAsync("b");
+
+        live.Update([Def("a")]);
+
+        Assert.Null(live.Tree().Get("b"));
+        Assert.Equal(1, made[1].Disposals);
+        Assert.Equal(["a"], live.Snapshots.Select(x => x.Name));
     }
 }
