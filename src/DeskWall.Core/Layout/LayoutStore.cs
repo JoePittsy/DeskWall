@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DeskWall.Core.Display;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Core.Layout;
 
@@ -10,20 +11,29 @@ public sealed record LayoutResolution(LayoutFile Layout, string SourcePath, Disp
 /// Layout paths are absolute or relative to the runtime dir.</summary>
 public sealed class LayoutStore
 {
-    /// <summary>The only layout schema this build understands. Spec 5's migration chain starts here:
-    /// a file from a future version is refused rather than half-read (finding 16).</summary>
-    public const int MaxVersion = 1;
+    /// <summary>The newest layout schema this build understands: 1 (stamped widgets) and 2 (linked
+    /// copies, expanded at load). A file from a future version is refused rather than half-read
+    /// (finding 16).</summary>
+    public const int MaxVersion = 2;
 
     private readonly string _storePath;
     private readonly string _baseDir;
     private readonly Action<string>? _onError;
+    private readonly Func<string, WidgetTemplate?>? _find;
+    // Tick thread only, like everything else on the store: written by Resolve, read by WatchPaths.
+    private IReadOnlyList<string> _widgetKeys = [];
     private Dictionary<string, string> _entries = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="onError">Where a rejected or unreadable layout file is reported. The daemon
     /// passes RollingLog.Error; a caller with no log passes null and gets silence plus a null
     /// resolution.</param>
-    public LayoutStore(string storePath, Action<string>? onError = null)
+    public LayoutStore(string storePath, Action<string>? onError = null) : this(storePath, onError, find: null) { }
+
+    /// <param name="find">Test seam: the widget lookup every resolve uses. Null (production) makes a
+    /// fresh <see cref="DefaultFinder"/> per resolve, so an edited widget file is re-read.</param>
+    internal LayoutStore(string storePath, Action<string>? onError, Func<string, WidgetTemplate?>? find)
     {
+        _find = find;
         _storePath = Path.GetFullPath(storePath);
         _baseDir = Path.GetDirectoryName(_storePath)!;
         _onError = onError;
@@ -34,8 +44,38 @@ public sealed class LayoutStore
 
     public IReadOnlyDictionary<string, string> Entries => _entries.ToDictionary(kv => kv.Key, kv => Resolve(kv.Value), StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Every file the daemon must watch: the store itself and all layout files.</summary>
-    public IReadOnlyList<string> WatchPaths => [_storePath, .. _entries.Values.Select(Resolve)];
+    /// <summary>Every file the daemon must watch: the store itself, all layout files, and the user-dir
+    /// path of every widget key the last <see cref="Resolve"/> referenced (plan D4: the shipped dir
+    /// only changes on install, which restarts the daemon).</summary>
+    public IReadOnlyList<string> WatchPaths =>
+        [_storePath, .. _entries.Values.Select(Resolve), .. _widgetKeys.SelectMany(WidgetCatalog.CandidatePaths)];
+
+    /// <summary>The lookup the daemon, `deskwall tick --layout` and `deskwall migrate` use: user
+    /// widgets shadow shipped ones by key. The catalog's finder is built on the first key asked
+    /// for, so a layout with no copies never touches the widget folders.</summary>
+    public static Func<string, WidgetTemplate?> DefaultFinder()
+    {
+        Func<string, WidgetTemplate?>? finder = null;
+        return key => (finder ??= WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir))(key);
+    }
+
+    /// <summary>Expand a v2 layout's copies into ordinary components (a v1 file, or a v2 file with no
+    /// copies, comes back as itself without a widget file being looked at). A missing or broken
+    /// widget skips that copy and is reported through <paramref name="onError"/>; orphan overrides
+    /// and knobs are not errors on the wallpaper and are not reported (plan D1).</summary>
+    public static LayoutFile Expand(LayoutFile file, string path, Func<string, WidgetTemplate?> find, Action<string>? onError, out IReadOnlyList<string> widgetKeys)
+    {
+        var x = WidgetExpander.Expand(file, find);
+        foreach (var p in x.Problems)
+        {
+            if (p.Kind == ExpandProblemKind.MissingWidget)
+                onError?.Invoke($"layout {path}: copy {p.CopyId}: no widget '{p.Detail}' (looked in {WidgetCatalog.UserDir} and {WidgetCatalog.ShippedDir}); copy skipped");
+            else if (p.Kind == ExpandProblemKind.BrokenWidget)
+                onError?.Invoke($"layout {path}: copy {p.CopyId}: widget cannot be loaded: {p.Detail}; copy skipped");
+        }
+        widgetKeys = x.WidgetKeys;
+        return x.Layout;
+    }
 
     /// <summary>Re-read layouts.json from disk. The daemon holds one store for its whole life, so an
     /// entry added by `deskwall layouts set` (a second process) is only visible after this.</summary>
@@ -59,10 +99,16 @@ public sealed class LayoutStore
         // One parse and, more importantly, one complaint per file per call: the exact-match branch and
         // the closest-match loop both look at the same entry.
         var loaded = new Dictionary<string, LayoutFile?>(StringComparer.OrdinalIgnoreCase);
+        // One lookup per resolve: its cache lives exactly as long as this call, so the next
+        // activation re-reads a widget file the owner has just edited.
+        var find = _find ?? DefaultFinder();
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _widgetKeys = [];
         LayoutFile? Load(string p)
         {
             if (loaded.TryGetValue(p, out var cached)) return cached;
-            var file = TryLoad(p);
+            var file = TryLoad(p, find, keys);
+            _widgetKeys = [.. keys];
             loaded[p] = file;
             return file;
         }
@@ -99,7 +145,7 @@ public sealed class LayoutStore
         return best;
     }
 
-    private LayoutFile? TryLoad(string path)
+    private LayoutFile? TryLoad(string path, Func<string, WidgetTemplate?> find, HashSet<string> widgetKeys)
     {
         LayoutFile file;
         try { file = LayoutFile.Load(path); }
@@ -113,6 +159,9 @@ public sealed class LayoutStore
             _onError?.Invoke($"layout {path} is version {file.Version}; this build understands up to {MaxVersion}");
             return null;
         }
+        // Before LayoutScaler.Scale (plan D4): the scaler, resolve and render only see components.
+        file = Expand(file, path, find, _onError, out var keys);
+        widgetKeys.UnionWith(keys);
         return file;
     }
 

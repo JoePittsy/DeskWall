@@ -298,9 +298,6 @@ components at load, before scaling and resolve, for the daemon and the designer 
 designer shows is what gets painted. Resolve and render never see a copy, and the tick does not
 pay for expansion. The model is `WidgetCopy` (`src/DeskWall.Core/Layout/WidgetCopy.cs`).
 
-(While Phase 1 of the canvas-authoring plan is in progress, `LayoutStore.MaxVersion` is still 1
-and the expander handles only files with no copies; a version-1 file expands to itself.)
-
 ```json
 {
   "version": 2,

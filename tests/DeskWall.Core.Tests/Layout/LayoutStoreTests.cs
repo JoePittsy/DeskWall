@@ -1,6 +1,7 @@
 ﻿using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 using Xunit;
 
 public class LayoutStoreTests
@@ -84,14 +85,14 @@ public class LayoutStoreTests
         var errors = new List<string>();
         var store = new LayoutStore(Path.Combine(dir, "layouts.json"), errors.Add);
         var sig = new DisplaySignature("A", 3440, 1440, 100);
-        var path = Path.Combine(dir, "v2.json");
-        File.WriteAllText(path, """{ "version": 2, "baseImage": "x.jpg", "sources": [], "components": [] }""");
+        var path = Path.Combine(dir, "v3.json");
+        File.WriteAllText(path, """{ "version": 3, "baseImage": "x.jpg", "sources": [], "components": [] }""");
         store.Set(sig, path);
 
         Assert.Null(store.Resolve(sig));                       // exact match, but unreadable
         Assert.Null(store.Resolve(new DisplaySignature("B", 1920, 1080, 100)));   // and not a scaling candidate either
         Assert.Equal(2, errors.Count);
-        Assert.All(errors, e => Assert.Contains("is version 2", e));
+        Assert.All(errors, e => Assert.Contains("is version 3", e));
         Assert.All(errors, e => Assert.Contains($"up to {LayoutStore.MaxVersion}", e));
     }
 
@@ -168,5 +169,169 @@ public class LayoutStoreTests
         Assert.Null(store.Resolve(sig));
         store.Reload();
         Assert.NotNull(store.Resolve(sig));
+    }
+
+    // ---- v2 (plan Task 1.5). The store takes a fake finder, so none of this reads a widget file.
+    // Tests marked Skip need WidgetExpander.Expand's body from lane/p1-expander (the seam throws for
+    // a layout with copies); un-skip them once both lanes are merged.
+
+    private const string NeedsExpander = "needs lane/p1-expander";
+
+    /// <summary>A one-part widget: a text part "value" at (0,0) 80x20, with a time source.</summary>
+    private static WidgetTemplate Widget(string key)
+    {
+        var parts = LayoutFile.Parse("""
+            { "baseImage": "x.jpg",
+              "sources": [ { "name": "time", "type": "time" } ],
+              "components": [ { "type": "text", "id": "value", "rect": [0, 0, 80, 20], "text": "x" } ] }
+            """);
+        return new WidgetTemplate
+        {
+            Key = key, Name = key, Description = "test", Width = 80, Height = 20,
+            Sources = parts.Sources, Components = parts.Components,
+        };
+    }
+
+    private static string WriteV2(string dir, string name, string copies)
+    {
+        var p = Path.Combine(dir, name);
+        File.WriteAllText(p, $$$"""
+            { "version": 2, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "text", "id": "t", "rect": [3340, 0, 100, 50], "text": "x" } ],
+              "copies": [ {{{copies}}} ] }
+            """);
+        return p;
+    }
+
+    private static LayoutStore Store(string dir, List<string> errors, Func<string, WidgetTemplate?> find)
+        => new(Path.Combine(dir, "layouts.json"), errors.Add, find);
+
+    private static Func<string, WidgetTemplate?> NoLookups => key => throw new InvalidOperationException($"looked up widget {key}");
+
+    [Fact]
+    public void MaxVersion_Is_2() => Assert.Equal(2, LayoutStore.MaxVersion);
+
+    [Fact]
+    public void A_V1_Layout_Never_Looks_Up_A_Widget_And_Watches_No_Widget_Path()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, NoLookups);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteLayout(dir, "a.json", 3440));
+        Assert.NotNull(store.Resolve(sig));
+        Assert.Empty(errors);
+        Assert.Equal(2, store.WatchPaths.Count);   // layouts.json and a.json, nothing under widgets\
+    }
+
+    [Fact]
+    public void A_V2_Layout_With_No_Copies_Is_Accepted_As_Itself()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, NoLookups);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        var path = Path.Combine(dir, "v2.json");
+        File.WriteAllText(path, """{ "version": 2, "baseImage": "x.jpg", "sources": [], "components": [ { "type": "text", "id": "t", "rect": [3340, 0, 100, 50], "text": "x" } ] }""");
+        store.Set(sig, path);
+        var r = store.Resolve(sig)!;
+        Assert.Empty(errors);
+        Assert.Equal(new Rect(3340, 0, 100, 50), Assert.Single(r.Layout.Components).Rect);
+    }
+
+    [Fact(Skip = NeedsExpander)]
+    public void A_V2_Layout_Resolves_Expanded()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, key => key == "x" ? Widget("x") : null);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteV2(dir, "v2.json", """{ "id": "x-1", "widget": "x", "x": 3300, "y": 100 }"""));
+
+        var r = store.Resolve(sig)!;
+        Assert.Empty(errors);
+        Assert.True(r.Layout.Copies is null or { Count: 0 });
+        Assert.Equal(new Rect(3300, 100, 80, 20), Assert.Single(r.Layout.Components, c => c.Id == "x-1.value").Rect);
+        Assert.Contains(r.Layout.Components, c => c.Id == "t");
+        Assert.Contains(r.Layout.Sources, s => s.Name == "time");
+    }
+
+    [Fact(Skip = NeedsExpander)]
+    public void A_V2_Layout_Is_Expanded_Before_It_Is_Scaled()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, key => key == "x" ? Widget("x") : null);
+        store.Set(new DisplaySignature("A", 3440, 1440, 100), WriteV2(dir, "v2.json", """{ "id": "x-1", "widget": "x", "x": 3300, "y": 100 }"""));
+
+        // Same device at half the resolution: the copy's parts scale like any other component.
+        var r = store.Resolve(new DisplaySignature("A", 1720, 720, 100))!;
+        Assert.True(r.Scaled);
+        Assert.Empty(errors);
+        Assert.Equal(new Rect(1650, 50, 40, 10), Assert.Single(r.Layout.Components, c => c.Id == "x-1.value").Rect);
+    }
+
+    [Fact(Skip = NeedsExpander)]
+    public void WatchPaths_Include_The_User_Dir_Path_Of_Every_Referenced_Widget()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, Widget);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteV2(dir, "v2.json", """{ "id": "x-1", "widget": "x", "x": 0, "y": 0 }, { "id": "y-1", "widget": "y", "x": 0, "y": 40 }"""));
+
+        Assert.DoesNotContain(Path.Combine(WidgetCatalog.UserDir, "x.json"), store.WatchPaths);   // not until a resolve referenced it
+        Assert.NotNull(store.Resolve(sig));
+        Assert.Contains(Path.Combine(WidgetCatalog.UserDir, "x.json"), store.WatchPaths);
+        Assert.Contains(Path.Combine(WidgetCatalog.UserDir, "y.json"), store.WatchPaths);
+    }
+
+    [Fact(Skip = NeedsExpander)]
+    public void A_Missing_Widget_Is_Reported_Watched_And_The_Rest_Still_Paints()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, key => key == "x" ? Widget("x") : null);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteV2(dir, "v2.json", """{ "id": "x-1", "widget": "x", "x": 0, "y": 0 }, { "id": "gone-1", "widget": "gone", "x": 0, "y": 40 }"""));
+
+        var r = store.Resolve(sig)!;
+        Assert.Contains(r.Layout.Components, c => c.Id == "x-1.value");
+        Assert.Contains(r.Layout.Components, c => c.Id == "t");
+        Assert.DoesNotContain(r.Layout.Components, c => c.Id.StartsWith("gone-1.", StringComparison.Ordinal));
+        var e = Assert.Single(errors);
+        Assert.Contains("gone-1", e);
+        Assert.Contains("'gone'", e);
+        // Watched even though missing, so creating the widget file repaints.
+        Assert.Contains(Path.Combine(WidgetCatalog.UserDir, "gone.json"), store.WatchPaths);
+    }
+
+    [Fact(Skip = NeedsExpander)]
+    public void A_Broken_Widget_Is_Reported_And_The_Rest_Still_Paints()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, key => key == "bad" ? throw new FormatException("bad.json: size must be [w, h]") : Widget(key));
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteV2(dir, "v2.json", """{ "id": "x-1", "widget": "x", "x": 0, "y": 0 }, { "id": "bad-1", "widget": "bad", "x": 0, "y": 40 }"""));
+
+        var r = store.Resolve(sig)!;
+        Assert.Contains(r.Layout.Components, c => c.Id == "x-1.value");
+        var e = Assert.Single(errors);
+        Assert.Contains("bad-1", e);
+        Assert.Contains("cannot be loaded", e);
+    }
+
+    [Fact(Skip = NeedsExpander)]
+    public void An_Orphan_Override_Is_Not_Logged()
+    {
+        var (_, dir) = Fresh();
+        var errors = new List<string>();
+        var store = Store(dir, errors, Widget);
+        var sig = new DisplaySignature("A", 3440, 1440, 100);
+        store.Set(sig, WriteV2(dir, "v2.json", """{ "id": "x-1", "widget": "x", "x": 0, "y": 0, "overrides": { "components.nope.color": "#FF000000" } }"""));
+
+        Assert.NotNull(store.Resolve(sig));
+        Assert.Empty(errors);
     }
 }
