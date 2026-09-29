@@ -179,7 +179,9 @@ public class BudgetTests(ITestOutputHelper output)
         scratch.Tick("--force", "--no-apply");
         scratch.Tick("--no-apply");
         var state = FrameState.Load(scratch.StatePath);
-        Assert.True(state.KeysById.Remove("clock"), "the clock-disks layout no longer has a component called 'clock'");
+        // The clock is the clock-1 copy's "clock" part since the widget starters (v1 stamped the same
+        // id, "clock-1.clock", so this holds for the v1 and the v2 file alike).
+        Assert.True(state.KeysById.Remove("clock-1.clock"), "the clock-disks layout no longer has a component called 'clock-1.clock'");
         state.Save(scratch.StatePath);
 
         var table = scratch.Tick("--measure", "--no-apply");

@@ -6,7 +6,9 @@ namespace DeskWall.Core.Widgets;
 
 /// <param name="V2">The migrated layout (copies plus any loose components).</param>
 /// <param name="Equivalent">Expanding <paramref name="V2"/> reproduces the v1 components, sources and paint order.</param>
-/// <param name="Notes">Human-readable lines for <c>deskwall migrate --check</c>.</param>
+/// <param name="Notes">Human-readable lines for <c>deskwall migrate --check</c>: what <paramref name="V2"/>
+/// cannot say for itself (a widget that did not load, sources that moved into copies, differences).
+/// The copies and loose components are read from <paramref name="V2"/>, so they are not repeated here.</param>
 public sealed record MigrationResult(LayoutFile V2, bool Equivalent, IReadOnlyList<string> Notes);
 
 /// <summary>One-off v1 (stamped widget instances) to v2 (linked copies) conversion. Deleted in
@@ -41,17 +43,10 @@ public static class LayoutMigrator
 
             var copy = MigrateInstance(src, instanceId, record, template, claimed);
             copies.Add(copy);
-            notes.Add($"copy {copy.Id} ({copy.Widget}) at {copy.X},{copy.Y}");
-            foreach (var (k, v) in copy.Knobs) notes.Add($"  knob {k} = {v}");
-            foreach (var (k, v) in copy.Overrides) notes.Add($"  override {k} = {v}");
         }
 
         var loose = src.Components.Where(c => !claimed.Contains(c.Id)).ToList();
-        foreach (var c in loose)
-        {
-            if (c.Widget is not null) notes.Add($"loose {c.Id} (was part of {c.Widget})");
-            c.Widget = null;
-        }
+        foreach (var c in loose) c.Widget = null;
 
         var v2 = new LayoutFile
         {

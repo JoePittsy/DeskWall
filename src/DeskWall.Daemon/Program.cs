@@ -289,7 +289,11 @@ internal static class Program
             foreach (var (k, v) in c.Knobs) Console.WriteLine($"    knob {k} = {v}");
             foreach (var (k, v) in c.Overrides) Console.WriteLine($"    override {k} = {v}");
         }
-        foreach (var c in result.V2.Components) Console.WriteLine($"  loose {c.Id}");
+        foreach (var c in result.V2.Components)
+        {
+            var was = v1.Components.Find(o => o.Id == c.Id)?.Widget;
+            Console.WriteLine($"  loose {c.Id}{(was is null ? "" : $" (was part of {was})")}");
+        }
         foreach (var n in result.Notes) Console.WriteLine($"  note: {n}");
         Console.WriteLine($"  equivalent: {(result.Equivalent ? "yes" : "no")}");
         if (check) return result.Equivalent;

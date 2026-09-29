@@ -99,6 +99,10 @@ public class MigrateCommandTests
             Assert.True(exit == 0, output);
             Assert.Contains("  copy ", output);
             Assert.Contains("equivalent: yes", output);
+            // Each copy once: as its copy line, not again as a note.
+            Assert.Equal(1, output.Split('\n').Count(l => l.StartsWith("  copy clock-1 ", StringComparison.Ordinal)));
+            Assert.DoesNotContain("note: copy", output);
+            Assert.DoesNotContain("note:   knob", output);
             Assert.Equal(before, File.ReadAllBytes(layout));
             Assert.Equal(files, Directory.GetFiles(home).Order().ToList());
         }
