@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Designer.Model;
 using Xunit;
 
@@ -184,22 +184,55 @@ public class PlacementTests
         Assert.Equal(40, at.Y);
     }
 
+    /// <summary>Critique 2, P2: the owner's layout has a clock at the top of the margin and the drives
+    /// anchored at its bottom. "Below the lowest" put a new copy on the clock (after wrapping) or off
+    /// the canvas; the first gap is under the clock.</summary>
     [Fact]
-    public void With_No_Room_Below_It_Cascades_From_The_Top_Instead_Of_Going_Off_The_Bottom()
+    public void On_The_Owners_Layout_It_Lands_In_The_Gap_Under_The_Clock_Not_Below_The_Drives()
     {
-        var full = new Rect(3220, 40, 172, 1390);
+        var clock = new Rect(3220, 40, 172, 78);
+        var drives = new Rect(3220, 1180, 172, 220);
+        var at = Placement.Spawn(Region, [drives, clock], 172, 60);
+        Assert.Equal(new Rect(3220, clock.Bottom + Placement.SpawnGap, 172, 60), at);
+        Assert.False(at.Y < drives.Bottom && drives.Y < at.Bottom);
+    }
+
+    [Fact]
+    public void A_Gap_Too_Small_For_It_Is_Skipped()
+    {
+        var clock = new Rect(3220, 40, 172, 78);
+        var dial = new Rect(3220, 160, 172, 80);           // 42 px under the clock: too small for 60 + gaps
+        var at = Placement.Spawn(Region, [clock, dial], 172, 60);
+        Assert.Equal(dial.Bottom + Placement.SpawnGap, at.Y);
+    }
+
+    [Fact]
+    public void A_Full_Margin_Puts_It_Just_Left_Of_The_Column_Clear_Of_Everything()
+    {
+        var full = new Rect(3220, 40, 172, 1360);
         var at = Placement.Spawn(Region, [full], 172, 60);
-        Assert.Equal(3220, at.X);
-        Assert.Equal(40 + Placement.CascadeStep, at.Y);   // stepped past the one already at the top
+        Assert.Equal(new Rect(3220 - 172 - Placement.SpawnGap, 40, 172, 60), at);
+
+        var next = Placement.Spawn(Region, [full, at], 172, 60);
+        Assert.Equal(at.X, next.X);
+        Assert.Equal(at.Bottom + Placement.SpawnGap, next.Y);
+    }
+
+    [Fact]
+    public void Only_A_Canvas_With_No_Gap_Anywhere_Cascades_From_The_Top()
+    {
+        var everything = new Rect(0, 0, 3440, 1440);
+        var at = Placement.Spawn(Region, [everything], 172, 60);
+        Assert.Equal(new Rect(3220, 40, 172, 60), at);
         Assert.True(at.Bottom <= Region.Bottom);
     }
 
     [Fact]
     public void A_Cascade_Never_Lands_Exactly_On_Its_Predecessor()
     {
-        var full = new Rect(3220, 40, 172, 1390);
-        var first = Placement.Spawn(Region, [full], 172, 60);
-        var second = Placement.Spawn(Region, [full, first], 172, 60);
+        var everything = new Rect(0, 0, 3440, 1440);
+        var first = Placement.Spawn(Region, [everything], 172, 60);
+        var second = Placement.Spawn(Region, [everything, first], 172, 60);
         Assert.NotEqual(first.Y, second.Y);
     }
 }

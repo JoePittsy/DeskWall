@@ -283,8 +283,8 @@ public partial class MainWindow : Window
 
     // ---- the four things that change a layout ------------------------------------------------------
 
-    /// <summary>A widget card clicked in Insert lands in the right-hand margin, below whatever is
-    /// already there, and is free to drag from that moment
+    /// <summary>A widget card clicked in Insert lands in the first gap in the right-hand margin (or
+    /// just left of it), selected and flashing so it is found, and is free to drag from that moment
     /// (<see cref="Placement.Spawn"/>). Nothing is arranged, before or after: the canvas has no
     /// column any more, and where a widget sits is the owner's answer.
     /// <para>The margin rather than the middle of the canvas because windows sit centred on the
@@ -295,11 +295,15 @@ public partial class MainWindow : Window
         var at = SpawnAt(template.Width, template.Height);
         string? added = null;
         _model.Edit($"Add {template.Name}", l => added = Copies.Add(l, template, at.X, at.Y));
-        if (added is not null) SelectCopy(added);
+        if (added is not null)
+        {
+            SelectCopy(added);
+            Preview.Flash(added);
+        }
         return added;
     }
 
-    /// <summary>Where a new copy of this size lands: the right-hand margin, below what is there.
+    /// <summary>Where a new copy of this size lands: the first gap in the right-hand margin.
     /// Read before the edit: the expansion is the model's, cached per change.</summary>
     private (int X, int Y) SpawnAt(int width, int height)
     {

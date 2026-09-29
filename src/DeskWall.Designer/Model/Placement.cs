@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Designer.Model.Widgets;
 
 namespace DeskWall.Designer.Model;
@@ -165,33 +165,46 @@ public static class Placement
 
     // ---- where a new widget lands ----------------------------------------------------------------
 
-    /// <summary>Where a widget just picked from the gallery goes: in <paramref name="region"/>, the
-    /// gap below whatever is already in it.
+    /// <summary>Where a widget just picked from Insert goes: the first gap in <paramref name="region"/>,
+    /// top down, that holds it with <see cref="SpawnGap"/> clear of everything; failing that the same
+    /// search one column further left (just left of the column, then the next), clear of everything.
     /// <para>The right-hand margin rather than the middle of the canvas, because windows sit
     /// centred on the ultrawide and leave that margin free - it is the only part of the wallpaper
     /// that is reliably visible (CLAUDE.md). This is a landing spot and nothing more: the widget is
     /// free to drag the instant it appears.</para>
-    /// <para>When there is no room left below, it cascades down from the top of the region instead,
-    /// stepping past anything already at that exact spot. Overlapping something is recoverable;
-    /// landing off the bottom edge, where the owner never sees it, is not.</para></summary>
+    /// <para>A gap, not "below the lowest": the owner's layout has the drives anchored at the bottom
+    /// of the margin, so below the lowest was on top of the clock, or off the canvas.</para>
+    /// <para>Only when no column across the whole canvas has a gap does it cascade down from the top
+    /// of the region, stepping past anything already at that exact spot. Overlapping something is
+    /// recoverable; landing off the bottom edge, where the owner never sees it, is not.</para></summary>
     public static Rect Spawn(Rect region, IReadOnlyList<Rect> existing, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(existing);
 
-        // Only what is actually in the margin counts as "already there": a widget the owner has
-        // dragged over to the left of the wallpaper says nothing about where the next one belongs.
-        var inRegion = existing.Where(r => r.X < region.Right && region.X < r.Right).ToList();
-        var y = inRegion.Count == 0 ? region.Y : inRegion.Max(r => r.Bottom) + SpawnGap;
+        for (var x = region.X; x >= 0; x -= width + SpawnGap)
+            if (FirstGap(new Rect(x, region.Y, width, region.H), existing, height) is { } y)
+                return new Rect(x, y, width, height);
 
-        if (y + height > region.Bottom)
+        var at = region.Y;
+        while (at + height + CascadeStep <= region.Bottom && existing.Any(r => r.X == region.X && r.Y == at))
+            at += CascadeStep;
+        return new Rect(region.X, at, width, height);
+    }
+
+    /// <summary>The first y in <paramref name="column"/> (top, or just below something in it) where a
+    /// <paramref name="height"/>-high box keeps <see cref="SpawnGap"/> from everything and stays inside
+    /// the column; null when there is none. Only what overlaps the column horizontally counts: a widget
+    /// dragged over to the left says nothing about the margin.</summary>
+    private static int? FirstGap(Rect column, IReadOnlyList<Rect> existing, int height)
+    {
+        var inColumn = existing.Where(r => r.X < column.Right && column.X < r.Right).ToList();
+        var candidates = inColumn.Select(r => r.Bottom + SpawnGap).Prepend(column.Y).Where(y => y >= column.Y).Distinct().OrderBy(y => y);
+        foreach (var y in candidates)
         {
-            y = region.Y;
-            while (y + height + CascadeStep <= region.Bottom
-                   && existing.Any(r => r.X == region.X && r.Y == y))
-            {
-                y += CascadeStep;
-            }
+            if (y + height > column.Bottom) break;
+            var top = y == column.Y ? y : y - SpawnGap;
+            if (!inColumn.Any(r => r.Y < y + height + SpawnGap && top < r.Bottom)) return y;
         }
-        return new Rect(region.X, y, width, height);
+        return null;
     }
 }

@@ -1189,6 +1189,39 @@ public partial class PreviewView : UserControl
         IReadOnlyList<Target> targets, IReadOnlyList<(int Dx, int Dy)> offsets)
         => targets.Select((t, i) => (Ids(t), offsets[i].Dx, offsets[i].Dy)).ToList();
 
+    // ---- the flash on something just added ----------------------------------------------------------
+
+    private System.Windows.Threading.DispatcherTimer? _flashTimer;
+    private DateTime _flashStart;
+
+    /// <summary>How long a just-added copy pulses: long enough to catch the eye at fit-to-window,
+    /// where a 172 px widget is 30 screen pixels across, short enough not to be in the way.</summary>
+    private static readonly TimeSpan FlashFor = TimeSpan.FromMilliseconds(1400);
+
+    /// <summary>Pulse <paramref name="id"/>'s box a few times, so a copy that landed in the margin
+    /// is findable at once. Its selection outline stays afterwards.</summary>
+    public void Flash(string id)
+    {
+        if (AllTargets().FirstOrDefault(t => t.Id == id) is not { } target) return;
+        _surface.Flash = target.Bounds;
+        _flashStart = DateTime.UtcNow;
+        _flashTimer ??= new System.Windows.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(40), System.Windows.Threading.DispatcherPriority.Render, (_, _) => FlashStep(), Dispatcher);
+        _flashTimer.Start();
+        FlashStep();
+    }
+
+    private void FlashStep()
+    {
+        var t = (DateTime.UtcNow - _flashStart).TotalMilliseconds / FlashFor.TotalMilliseconds;
+        if (t >= 1)
+        {
+            _flashTimer?.Stop();
+            _surface.Flash = null;
+        }
+        else _surface.FlashLevel = 0.5 - 0.5 * Math.Cos(t * Math.PI * 6);   // three pulses
+        _surface.InvalidateVisual();
+    }
+
     // ---- painting -------------------------------------------------------------------------------
 
     private void Redraw()
@@ -1270,6 +1303,10 @@ public partial class PreviewView : UserControl
 
         /// <summary>The open copy's or widget's bounds at copy and widget depth; null at layout depth.</summary>
         public CRect? OpenFrame { get; set; }
+
+        /// <summary>A just-added copy, pulsing (<see cref="PreviewView.Flash"/>), and how bright now (0..1).</summary>
+        public CRect? Flash { get; set; }
+        public double FlashLevel { get; set; }
 
         /// <summary>Widget depth: everything outside <see cref="OpenFrame"/> is dimmed.</summary>
         public bool Dimmed { get; set; }
@@ -1360,6 +1397,17 @@ public partial class PreviewView : UserControl
             }
 
             DrawHandles(dc);
+
+            if (Flash is { } flash)
+            {
+                var box = Inflate(ToScreen(flash), OutlineInset + 6);
+                var level = FlashLevel;
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb((byte)(90 * level), 255, 255, 255)), null, box, 6, 6);
+                dc.DrawRoundedRectangle(null, Stroke(Color.FromArgb((byte)(200 * level), 0, 0, 0), 4), box, 6, 6);
+                var ring = new Pen(accent.Clone(), 2.5);
+                ring.Brush.Opacity = level;
+                dc.DrawRoundedRectangle(null, ring, box, 6, 6);
+            }
         }
 
         /// <summary>Where the frame's bitmap goes on screen. A whole-canvas frame covers the canvas.
