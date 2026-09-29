@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
@@ -135,7 +135,7 @@ public class LensTests
     [Fact]
     public void A_New_Key_Never_Collides_With_A_User_Widget_Or_Another_New_One()
     {
-        var user = Path.Combine(WidgetCatalog.UserDir, "widget.json");
+        var user = Path.Combine(WidgetCatalog.UserDir, "new-widget.json");
         Directory.CreateDirectory(WidgetCatalog.UserDir);
         File.WriteAllText(user, "not even json");   // a broken file still owns its key
         try
@@ -143,8 +143,8 @@ public class LensTests
             var m = DesignerModelDepthTests.Model();
             var a = Lens.NewWidget(m, 10, 10);
             var b = Lens.NewWidget(m, 20, 20);
-            Assert.Equal("widget-2", Copy(m, a).Widget);
-            Assert.Equal("widget-3", Copy(m, b).Widget);
+            Assert.Equal("new-widget-2", Copy(m, a).Widget);
+            Assert.Equal("new-widget-3", Copy(m, b).Widget);
         }
         finally { File.Delete(user); }
     }
@@ -277,5 +277,60 @@ public class LensTests
         Assert.False(Lens.EditWidget(m, "dial", "Rename", d => d.Name = "CPU gauge"));
         m.Undo();
         Assert.Empty(m.WidgetEdits);
+    }
+    private static DesignerModel LoosePair() => new(LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg",
+          "sources": [ { "name": "hardware", "type": "hardware" } ],
+          "components": [
+            { "type": "dial", "id": "d", "rect": [200, 300, 80, 80], "fraction": { "bind": "hardware.cpu" } },
+            { "type": "text", "id": "t", "rect": [200, 390, 80, 16], "text": "cpu" } ] }
+        """), new DisplaySignature("T", 1000, 800, 100), null);
+
+    /// <summary>Critique 2, P3: Make widget names and keys the widget after what is written on it,
+    /// says what it shows, and never writes widget.json.</summary>
+    [Fact]
+    public void Make_Widget_Keys_And_Names_It_After_Its_First_Text_And_Says_What_It_Shows()
+    {
+        var m = LoosePair();
+        var copyId = Lens.MakeWidget(m, ["d", "t"])!;
+        var key = Copy(m, copyId).Widget;
+        Assert.Equal("cpu", key);
+        Assert.Equal("cpu-1", copyId);
+        Assert.Equal("cpu", m.WidgetEdits[key].Name);
+        Assert.Equal("Shows CPU load.", m.WidgetEdits[key].Description);
+    }
+
+    /// <summary>D2 with the critique's rule: the key follows the name until the first Apply, then is fixed.</summary>
+    [Fact]
+    public void Renaming_Moves_The_Key_Until_The_First_Apply_And_Never_After()
+    {
+        var home = Path.Combine(Path.GetTempPath(), "deskwall-tests", "rename-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(home);
+        var m = LoosePair();
+        m.Path = Path.Combine(home, "layout.json");
+        var copyId = Lens.MakeWidget(m, ["d", "t"])!;
+        m.SetDepth(Depth.Widget("cpu", copyId));
+
+        Assert.Equal("cpu-gauge", Lens.RenameWidget(m, "cpu", "CPU gauge"));
+        Assert.Equal(["cpu-gauge"], m.WidgetEdits.Keys);
+        var copy = Assert.Single(m.Layout.Copies!);
+        Assert.Equal(("cpu-gauge-1", "cpu-gauge"), (copy.Id, copy.Widget));
+        Assert.Equal(Depth.Widget("cpu-gauge", "cpu-gauge-1"), m.Depth);   // stays at widget depth
+
+        m.Undo();                                                          // one entry
+        Assert.Equal(["cpu"], m.WidgetEdits.Keys);
+        Assert.Equal("cpu", Assert.Single(m.Layout.Copies!).Widget);
+
+        Assert.Equal("cpu-gauge", Lens.RenameWidget(m, "cpu", "CPU gauge"));
+        var file = Path.Combine(WidgetCatalog.UserDir, "cpu-gauge.json");
+        try
+        {
+            m.Save();
+            Assert.True(File.Exists(file));
+            Assert.Equal("cpu-gauge", Lens.RenameWidget(m, "cpu-gauge", "CPU meter"));   // applied: the key stays
+            Assert.Equal("CPU meter", m.WidgetEdits["cpu-gauge"].Name);
+            Assert.Equal("cpu-gauge", Assert.Single(m.Layout.Copies!).Widget);
+        }
+        finally { File.Delete(file); }
     }
 }

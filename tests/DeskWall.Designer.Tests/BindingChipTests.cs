@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
@@ -54,5 +54,14 @@ public class BindingChipTests
         Assert.Equal("pc.cpu", BindingChip.PathText(b));
         Assert.Equal("pc.cpu", BindingChip.BindingFor(cpu, null).ToString());
         Assert.Equal("disks.drives[C].letter", BindingChip.PathText(Binding.Parse("disks.drives[C].letter")));
+    }
+    /// <summary>Critique 2, P3: never "hardware.cpu" or 0.254, even with no catalogue entry for it
+    /// (widget depth, a drop's first moment).</summary>
+    [Fact]
+    public void Describe_Uses_The_Label_Table_And_A_Percentage_When_The_Catalogue_Has_No_Entry()
+    {
+        var tree = DeskWall.Core.Values.ValueTree.Of(("hardware", DeskWall.Core.Values.ValueTree.Of(("cpu", new DeskWall.Core.Values.NumberValue(0.254)))));
+        var binding = Binding.Parse("hardware.cpu");
+        Assert.Equal("CPU load · 25%", DeskWall.Designer.Views.BindingChip.Describe(binding, [], tree));
     }
 }

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using DeskWall.Core;
 using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
@@ -113,5 +113,18 @@ public class PropertyRowsTests
         Assert.Null(PropertyRows.FromPercentText(""));
         Assert.Null(PropertyRows.PercentText(PropertyValue.Literal("auto")));
         Assert.Null(PropertyRows.PercentText(PropertyValue.Bound(Binding.Parse("disks.drives[C].usedFraction"))));
+    }
+    /// <summary>Critique 2, P3: "Warn at" on a copy reads 90 %, as the property row does.</summary>
+    [Fact]
+    public void A_Number_Knob_That_Sets_A_Percentage_Property_Is_A_Percentage()
+    {
+        var warn = new DeskWall.Core.Widgets.Knob("warnAt", "Warn at", DeskWall.Core.Widgets.KnobType.Number, "0.9", ["components.dial.threshold"], null, 0, 1);
+        var size = warn with { Sets = ["components.label.size"] };
+        var spliced = warn with { Sets = ["components.dial.threshold=bind:x"] };
+        var choice = warn with { Type = DeskWall.Core.Widgets.KnobType.Choice };
+        Assert.True(PropertyRows.IsPercentKnob(warn));
+        Assert.False(PropertyRows.IsPercentKnob(size));
+        Assert.False(PropertyRows.IsPercentKnob(spliced));
+        Assert.False(PropertyRows.IsPercentKnob(choice));
     }
 }

@@ -199,7 +199,12 @@ public sealed class DesignerModel
     /// <summary>The same, with the widget overlay (<see cref="WidgetEdits"/>) as well: one undo
     /// entry over the layout and the widgets together. Put a new <see cref="WidgetTemplate"/> in,
     /// never mutate one that is already there.</summary>
-    public void Edit(string label, Action<LayoutFile, IDictionary<string, WidgetTemplate>> mutate)
+    public void Edit(string label, Action<LayoutFile, IDictionary<string, WidgetTemplate>> mutate) => Edit(label, mutate, null);
+
+    /// <summary>The same, landing on <paramref name="then"/> as the depth: for an edit that renames
+    /// what the depth names (a widget's key before its first Apply), so the canvas stays where it is
+    /// instead of climbing out of a key that has gone. <see cref="DepthChanged"/> follows <see cref="Changed"/>.</summary>
+    public void Edit(string label, Action<LayoutFile, IDictionary<string, WidgetTemplate>> mutate, Depth? then)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         _undo.Add(Capture());
@@ -207,7 +212,10 @@ public sealed class DesignerModel
         _redo.Clear();
         mutate(Layout, _widgetEdits);
         LastEditLabel = label;
+        var moved = then is not null && then != Depth;
+        if (moved) Depth = then!;
         AfterChange();
+        if (moved) DepthChanged?.Invoke();
     }
 
     /// <summary>Every change ends here: the caches go, a depth whose copy or widget went climbs

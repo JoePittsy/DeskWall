@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using DeskWall.Core.Layout;
 
 namespace DeskWall.Designer.Model;
@@ -86,6 +86,19 @@ public static class PropertyRows
         ["Gap"] = (Group.Geometry, "Gap", false),
         ["CellHeight"] = (Group.Geometry, "Cell height", false),
     };
+
+    /// <summary>A number knob that only sets percentage properties ("Warn at" sets a dial's
+    /// threshold): shown and typed as a percentage, like the property row it stands for.</summary>
+    public static bool IsPercentKnob(DeskWall.Core.Widgets.Knob knob)
+    {
+        ArgumentNullException.ThrowIfNull(knob);
+        return knob.Type == DeskWall.Core.Widgets.KnobType.Number && knob.Sets.Count > 0 && knob.Sets.All(set =>
+        {
+            var parts = set.Split('.');
+            return parts.Length >= 3 && parts[0] == "components" && !set.Contains('=', StringComparison.Ordinal)
+                && Rows.FirstOrDefault(r => string.Equals(r.Key, parts[^1], StringComparison.OrdinalIgnoreCase)).Value.Percent;
+        });
+    }
 
     // ---- percentages: 0.9 in the file, 90 on screen ----------------------------------------------
     // Decimal, not double: 0.123 * 100 is 12.299999999999999 in double, and 12.3 / 100 is not the

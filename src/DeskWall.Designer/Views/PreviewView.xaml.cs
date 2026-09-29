@@ -1189,6 +1189,16 @@ public partial class PreviewView : UserControl
         IReadOnlyList<Target> targets, IReadOnlyList<(int Dx, int Dy)> offsets)
         => targets.Select((t, i) => (Ids(t), offsets[i].Dx, offsets[i].Dy)).ToList();
 
+    /// <summary>The canvas has the keys (arrows nudge, Tab picks the next thing, Delete removes): an
+    /// accent frame round the pane says so, since its own focus rectangle is suppressed (it would sit
+    /// round the whole photograph and read as a selection).</summary>
+    protected override void OnIsKeyboardFocusWithinChanged(DependencyPropertyChangedEventArgs e)
+    {
+        base.OnIsKeyboardFocusWithinChanged(e);
+        _surface.Focused = IsKeyboardFocusWithin;
+        _surface.InvalidateVisual();
+    }
+
     // ---- the flash on something just added ----------------------------------------------------------
 
     private System.Windows.Threading.DispatcherTimer? _flashTimer;
@@ -1304,6 +1314,9 @@ public partial class PreviewView : UserControl
         /// <summary>The open copy's or widget's bounds at copy and widget depth; null at layout depth.</summary>
         public CRect? OpenFrame { get; set; }
 
+        /// <summary>The canvas has keyboard focus: an accent frame just inside the pane.</summary>
+        public bool Focused { get; set; }
+
         /// <summary>A just-added copy, pulsing (<see cref="PreviewView.Flash"/>), and how bright now (0..1).</summary>
         public CRect? Flash { get; set; }
         public double FlashLevel { get; set; }
@@ -1397,6 +1410,9 @@ public partial class PreviewView : UserControl
             }
 
             DrawHandles(dc);
+
+            if (Focused)
+                dc.DrawRectangle(null, new Pen(accent, 2), new Rect(1, 1, Math.Max(0, ActualWidth - 2), Math.Max(0, ActualHeight - 2)));
 
             if (Flash is { } flash)
             {

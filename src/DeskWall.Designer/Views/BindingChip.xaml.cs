@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Windows;
 using System.Windows.Automation;
@@ -100,28 +100,23 @@ public partial class BindingChip : UserControl
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(entries);
         var path = PathText(binding);
-        var label = entries.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase))?.Label ?? path;
+        // The label table when the value is not in the tree yet (a source that has not read, or a
+        // drop's first moment), so the chip never says "hardware.cpu"; and a fraction with no format
+        // of its own reads as the Data row reads it ("25%"), never as 0.254.
+        var entry = entries.FirstOrDefault(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase));
+        var (label, fraction) = entry is not null ? (entry.Label, entry.Kind == ValueKind.Fraction) : ValueCatalog.Known(path, []);
+        var format = binding.Format ?? (fraction && FormatPresets.For(ValueKind.Fraction) is [var first, ..] ? first.Format : null);
         var value = BindingResolver.Resolve(binding, tree) switch
         {
             null => "no value yet",
             ListValue l => Items(l),
-            var v => v.ToText(binding.Format),
+            var v => v.ToText(format),
         };
         return $"{label} · {value}";
     }
 
     /// <summary>The path half of a binding as a binding writes it, without the format.</summary>
-    public static string PathText(Binding binding)
-    {
-        ArgumentNullException.ThrowIfNull(binding);
-        var sb = new StringBuilder();
-        for (var i = 0; i < binding.Path.Count; i++)
-        {
-            if (i > 0 && binding.Path[i] is NameSegment) sb.Append('.');
-            sb.Append(binding.Path[i]);
-        }
-        return sb.ToString();
-    }
+    public static string PathText(Binding binding) => ValueCatalog.PathText(binding);
 
     /// <summary>The values a row of this editor kind can take whose label or path contains every
     /// word of <paramref name="search"/>, in catalog order.</summary>

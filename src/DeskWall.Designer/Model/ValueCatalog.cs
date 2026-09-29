@@ -19,7 +19,7 @@ public enum ValueKind { Fraction, Timestamp, Number, Text, Bool, List }
 public sealed record ValueEntry(string Path, string Label, ValueKind Kind, Value Sample, SourceDef? Source, bool Diagnostic = false);
 
 /// <summary>Flattens <see cref="LiveSources.Tree"/> into one row per bindable value.</summary>
-public static class ValueCatalog
+public static partial class ValueCatalog
 {
     /// <summary>Every leaf of <paramref name="tree"/>, plus each list itself (for a repeater's
     /// items). Records are walked, not listed. <paramref name="sources"/> names each root's source
@@ -86,6 +86,40 @@ public static class ValueCatalog
         "http.status", "http.fromCache",
         "file.size",
     };
+
+    /// <summary>What the label table knows about a binding path with no live value to walk (not read
+    /// yet, or a source that is not running): its human label ("CPU load", "C: used") and whether it
+    /// is documented as 0..1. The path itself, and false, when the table has nothing. The first
+    /// segment names the source; <paramref name="sources"/> gives its type, else the name is taken
+    /// as the type (every default source's name is its type).</summary>
+    public static (string Label, bool Fraction) Known(string path, IEnumerable<SourceDef> sources)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(sources);
+        var i = path.IndexOfAny(['.', '[']);
+        if (i <= 0) return (path, false);
+        var name = path[..i];
+        var type = (sources.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))?.Type ?? name).ToLowerInvariant();
+        string? key = null;
+        var shape = ListKey().Replace(path[i..].TrimStart('.'), m => { key ??= m.Groups[1].Value; return "[*]"; });
+        return Labels.TryGetValue(type + "." + shape, out var l) ? (string.Format(CultureInfo.InvariantCulture, l.Label, key), l.Fraction) : (path, false);
+    }
+
+    /// <summary>The path half of a binding as a binding writes it, without the format.</summary>
+    public static string PathText(DeskWall.Core.Bindings.Binding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < binding.Path.Count; i++)
+        {
+            if (i > 0 && binding.Path[i] is DeskWall.Core.Bindings.NameSegment) sb.Append('.');
+            sb.Append(binding.Path[i]);
+        }
+        return sb.ToString();
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\[([^\]]*)\]")]
+    private static partial System.Text.RegularExpressions.Regex ListKey();
 
     /// <summary>Whether a value of <paramref name="kind"/> can drive a property edited with
     /// <paramref name="editor"/>. Text-shaped editors take anything that renders as text (a bool

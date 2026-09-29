@@ -316,8 +316,9 @@ public partial class PropertiesPanel : UserControl
         return i < 0 ? value : value[..i];
     }
 
-    private TextBox KnobText(WidgetCopy copy, WidgetTemplate template, Knob knob, string current)
+    private FrameworkElement KnobText(WidgetCopy copy, WidgetTemplate template, Knob knob, string current)
     {
+        if (PropertyRows.IsPercentKnob(knob)) return KnobPercent(copy, template, knob, current);
         var box = new TextBox { Text = Display(current) };
         void Do()
         {
@@ -334,6 +335,34 @@ public partial class PropertiesPanel : UserControl
         }
         OnCommit(box, Do);
         return box;
+    }
+
+    /// <summary>"Warn at 90 %", as the property row it stands for shows it; 0.9 in the file. The
+    /// knob's min and max are fractions too, and bound what is typed.</summary>
+    private FrameworkElement KnobPercent(WidgetCopy copy, WidgetTemplate template, Knob knob, string current)
+    {
+        string Shown(string v) => PropertyRows.PercentText(PropertyValue.Literal(v)) ?? v;
+        var box = new TextBox { Text = Shown(current) };
+        OnCommit(box, () =>
+        {
+            var now = Copy(copy.Id) is { } c ? Copies.KnobValue(c, knob) : current;
+            if (PropertyRows.FromPercentText(box.Text)?.LiteralText is not { } literal
+                || !double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out var n)) { box.Text = Shown(now); return; }
+            n = Math.Clamp(n, knob.Min ?? double.MinValue, knob.Max ?? double.MaxValue);
+            var text = n.ToString("R", CultureInfo.InvariantCulture);
+            box.Text = Shown(text);
+            CommitKnob(copy, template, knob, text);
+        });
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var sign = Label("%");
+        sign.Width = double.NaN;
+        sign.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetColumn(sign, 1);
+        grid.Children.Add(box);
+        grid.Children.Add(sign);
+        return grid;
     }
 
     /// <summary>A town is typed, then looked up once. Until it resolves nothing is written: a
@@ -398,7 +427,7 @@ public partial class PropertiesPanel : UserControl
             if (anchor.SelectedItem is ComboBoxItem { Tag: string v }) Lens.EditWidget(model, key, "Set anchor", d => d.Anchor = v);
         };
         Identify(anchor, "Anchor", "widget:anchor");
-        anchor.ToolTip = "Which end of a column this stacks from";
+        anchor.ToolTip = "Only for generated starter layouts: whether this widget stacks down from the top of the margin or up from its bottom. Where you drag it is where it stays.";
         Add(Shell("widget/anchor", "Anchor", anchor, false, null, null, null));
         var size = Label(string.Format(CultureInfo.InvariantCulture, "{0} \u00d7 {1}", template.Width, template.Height));
         size.ToolTip = "The frame hugs its parts: move or resize a part to change it";
@@ -419,7 +448,10 @@ public partial class PropertiesPanel : UserControl
         {
             var text = box.Text.Trim();
             if (text.Length == 0) { box.Text = value; return; }
-            if (_model is not null) Lens.EditWidget(_model, key, $"Set {name.ToLowerInvariant()}", d => set(d, text));
+            if (_model is null) return;
+            // The name carries the key with it until the first Apply (Lens.RenameWidget).
+            if (id == "widget:name") Lens.RenameWidget(_model, key, text);
+            else Lens.EditWidget(_model, key, $"Set {name.ToLowerInvariant()}", d => set(d, text));
         });
         return box;
     }

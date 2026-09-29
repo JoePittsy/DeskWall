@@ -691,6 +691,10 @@ public partial class MainWindow : Window
         _transient = string.IsNullOrEmpty(message) ? null : message;
         _transientUntil = DateTime.UtcNow.AddSeconds(8);
         RefreshStatus();
+        // A panel's sentence is news; the periodic "applied / daemon" refresh is not announced.
+        if (_transient is not null)
+            System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(StatusText)
+                ?.RaiseAutomationEvent(System.Windows.Automation.Peers.AutomationEvents.LiveRegionChanged);
     }
 
     private void RefreshStatus()

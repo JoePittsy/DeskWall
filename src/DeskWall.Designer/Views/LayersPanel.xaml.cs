@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -98,7 +98,7 @@ public partial class LayersPanel : UserControl
             dot.SetResourceReference(Shape.FillProperty, "AccentFillColorDefaultBrush");
             line.Children.Add(dot);
         }
-        if (row.IsForkedShipped) line.Children.Add(Badge("fork", null, "Your edited version of a shipped widget"));
+        if (row.IsForkedShipped) line.Children.Add(Badge("edited", null, "Your edited version of a shipped widget (as the Insert card says)"));
         if (row.IsBroken) line.Children.Add(Badge("broken", "SystemFillColorCriticalBackgroundBrush", $"Widget '{row.Name}' is missing or fails to load"));
         if (row.IsOrphan) line.Children.Add(Badge("orphan", "SystemFillColorCautionBackgroundBrush",
             row.Kind == LayerKind.Orphan ? "The widget no longer has what this names; it is kept, and applies again if it comes back" : "Has an override the widget no longer matches"));
@@ -122,7 +122,7 @@ public partial class LayersPanel : UserControl
 
     /// <summary>A state word. With a background it is a pill of the InfoBar's own severity fill with
     /// primary text: the severity colours as text fall under 4.5:1 on the selected row in the light
-    /// theme (caution measured 4.36:1), their background fills under primary text do not. The fork
+    /// theme (caution measured 4.36:1), their background fills under primary text do not. "edited"
     /// is accent text, over 8:1 in both themes.</summary>
     private static Border Badge(string text, string? background, string tip)
     {
@@ -144,7 +144,7 @@ public partial class LayersPanel : UserControl
             default: parts.Add(row.Name); parts.Add(row.Detail); break;
         }
         if (row.HasOverride && row.Kind != LayerKind.Orphan) parts.Add("overridden");
-        if (row.IsForkedShipped) parts.Add("forked from shipped");
+        if (row.IsForkedShipped) parts.Add("edited version of a shipped widget");
         if (row.IsBroken) parts.Add("broken widget");
         if (row.IsOrphan && row.Kind == LayerKind.Copy) parts.Add("has orphan overrides");
         return string.Join(", ", parts);

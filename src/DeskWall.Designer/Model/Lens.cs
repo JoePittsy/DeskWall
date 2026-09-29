@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.RegularExpressions;
 using DeskWall.Core;
 using DeskWall.Core.Bindings;
@@ -150,10 +150,18 @@ public static partial class Lens
             .Select(v => ((NameSegment)v.Binding!.Path[0]).Name).ToHashSet(StringComparer.Ordinal);
         var sources = Clone(new LayoutFile { BaseImage = "", Sources = model.Layout.Sources.Where(s => bound.Contains(s.Name)).ToList() }).Sources;
 
-        var key = FreeKey(model);
+        // Named, and keyed, after what the owner typed on it (the first text part's words, "cpu"),
+        // else its first part's kind; the key follows a rename until the first Apply (RenameWidget).
+        var label = picked.OfType<TextDef>().Select(t => t.Text.LiteralText?.Trim()).FirstOrDefault(t => !string.IsNullOrEmpty(t))
+            ?? picked[0] switch { DialDef => "Dial", BarDef => "Bar", ImageDef => "Image", TextDef => "Text", _ => "Widget" };
+        var key = FreeKey(model, WidgetDocument.Slug(label));
+        var shows = parts.SelectMany(c => ComponentProperties.For(c).Select(p => p.Get(c)))
+            .Where(v => v.IsBound).Select(v => ValueCatalog.Known(ValueCatalog.PathText(v.Binding!), model.Layout.Sources).Label)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var template = new WidgetTemplate
         {
-            Name = "New widget", Key = key, Description = $"Made from {parts.Count} part{(parts.Count == 1 ? "" : "s")}.",
+            Name = label, Key = key,
+            Description = shows.Count == 0 ? "A widget of your own." : $"Shows {string.Join(" and ", shows)}.",
             Width = Math.Max(1, w), Height = Math.Max(1, h), Sources = sources, Components = parts,
         };
         var copyId = FreeCopyId(model.Layout, key);
@@ -173,8 +181,8 @@ public static partial class Lens
     public static string NewWidget(DesignerModel model, int x, int y)
     {
         ArgumentNullException.ThrowIfNull(model);
-        var key = FreeKey(model);
-        var template = new WidgetTemplate { Name = "New widget", Key = key, Description = "A new widget.", Width = NewWidth, Height = NewHeight };
+        var key = FreeKey(model, WidgetDocument.Slug("New widget"));
+        var template = new WidgetTemplate { Name = "New widget", Key = key, Description = "A widget of your own.", Width = NewWidth, Height = NewHeight };
         var copyId = FreeCopyId(model.Layout, key);
         model.Edit("New widget", (l, edits) =>
         {
@@ -228,6 +236,59 @@ public static partial class Lens
         if (WidgetTemplateWriter.ToJson(edited) == WidgetTemplateWriter.ToJson(template)) return false;
         model.Edit(label, (_, edits) => edits[template.Key] = edited);
         return true;
+    }
+
+    /// <summary>Rename the widget <paramref name="key"/>, as ONE undo entry. Until its first Apply (no
+    /// file of that key in either widgets folder: made, new or duplicated here) the key follows the
+    /// name, a free slug of it, so Apply writes <c>cpu-gauge.json</c> and not <c>widget.json</c>; its
+    /// copies, their ids and the depth follow. From the first Apply the key is fixed (plan D2) and
+    /// only the name changes. Returns the key the widget has now; false-y (null) when nothing changed.</summary>
+    public static string? RenameWidget(DesignerModel model, string key, string name)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(name);
+        if (Template(model, key) is not { } template || template.Name == name) return null;
+        var applied = File.Exists(Path.Combine(WidgetCatalog.UserDir, key + ".json")) || File.Exists(Path.Combine(WidgetCatalog.ShippedDir, key + ".json"));
+        if (applied || !model.WidgetEdits.ContainsKey(key))
+            return EditWidget(model, key, "Set name", d => d.Name = name) ? key : null;
+
+        var slug = WidgetDocument.Slug(name);
+        var newKey = string.Equals(slug, key, StringComparison.OrdinalIgnoreCase) ? key : FreeKey(model, slug);
+        var doc = WidgetDocument.FromTemplate(template);
+        doc.Name = name;
+        var t = doc.ToTemplate();
+        var renamed = new WidgetTemplate
+        {
+            Name = t.Name, Key = newKey, Description = t.Description, Width = t.Width, Height = t.Height,
+            Anchor = t.Anchor, Requires = t.Requires, Knobs = t.Knobs, Sources = t.Sources, Components = t.Components,
+        };
+        // The copies' new ids first, on a scratch copy of the layout, so the depth can move with the
+        // edit: a depth left on the old key would climb out (PruneDepth) and zoom the canvas away.
+        var ids = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (newKey != key)
+        {
+            var scratch = Clone(model.Layout);
+            foreach (var copy in scratch.Copies ?? [])
+                if (string.Equals(copy.Widget, key, StringComparison.OrdinalIgnoreCase)) { ids[copy.Id] = copy.Id = FreeCopyId(scratch, newKey); copy.Widget = newKey; }
+        }
+        string? Moved(string? id) => id is not null && ids.TryGetValue(id, out var to) ? to : id;
+        var depth = model.Depth;
+        var then = depth.WidgetKey is { } k && string.Equals(k, key, StringComparison.OrdinalIgnoreCase)
+            ? depth with { WidgetKey = newKey, CopyId = Moved(depth.CopyId) }
+            : depth with { CopyId = Moved(depth.CopyId) };
+        model.Edit("Set name", (l, edits) =>
+        {
+            edits.Remove(key);
+            edits[newKey] = renamed;
+            foreach (var copy in l.Copies ?? [])
+            {
+                if (!string.Equals(copy.Widget, key, StringComparison.OrdinalIgnoreCase)) continue;
+                copy.Widget = newKey;
+                copy.Id = Moved(copy.Id)!;
+            }
+        }, then);
+        if (ids.Count > 0) model.Select(model.Selection.Select(id => ids.Aggregate(id, (a, m) => a == m.Key ? m.Value : a.StartsWith(m.Key + ".", StringComparison.Ordinal) ? m.Value + a[m.Key.Length..] : a)));
+        return newKey;
     }
 
     // ---- helpers ------------------------------------------------------------------------------
