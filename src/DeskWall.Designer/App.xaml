@@ -46,5 +46,118 @@
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="12" />
     </Style>
+
+    <!-- ==== The properties panel (PropertiesPanel, BindingChip) ==== -->
+
+    <!-- What is selected: the widget's name, or the kind of part. -->
+    <Style x:Key="PanelHeader" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <!-- Knobs, Content, Type, Colour, Arc, Geometry. -->
+    <Style x:Key="PropGroupHeader" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,16,0,8" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <!-- A row's label. Secondary, which clears 4.5:1 in both themes (the lane report measures it). -->
+    <Style x:Key="PropLabel" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Style>
+
+    <!-- This row is overridden on this copy: an accent bar at the row's left edge. -->
+    <Style x:Key="OverrideMarker" TargetType="Border">
+      <Setter Property="Width" Value="3" />
+      <Setter Property="CornerRadius" Value="1.5" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="Margin" Value="0,2" />
+      <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+    </Style>
+
+    <!-- A row's Bind and "..." icons: shown while the row (the Grid they sit in) is hovered or the
+         icon itself has focus, never tab stops (the row's context menu carries the same actions). -->
+    <Style x:Key="RowIconButton" TargetType="Button">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Margin" Value="2,0,0,0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+      <Setter Property="Opacity" Value="0" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+          <Setter Property="Opacity" Value="1" />
+        </DataTrigger>
+        <Trigger Property="IsKeyboardFocused" Value="True">
+          <Setter Property="Opacity" Value="1" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- "CPU load · 27%": a pill a layer above the panel, accent-stroked so a bound value reads as
+         different from a typed one. -->
+    <Style x:Key="BindingChipButton" TargetType="Button">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="10,3" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+      <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Pill" CornerRadius="13" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Pill" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Pill" Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Pill" Property="BorderThickness" Value="2" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The chip's search, open under it. -->
+    <Style x:Key="BindingChipEditor" TargetType="Border">
+      <Setter Property="Margin" Value="0,6,0,4" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+    </Style>
+
+    <!-- Under a swatch, so a translucent colour shows as translucent. The same two tokens as the
+         colour picker's own checkerboard. -->
+    <DrawingBrush x:Key="Checker" TileMode="Tile" Viewport="0,0,8,8" ViewportUnits="Absolute" Stretch="Fill">
+      <DrawingBrush.Drawing>
+        <DrawingGroup>
+          <GeometryDrawing Brush="{DynamicResource SolidBackgroundFillColorBaseBrush}" Geometry="M0,0 H2 V2 H0 Z" />
+          <GeometryDrawing Brush="{DynamicResource ControlStrongFillColorDisabledBrush}" Geometry="M0,0 H1 V1 H0 Z M1,1 H2 V2 H1 Z" />
+        </DrawingGroup>
+      </DrawingBrush.Drawing>
+    </DrawingBrush>
   </Application.Resources>
 </Application>
