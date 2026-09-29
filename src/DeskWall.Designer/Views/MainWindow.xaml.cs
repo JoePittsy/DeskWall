@@ -36,8 +36,9 @@ namespace DeskWall.Designer.Views;
 /// Deliberately left out: a menu bar; a display selector and a "copy from another display" button
 /// (a layout belongs to the display in front of you, and the store scales the rest); a file name
 /// with a dirty marker (Apply is enabled exactly when there is something to apply, which says the
-/// same thing with no text); menus or buttons for the keyboard verbs above (their tooltips name
-/// them), one-step forward and backward, and the system clipboard; panel collapse keys; a
+/// same thing with no text); a menu bar for the keyboard verbs above (the canvas's right-click menu
+/// carries them with their keys, and F1 lists every key), one-step forward and backward, and the
+/// system clipboard; panel collapse keys; a
 /// confirmation for Apply. The status line at the foot says when it last
 /// reached the wallpaper and whether the daemon is there to paint it.
 /// </para>
@@ -104,6 +105,11 @@ public partial class MainWindow : Window
         // chips, the preview and the Insert panel's Data rows all read that one, so a provider
         // that is not in it is one the user cannot bind.
         Providers.ProvidersChanged += records => _live?.SetProviders(records);
+
+        Preview.ContextMenu = new System.Windows.Controls.ContextMenu();
+        System.Windows.Automation.AutomationProperties.SetName(Preview.ContextMenu, "Canvas actions");
+        Preview.ContextMenuOpening += OnCanvasMenuOpening;
+        FillShortcutSheet();
 
         RestorePlacement();
         Open(signature, resolution);
@@ -501,6 +507,13 @@ public partial class MainWindow : Window
         // Not while a box is being typed into: Delete, Enter and Ctrl+Z belong to the text there.
         if (key == Key.S && ctrl) { Apply(); e.Handled = true; return; }
         if (focus is System.Windows.Controls.TextBox) return;
+        if (key == Key.F1 && mods == ModifierKeys.None || key == Key.OemQuestion && mods == ModifierKeys.Shift)
+        {
+            ToggleShortcuts();
+            e.Handled = true;
+            return;
+        }
+        if (key == Key.Escape && ShortcutSheet.Visibility == Visibility.Visible) { ToggleShortcuts(); e.Handled = true; return; }
         // Nor inside a side panel: Delete on a property combo, Enter on a knob or Esc in the colour
         // picker belong to that control, not to the canvas selection. Layers is the exception: it
         // lists what is on the canvas, so its Delete, Enter and Esc are the canvas's.
@@ -527,15 +540,9 @@ public partial class MainWindow : Window
                 _model.SelectSibling(mods == ModifierKeys.Shift ? -1 : 1);
                 break;
             case Key.A when ctrl: _model.SelectAll(); break;
-            case Key.C when ctrl:
-                if (_model.CopyJson(sel) is { } json) { _clip = json; _pastes = 0; }
-                break;
+            case Key.C when ctrl: CopySelection(); break;
             case Key.V when ctrl: Paste(); break;
-            case Key.D when ctrl:
-                var made = _model.Duplicate(sel, PasteOffset, PasteOffset);
-                if (made.Count > 0) _model.Select(made);
-                else if (_model.Depth.Kind == DepthKind.Copy && sel.Length > 0) SetStatus(CopyCannotGainParts);
-                break;
+            case Key.D when ctrl: DuplicateSelection(); break;
             case Key.OemCloseBrackets when ctrl: _model.BringToFront(sel); break;
             case Key.OemOpenBrackets when ctrl: _model.SendToBack(sel); break;
             case Key.K when mods == (ModifierKeys.Control | ModifierKeys.Alt): _model.MakeOrEditWidget(); break;
@@ -552,6 +559,97 @@ public partial class MainWindow : Window
 
     private bool InSidePanel()
         => Properties.IsKeyboardFocusWithin || Sources.IsKeyboardFocusWithin || Insert.IsKeyboardFocusWithin || Providers.IsKeyboardFocusWithin;
+
+    private void CopySelection()
+    {
+        if (_model.CopyJson(_model.Selection) is { } json) { _clip = json; _pastes = 0; }
+    }
+
+    private void DuplicateSelection()
+    {
+        var sel = _model.Selection.ToArray();
+        var made = _model.Duplicate(sel, PasteOffset, PasteOffset);
+        if (made.Count > 0) _model.Select(made);
+        else if (_model.Depth.Kind == DepthKind.Copy && sel.Length > 0) SetStatus(CopyCannotGainParts);
+    }
+
+    // ---- the canvas menu and the shortcut sheet ------------------------------------------------------
+
+    /// <summary>Right-click on the canvas, or the Menu key / Shift+F10 with the canvas focused: the
+    /// keyboard verbs, each with its key, so the menu teaches them. Rebuilt on every opening, so what
+    /// is enabled (and whether the first item makes or edits a widget) matches the selection now.</summary>
+    private void OnCanvasMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs e)
+    {
+        var menu = Preview.ContextMenu!;
+        menu.Items.Clear();
+        var any = _model.Selection.Count > 0;
+        void Item(string header, string keys, bool enabled, Action act)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = header, InputGestureText = keys, IsEnabled = enabled };
+            item.Click += (_, _) => { act(); Preview.Focus(); };
+            menu.Items.Add(item);
+        }
+        var copy = _model.EditableCopy();
+        var loose = _model.Depth.Kind == DepthKind.Layout && any && copy is null;
+        if (copy is not null) Item("Edit widget", Shortcuts.MakeOrEdit, true, () => _model.MakeOrEditWidget());
+        else Item("Make widget", Shortcuts.MakeOrEdit, loose, () => _model.MakeOrEditWidget());
+        Item("Edit parts", Shortcuts.EditParts, _model.Depth.Kind == DepthKind.Layout && copy is not null, () => _model.Descend());
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        Item("Duplicate", Shortcuts.Duplicate, any, DuplicateSelection);
+        Item("Copy", Shortcuts.Copy, any, CopySelection);
+        Item("Paste", Shortcuts.Paste, _clip is not null, Paste);
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        Item("Bring to front", Shortcuts.Front, any, () => _model.BringToFront([.. _model.Selection]));
+        Item("Send to back", Shortcuts.Back, any, () => _model.SendToBack([.. _model.Selection]));
+        Item("Delete", Shortcuts.Delete, any, RemoveSelection);
+        menu.Items.Add(new System.Windows.Controls.Separator());
+        Item("Zoom to selection", Shortcuts.ZoomToSelection, true, Preview.FitSelection);
+        Item("Keyboard shortcuts", Shortcuts.Sheet, true, ToggleShortcuts);
+
+        // From the keyboard the menu opens at the selection, not at the canvas's top-left corner.
+        if (e.CursorLeft < 0 && Preview.SelectionAnchor() is { } at)
+        {
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Relative;
+            menu.PlacementTarget = Preview;
+            menu.HorizontalOffset = at.X;
+            menu.VerticalOffset = at.Y;
+        }
+        else
+        {
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+            menu.HorizontalOffset = menu.VerticalOffset = 0;
+        }
+    }
+
+    private void FillShortcutSheet()
+    {
+        foreach (var group in Shortcuts.All)
+        {
+            var header = new System.Windows.Controls.TextBlock { Text = group.Name, Margin = new Thickness(0, 8, 0, 4) };
+            header.SetResourceReference(StyleProperty, "Caption");
+            ShortcutList.Children.Add(header);
+            foreach (var entry in group.Entries)
+            {
+                var row = new System.Windows.Controls.Grid { Margin = new Thickness(0, 0, 0, 4) };
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(136) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
+                var keys = new System.Windows.Controls.TextBlock { Text = entry.Keys, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 8, 0) };
+                keys.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TextFillColorPrimaryBrush");
+                var what = new System.Windows.Controls.TextBlock { Text = entry.What, TextWrapping = TextWrapping.Wrap };
+                what.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+                System.Windows.Controls.Grid.SetColumn(what, 1);
+                row.Children.Add(keys);
+                row.Children.Add(what);
+                System.Windows.Automation.AutomationProperties.SetName(row, $"{entry.Keys}: {entry.What}");
+                ShortcutList.Children.Add(row);
+            }
+        }
+    }
+
+    private void ToggleShortcuts()
+        => ShortcutSheet.Visibility = ShortcutSheet.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+
+    private void CloseShortcuts_Click(object sender, RoutedEventArgs e) { ShortcutSheet.Visibility = Visibility.Collapsed; Preview.Focus(); }
 
     private void Paste()
     {

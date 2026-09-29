@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
 using DeskWall.Designer.Model;
@@ -196,5 +196,39 @@ public class ShellVerbsTests
         m.SetDepth(Depth.Layout);
         m.ClearSelection();
         Assert.False(m.MakeOrEditWidget());
+    }
+    /// <summary>Critique 2, P1: the properties panel offers Make widget for two or more loose parts,
+    /// and only then (a copy in the selection makes Ctrl+Alt+K an Edit widget instead).</summary>
+    [Fact]
+    public void Make_Widget_Is_Offered_For_Two_Or_More_Loose_Parts_Only()
+    {
+        var m = Loose();
+        m.Select(["a", "b"]);
+        Assert.True(m.CanMakeWidget);
+        Assert.Null(m.EditableCopy());
+
+        m.Select(["a"]);
+        Assert.False(m.CanMakeWidget);                 // one part: the part's own properties show
+        m.Select(["a", "dial-1"]);
+        Assert.False(m.CanMakeWidget);                 // a copy in it: Ctrl+Alt+K edits that widget
+        Assert.Equal("dial-1", m.EditableCopy()!.Id);
+        m.Select(["a", "dial-1.label"]);
+        Assert.False(m.CanMakeWidget);                 // a copy's part counts as the copy
+        Assert.Equal("dial-1", m.EditableCopy()!.Id);
+
+        m.Select(["a", "b"]);
+        m.SetDepth(Depth.Copy("dial-1", "dial"));
+        m.Select(["dial-1.label", "dial-1.value"]);
+        Assert.False(m.CanMakeWidget);                 // not below layout depth
+        Assert.Equal("dial-1", m.EditableCopy()!.Id);
+    }
+
+    [Fact]
+    public void Edit_Widget_Says_How_Far_It_Reaches_In_The_Reset_Dialogs_Words()
+    {
+        var m = TwoDials();
+        Assert.Equal(2, DepthText.CopiesOf(m.Layout, "DIAL"));
+        Assert.Equal("Edit widget: every copy of it in every layout on this machine follows (2 are on this layout).", DepthText.Follow(2));
+        Assert.Equal("Edit widget: every copy of it in every layout on this machine follows (1 is on this layout).", DepthText.Follow(1));
     }
 }

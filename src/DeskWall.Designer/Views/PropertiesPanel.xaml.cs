@@ -163,7 +163,8 @@ public partial class PropertiesPanel : UserControl
         else if (_model.Selection.Count > 1)
         {
             Add(Header($"{_model.Selection.Count} selected"));
-            Add(Hint("Select one thing to change its properties."));
+            if (_model.CanMakeWidget) BuildMakeWidget();
+            else Add(Hint("Select one thing to change its properties."));
         }
         else if (_model is { Depth.Kind: DepthKind.Layout, Selection.Count: 1 } && Copy(_model.Selection[0]) is { } copy) BuildCopy(copy);
         else if (_model.Depth is { Kind: DepthKind.Copy } && Copy(_model.Depth.CopyId) is { } open)
@@ -182,6 +183,22 @@ public partial class PropertiesPanel : UserControl
 
     private void Add(UIElement e) => Root.Children.Add(e);
 
+    // ---- loose parts, at layout depth ------------------------------------------------------------
+
+    /// <summary>Two or more loose parts: what they are, and the verb that turns them into a widget
+    /// (the same as Ctrl+Alt+K), instead of a dead end.</summary>
+    private void BuildMakeWidget()
+    {
+        var model = _model!;
+        var kinds = model.Selection.Select(id => TypeName(model.Find(id))).ToList();
+        Add(Hint($"Placed by hand: {string.Join(", ", kinds)}. Make them one widget to place copies of it, each following your edits."));
+        var make = ActionButton("Make widget", "selection:make-widget");
+        make.SetResourceReference(StyleProperty, "AccentButtonStyle");
+        make.ToolTip = "Make widget (Ctrl+Alt+K)";
+        make.Click += (_, _) => model.MakeOrEditWidget();
+        Add(make);
+    }
+
     // ---- a copy, at layout depth -----------------------------------------------------------------
 
     private void BuildCopy(WidgetCopy copy)
@@ -195,6 +212,10 @@ public partial class PropertiesPanel : UserControl
         var buttons = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
         if (template is not null)
         {
+            var widget = ActionButton("Edit widget", "copy:edit-widget");
+            widget.ToolTip = "Edit the widget itself; every copy that has not overridden a change follows (Ctrl+Alt+K)";
+            widget.Click += (_, _) => _model?.MakeOrEditWidget();
+            buttons.Children.Add(widget);
             var edit = ActionButton("Edit parts", "copy:edit");
             edit.ToolTip = "Change this copy's parts; each change is an override on this copy (Enter)";
             edit.Click += (_, _) => OpenParts(copy);
@@ -204,6 +225,7 @@ public partial class PropertiesPanel : UserControl
         remove.Click += (_, _) => RemoveRequested?.Invoke(copy.Id);
         buttons.Children.Add(remove);
         Add(buttons);
+        if (template is not null && _model is not null) Add(Hint(DepthText.Follow(DepthText.CopiesOf(_model.Layout, copy.Widget))));
     }
 
     /// <summary>What Details used to do: copy depth on this copy, with its first part selected, so a

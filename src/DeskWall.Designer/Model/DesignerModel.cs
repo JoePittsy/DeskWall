@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DeskWall.Core;
@@ -606,6 +606,21 @@ public sealed class DesignerModel
                 return false;
         }
     }
+
+    /// <summary>Whether the properties panel and the canvas menu offer Make widget: two or more
+    /// things selected at layout depth, every one a loose component (not a copy, nor a copy's part).
+    /// One loose part still makes a widget with Ctrl+Alt+K; the button is for the case where the
+    /// panel would otherwise have nothing to say.</summary>
+    public bool CanMakeWidget
+        => Depth.Kind == DepthKind.Layout && _selection.Count >= 2
+           && _selection.All(id => CopyOf(id) is null && Layout.Components.Exists(c => c.Id == id));
+
+    /// <summary>The copy whose widget Edit widget (Ctrl+Alt+K) would open: at layout depth the first
+    /// selected copy (or the copy a selected part belongs to), at copy depth the open one.</summary>
+    public WidgetCopy? EditableCopy()
+        => Depth.Kind == DepthKind.Copy ? Copies.Find(Layout, Depth.CopyId!)
+            : Depth.Kind == DepthKind.Layout ? _selection.Select(CopyOf).FirstOrDefault(c => c is not null)
+            : null;
 
     /// <summary>Ctrl+Alt+K. Loose components selected at layout depth: Make widget, then widget depth
     /// on it. A copy (or one of its parts) selected, or copy depth: Edit widget. False otherwise.</summary>

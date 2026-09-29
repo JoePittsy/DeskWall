@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -543,6 +543,23 @@ public partial class PreviewView : UserControl
         }
         BeginGesture(_downScreen);
     }
+
+    /// <summary>A right-click on something not selected selects it first, so the canvas menu acts on
+    /// what is under the pointer (Figma's rule). On empty wallpaper the selection stays.</summary>
+    protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+    {
+        base.OnMouseRightButtonDown(e);
+        Focus();
+        if (_model is null) return;
+        var canvas = _surface.ToCanvas(e.GetPosition(_surface));
+        if (Targets.Hit(AllTargets(), canvas.X, canvas.Y) is { } hit && !SelectedTargets().Any(t => t.Id == hit.Id))
+            SelectTargets([hit]);
+    }
+
+    /// <summary>Where a menu opened from the keyboard goes: just below the selection's bottom-left, in
+    /// this view's coordinates; null when nothing is selected.</summary>
+    public Point? SelectionAnchor()
+        => SelectionScreenBox() is { } box ? new Point(Math.Clamp(box.Left, 0, Math.Max(0, ActualWidth - 40)), Math.Clamp(box.Bottom + 4, 0, Math.Max(0, ActualHeight - 40))) : null;
 
     /// <summary>A press at <paramref name="screen"/>: a grip starts a resize, a target a move (and
     /// selects it), empty wallpaper a rubber band. Public for the harness and the shell, which drive
