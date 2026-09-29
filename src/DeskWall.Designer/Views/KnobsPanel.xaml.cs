@@ -11,6 +11,7 @@ using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Designer.Model;
 using DeskWall.Designer.Model.Widgets;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Views;
 

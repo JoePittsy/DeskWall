@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using DeskWall.Core;
 using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model;
 
 namespace DeskWall.Designer.Model.Widgets;
@@ -27,7 +28,7 @@ public static class WidgetInstance
 
         var renameMap = MergeSources(layout, t.Sources);
 
-        var clones = WidgetJson.CloneComponents(t.Components);
+        var clones = CloneComponents(t.Components);
         foreach (var c in clones)
         {
             var originalId = c.Id;
@@ -146,7 +147,7 @@ public static class WidgetInstance
             var existing = layout.Sources.FirstOrDefault(s => s.Name == src.Name);
             if (existing is null)
             {
-                layout.Sources.Add(WidgetJson.CloneSource(src));
+                layout.Sources.Add(CloneSource(src));
                 renameMap[src.Name] = src.Name;
             }
             else if (existing.Type == src.Type)
@@ -156,7 +157,7 @@ public static class WidgetInstance
             else
             {
                 var newName = NextFreeSourceName(layout, src.Name);
-                var copy = WidgetJson.CloneSource(src);
+                var copy = CloneSource(src);
                 copy.Name = newName;
                 layout.Sources.Add(copy);
                 renameMap[src.Name] = newName;
@@ -304,4 +305,16 @@ public static class WidgetInstance
     private static SourceDef FindSource(LayoutFile layout, string name, string setPath)
         => layout.Sources.FirstOrDefault(x => x.Name == name)
             ?? throw new InvalidOperationException($"sets path \"{setPath}\": no source \"{name}\"");
+
+    // Deep copies through the one component serializer, so every subtype's fields copy.
+    private static List<ComponentDef> CloneComponents(IEnumerable<ComponentDef> defs)
+        => LayoutFile.Parse(new LayoutFile { BaseImage = "", Components = [.. defs] }.ToJson()).Components;
+
+    private static SourceDef CloneSource(SourceDef s) => new()
+    {
+        Name = s.Name,
+        Type = s.Type,
+        EverySeconds = s.EverySeconds,
+        Settings = new Dictionary<string, string>(s.Settings),
+    };
 }

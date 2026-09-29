@@ -13,8 +13,8 @@ public sealed class WidgetTemplateFile
     public string? Name { get; set; }
     public string? Description { get; set; }
     public int[]? Size { get; set; }
-    public string? Anchor { get; set; }
-    public string? Requires { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Anchor { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Requires { get; set; }
     public List<SourceDef>? Sources { get; set; }
     public List<ComponentDef>? Components { get; set; }
     public List<KnobFile>? Knobs { get; set; }
@@ -29,9 +29,9 @@ public sealed class KnobFile
     public string? Type { get; set; }
     public string? Default { get; set; }
     public List<string>? Sets { get; set; }
-    public List<string>? Choices { get; set; }
-    public double? Min { get; set; }
-    public double? Max { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? Choices { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Min { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Max { get; set; }
 }
 
 /// <summary>Source-generated, so widget files load under native AOT (plan D3). Same options as

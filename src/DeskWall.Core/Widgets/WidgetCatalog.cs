@@ -42,6 +42,40 @@ public static class WidgetCatalog
         };
     }
 
+    /// <summary>Every "*.json" in each of <paramref name="dirs"/>, for the designer's gallery. A later
+    /// folder's widget replaces an earlier one's of the same key (and is marked
+    /// <see cref="WidgetTemplate.OverridesShipped"/>) but keeps the position the key was first seen
+    /// at. A folder that does not exist is skipped. Throws for a file that fails to load.</summary>
+    public static IReadOnlyList<WidgetTemplate> Load(params string[] dirs)
+    {
+        var order = new List<string>();
+        var byKey = new Dictionary<string, WidgetTemplate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in dirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var file in Directory.EnumerateFiles(dir, "*.json").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            {
+                var template = WidgetTemplate.Load(file);
+                if (byKey.ContainsKey(template.Key)) template.OverridesShipped = true;
+                else order.Add(template.Key);
+                byKey[template.Key] = template;
+            }
+        }
+        return order.Select(k => byKey[k]).ToList();
+    }
+
+    /// <summary>Whether <paramref name="template"/> was loaded from <see cref="UserDir"/> (the
+    /// owner's own file, editable in place) rather than beside the exe. Decided by folder, not key,
+    /// because a user file may deliberately shadow a shipped key.</summary>
+    public static bool IsUserTemplate(WidgetTemplate template)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        if (template.Path is null) return false;
+        var dir = Path.GetDirectoryName(Path.GetFullPath(template.Path));
+        return dir is not null && string.Equals(dir.TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(UserDir).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Every path a widget with <paramref name="key"/> could be loaded from, in the
     /// user dir only (the only folder the daemon watches, plan D4).</summary>
     public static IReadOnlyList<string> CandidatePaths(string key) => [Path.Combine(UserDir, key + ".json")];

@@ -3,6 +3,7 @@ using DeskWall.Core;
 using DeskWall.Core.Layout;
 using DeskWall.Designer.Model.Widgets;
 using Xunit;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 
@@ -141,19 +142,5 @@ public class WidgetTemplateTests
         """);
         var ex = Assert.Throws<FormatException>(() => WidgetTemplate.Load(path));
         Assert.Contains(path, ex.Message);
-    }
-
-    [Fact]
-    public void Preview_Puts_Components_On_The_Given_Base_Untouched()
-    {
-        var path = WriteTemp("preview.json", ValidClock);
-        var t = WidgetTemplate.Load(path);
-        var layout = t.Preview("C:\\wall.jpg");
-        Assert.Equal("C:\\wall.jpg", layout.BaseImage);
-        Assert.Single(layout.Components);
-        Assert.Single(layout.Sources);
-        // a deep copy: mutating the preview's components must not touch the template's own list.
-        layout.Components[0].Rect = new Rect(1, 1, 1, 1);
-        Assert.Equal(new Rect(0, 0, 172, 78), t.Components[0].Rect);
     }
 }

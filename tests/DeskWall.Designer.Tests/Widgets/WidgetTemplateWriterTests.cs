@@ -2,6 +2,7 @@ using System.IO;
 using DeskWall.Core;
 using DeskWall.Designer.Model.Widgets;
 using Xunit;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 
@@ -124,8 +125,10 @@ public class WidgetTemplateWriterTests
     }
 
     [Fact]
-    public void A_Rename_Deletes_The_File_It_Was_Saved_Under()
+    public void A_Rename_Keeps_The_Key_And_The_File()
     {
+        // Placed copies link to a widget by key (plan D2): a rename that moved the file would
+        // orphan every one of them.
         var dir = TempDir("rename");
         var doc = Named("First name");
         var first = WidgetTemplateWriter.Save(doc, [], dir);
@@ -134,9 +137,21 @@ public class WidgetTemplateWriterTests
         doc.Name = "Second name";
         var second = WidgetTemplateWriter.Save(doc, [], dir);
 
-        Assert.True(File.Exists(second));
-        Assert.False(File.Exists(first));
-        Assert.Equal("second-name", doc.EditingKey);
+        Assert.Equal(first, second);
+        Assert.Equal("first-name", doc.Key);
+        Assert.Equal("first-name", doc.EditingKey);
+        Assert.Equal("Second name", WidgetTemplate.Load(second).Name);
+        Assert.Single(Directory.GetFiles(dir, "*.json"));
+    }
+
+    [Fact]
+    public void A_New_Widget_May_Not_Overwrite_One_Of_The_Owners_Own()
+    {
+        var dir = TempDir("user-clash");
+        WidgetTemplateWriter.Save(Named("Mine"), [], dir);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => WidgetTemplateWriter.Save(Named("Mine"), [], dir));
+        Assert.Equal("One of your widgets is already called 'Mine'. Pick another name.", ex.Message);
     }
 
     [Fact]

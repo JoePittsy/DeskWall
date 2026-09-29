@@ -2,6 +2,7 @@ using System.Text;
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model.Widgets;
 
@@ -58,8 +59,8 @@ public sealed class WidgetDocument
     /// <summary>The file being edited, or null for a widget that has never been saved.</summary>
     public string? Path { get; set; }
 
-    /// <summary>The key the file being edited is stored under, so a rename knows which file to
-    /// delete. Null for a new widget and for "Duplicate to mine".</summary>
+    /// <summary>The key the widget being edited is stored under. Null for a new widget and for
+    /// "Duplicate to mine" until their first save, which sets it.</summary>
     public string? EditingKey { get; set; }
 
     public IReadOnlyList<AdjustableTarget> Adjustables => _knobs.Where(k => k.Target is not null).Select(k => k.Target!).ToList();
@@ -68,8 +69,10 @@ public sealed class WidgetDocument
     /// write). Shown read-only and written back exactly as they were read.</summary>
     public IReadOnlyList<Knob> PassThroughKnobs => _knobs.Where(k => k.PassThrough is not null).Select(k => k.PassThrough!).ToList();
 
-    /// <summary>The file name (without ".json") this saves as: a slug of the name.</summary>
-    public string Key => Slug(Name);
+    /// <summary>The file name (without ".json") this saves as. Fixed once the widget exists
+    /// (<see cref="EditingKey"/>): placed copies link to a widget by key, so a rename changes
+    /// <see cref="Name"/> only (plan D2). A widget never saved takes a slug of its name.</summary>
+    public string Key => EditingKey ?? Slug(Name);
 
     public static WidgetDocument New()
     {
@@ -87,8 +90,8 @@ public sealed class WidgetDocument
         var layout = new LayoutFile
         {
             BaseImage = "",
-            Sources = template.Sources.Select(WidgetJson.CloneSource).ToList(),
-            Components = WidgetJson.CloneComponents(template.Components),
+            Sources = template.Sources.Select(CloneSource).ToList(),
+            Components = CloneComponents(template.Components),
         };
         var model = new DesignerModel(layout, Signature(template.Width, template.Height), null);
         var doc = new WidgetDocument(model, template.Name, template.Description)
@@ -113,8 +116,7 @@ public sealed class WidgetDocument
     /// <summary>Open a template for editing, wherever it came from.
     /// <para>One of the owner's own files is edited in place. A shipped one is <b>copy on
     /// write</b>: <see cref="Path"/> stays null, so nothing can ever be written back beside the
-    /// exe (a publish would wipe it anyway, and a rename would otherwise delete it as "the
-    /// previous file"), while <see cref="EditingKey"/> is the shipped key, so Save lands on
+    /// exe (a publish would wipe it anyway), while <see cref="EditingKey"/> is the shipped key, so Save lands on
     /// <c>&lt;userDir&gt;\&lt;key&gt;.json</c> and the catalog's override rule puts it in the
     /// shipped widget's place in the gallery.</para></summary>
     public static WidgetDocument ForEditing(WidgetTemplate template)
@@ -317,7 +319,7 @@ public sealed class WidgetDocument
         // real data and the file is portable. Tokenising is idempotent -- it rewrites whatever
         // key is there -- so saving twice writes the same file.
         var knobs = _knobs.Select(k => k.PassThrough ?? Adjustable.ToKnob(this, k.Target!)).OfType<Knob>().ToList();
-        var components = WidgetJson.CloneComponents(Model.Layout.Components);
+        var components = CloneComponents(Model.Layout.Components);
         foreach (var target in _knobs.Select(k => k.Target).OfType<AdjustableTarget>().Where(t => t.IsDrive))
             Adjustable.SetDriveKey(components, target, "{" + Adjustable.DriveToken + "}");
 
@@ -330,7 +332,7 @@ public sealed class WidgetDocument
             Height = Model.Signature.Height,
             Anchor = Anchor,
             Requires = Requires,
-            Sources = Model.Layout.Sources.Select(WidgetJson.CloneSource).ToList(),
+            Sources = Model.Layout.Sources.Select(CloneSource).ToList(),
             Components = components,
             Knobs = knobs,
         };
@@ -354,4 +356,16 @@ public sealed class WidgetDocument
         var slug = sb.ToString().Trim('-');
         return slug.Length == 0 ? "widget" : slug;
     }
+
+    // Deep copies through the one component serializer, so every subtype's fields copy.
+    private static List<ComponentDef> CloneComponents(IEnumerable<ComponentDef> defs)
+        => LayoutFile.Parse(new LayoutFile { BaseImage = "", Components = [.. defs] }.ToJson()).Components;
+
+    private static SourceDef CloneSource(SourceDef s) => new()
+    {
+        Name = s.Name,
+        Type = s.Type,
+        EverySeconds = s.EverySeconds,
+        Settings = new Dictionary<string, string>(s.Settings),
+    };
 }

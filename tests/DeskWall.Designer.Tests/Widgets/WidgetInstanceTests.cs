@@ -3,6 +3,7 @@ using DeskWall.Core;
 using DeskWall.Core.Layout;
 using DeskWall.Designer.Model.Widgets;
 using Xunit;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 

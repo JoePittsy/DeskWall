@@ -1,17 +1,15 @@
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model.Widgets;
 
 /// <summary>
 /// Writing a widget template back to <c>widgets/&lt;key&gt;.json</c>.
 /// <para>
-/// The components and sources go through <see cref="LayoutFile.ToJson"/> and are lifted out of the
-/// result as JSON nodes rather than being written by hand. There is exactly one component
-/// serializer in this codebase, it is source-generated in Core, and a second one here would be a
-/// second place for a new property to be forgotten.
+/// The file is serialised through Core's source-generated <see cref="WidgetJsonContext"/>, the same
+/// context <see cref="WidgetTemplate.Load"/> reads with, so there is one widget-file shape and one
+/// component serializer, not a second place for a new property to be forgotten.
 /// </para>
 /// <para>
 /// The contract is the round trip: <see cref="WidgetTemplate.Load"/> of what this writes is the
@@ -24,73 +22,45 @@ public static class WidgetTemplateWriter
     /// Refused here too, with a sentence rather than a FormatException on the next launch.</summary>
     public const int MaxKnobs = 5;
 
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
-
     public static string ToJson(WidgetTemplate template)
+        => JsonSerializer.Serialize(ToFile(template), WidgetJsonContext.Default.WidgetTemplateFile);
+
+    private static WidgetTemplateFile ToFile(WidgetTemplate template)
     {
         ArgumentNullException.ThrowIfNull(template);
-        var layout = new LayoutFile
+        return new WidgetTemplateFile
         {
-            BaseImage = "",
-            Sources = template.Sources.ToList(),
-            Components = template.Components.ToList(),
-        };
-        var encoded = JsonNode.Parse(layout.ToJson())!.AsObject();
-
-        var root = new JsonObject
-        {
-            ["version"] = 1,
-            ["name"] = template.Name,
-            ["description"] = template.Description,
-            ["size"] = new JsonArray(template.Width, template.Height),
-        };
-        // Both omitted at their default so a plain widget's file has nothing in it that is not
-        // about the widget, and a diff of two of them is about what differs.
-        if (!string.Equals(template.Anchor, "top", StringComparison.Ordinal)) root["anchor"] = template.Anchor;
-        if (template.Requires is not null) root["requires"] = template.Requires;
-
-        root["sources"] = encoded["sources"]?.DeepClone() ?? new JsonArray();
-        root["components"] = encoded["components"]?.DeepClone() ?? new JsonArray();
-        root["knobs"] = Knobs(template.Knobs);
-
-        return root.ToJsonString(Indented);
-    }
-
-    private static JsonArray Knobs(IReadOnlyList<Knob> knobs)
-    {
-        var array = new JsonArray();
-        foreach (var k in knobs)
-        {
-            var o = new JsonObject
+            Name = template.Name,
+            Description = template.Description,
+            Size = [template.Width, template.Height],
+            // Omitted at its default, so a plain widget's file has nothing in it that is not about
+            // the widget.
+            Anchor = string.Equals(template.Anchor, "top", StringComparison.Ordinal) ? null : template.Anchor,
+            Requires = template.Requires,
+            Sources = [.. template.Sources],
+            Components = [.. template.Components],
+            Knobs = template.Knobs.Select(k => new KnobFile
             {
-                ["id"] = k.Id,
-                ["label"] = k.Label,
-                ["type"] = k.Type.ToString().ToLowerInvariant(),
-                ["default"] = k.Default,
-            };
-            if (k.Choices is { } choices) o["choices"] = Strings(choices);
-            o["sets"] = Strings(k.Sets);
-            if (k.Min is { } min) o["min"] = min;
-            if (k.Max is { } max) o["max"] = max;
-            array.Add(o);
-        }
-        return array;
+                Id = k.Id,
+                Label = k.Label,
+                Type = k.Type.ToString().ToLowerInvariant(),
+                Default = k.Default,
+                Sets = [.. k.Sets],
+                Choices = k.Choices?.ToList(),
+                Min = k.Min,
+                Max = k.Max,
+            }).ToList(),
+        };
     }
 
-    private static JsonArray Strings(IReadOnlyList<string> values)
-    {
-        var array = new JsonArray();
-        foreach (var v in values) array.Add(v);
-        return array;
-    }
-
-    /// <summary>Write the document into <paramref name="userDir"/> and return the file it landed
-    /// in. Refuses rather than writes when the result would not load, or would silently shadow a
-    /// shipped widget. A rename writes the new file first and deletes the old one after, so a
-    /// failure leaves the widget where it was.</summary>
-    /// <param name="shippedKeys">the keys of the templates that ship beside the exe. A user file
-    /// of the same key overrides one in the catalog, which is fine when that is what was opened
-    /// and a trap when it is a new widget that happens to share a name.</param>
+    /// <summary>Write the document into <paramref name="userDir"/> as <c>&lt;key&gt;.json</c> and
+    /// return the path. Refuses rather than writes when the result would not load, or when a new
+    /// widget would land on a key that already exists. The key never changes once a widget exists
+    /// (plan D2), so a rename rewrites the same file and nothing is ever deleted: copies placed in
+    /// any layout keep finding it.</summary>
+    /// <param name="shippedKeys">the keys of the widgets that ship beside the exe. A user file of the
+    /// same key shadows one, which is right for a shipped widget opened for editing and a trap for a
+    /// new widget that happens to share its name.</param>
     public static string Save(WidgetDocument document, IReadOnlyCollection<string> shippedKeys, string userDir)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -104,23 +74,18 @@ public static class WidgetTemplateWriter
             throw new InvalidOperationException($"A widget can have at most {MaxKnobs} adjustable settings; this one has {template.Knobs.Count}.");
 
         var key = document.Key;
-        var renamedOrNew = !string.Equals(key, document.EditingKey, StringComparison.OrdinalIgnoreCase);
-        if (renamedOrNew && shippedKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"A shipped widget is already called '{template.Name}'. Pick another name.");
+        var path = Path.Combine(userDir, key + ".json");
+        if (document.EditingKey is null)
+        {
+            if (shippedKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"A shipped widget is already called '{template.Name}'. Pick another name.");
+            // Overwriting another of the owner's widgets would also change every copy linked to it.
+            if (File.Exists(path))
+                throw new InvalidOperationException($"One of your widgets is already called '{template.Name}'. Pick another name.");
+        }
 
         Directory.CreateDirectory(userDir);
-        var path = Path.Combine(userDir, key + ".json");
         File.WriteAllText(path, ToJson(template));
-
-        var previous = document.Path;
-        if (renamedOrNew && previous is not null && !string.Equals(previous, path, StringComparison.OrdinalIgnoreCase))
-        {
-            // Best effort: the new file is already on disk, and a locked old one is a stray
-            // template in the gallery, not a lost widget.
-            try { File.Delete(previous); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-        }
 
         document.Path = path;
         document.EditingKey = key;

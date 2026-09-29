@@ -2,6 +2,7 @@ using System.IO;
 using DeskWall.Core;
 using DeskWall.Designer.Model.Widgets;
 using Xunit;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 
@@ -136,8 +137,10 @@ public class ShippedEditingTests
     }
 
     [Fact]
-    public void Renaming_While_Editing_A_Shipped_Widget_Does_Not_Touch_The_Shipped_File()
+    public void Renaming_While_Editing_A_Shipped_Widget_Forks_Under_The_Same_Key()
     {
+        // The key is fixed (plan D2): renaming a shipped widget forks it as <key>.json, so every
+        // placed copy of that key follows the fork, and the shipped file is untouched.
         var shipped = NewDir("shipped");
         Write(shipped, "clock.json", "Clock");
         var doc = WidgetDocument.ForEditing(WidgetCatalog.Load(shipped)[0]);
@@ -147,8 +150,9 @@ public class ShippedEditingTests
         var userDir = UserDir();
         var path = WidgetTemplateWriter.Save(doc, ["clock"], userDir);
 
-        Assert.Equal(Path.Combine(userDir, "my-clock.json"), path);
-        Assert.True(File.Exists(Path.Combine(shipped, "clock.json")));
+        Assert.Equal(Path.Combine(userDir, "clock.json"), path);
+        Assert.Equal("My clock", WidgetTemplate.Load(path).Name);
+        Assert.Equal("Clock", WidgetTemplate.Load(Path.Combine(shipped, "clock.json")).Name);
     }
 
     // ---- the way back -----------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 using System.IO;
 using DeskWall.Designer.Model.Widgets;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 

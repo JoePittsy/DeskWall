@@ -10,6 +10,7 @@ using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
 using DeskWall.Designer.Model.Widgets;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Views;
 

@@ -1,5 +1,6 @@
 using DeskWall.Core;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model.Widgets;
 

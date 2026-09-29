@@ -2,6 +2,7 @@ using System.IO;
 using DeskWall.Core;
 using DeskWall.Designer.Model.Widgets;
 using Xunit;
+using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Tests.Widgets;
 

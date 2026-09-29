@@ -11,6 +11,7 @@ using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
 using DeskWall.Designer.Model;
 using DeskWall.Designer.Model.Widgets;
+using DeskWall.Core.Widgets;
 using CRect = DeskWall.Core.Rect;
 
 namespace DeskWall.Designer.Views;

@@ -12,8 +12,7 @@ public sealed record Knob(string Id, string Label, KnobType Type, string Default
 
 /// <summary>A widget loaded from <c>widgets/&lt;key&gt;.json</c>: sources, components in
 /// widget-local coordinates (the widget's own top-left is (0, 0)) and up to five knobs. Never
-/// mutated once loaded. Same public shape as the designer's
-/// <c>DeskWall.Designer.Model.Widgets.WidgetTemplate</c>, which it replaces in Task 2.1.</summary>
+/// mutated once loaded. The daemon's expander and the designer both use this type.</summary>
 public sealed partial class WidgetTemplate
 {
     public required string Name { get; init; }
