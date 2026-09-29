@@ -28,12 +28,20 @@
                      Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
         </StackPanel>
 
+        <!-- Where the canvas is editing: "Layout", or "Layout > <widget> (copy)" / "(widget)".
+             Always visible, because the three depths share one canvas and only this says which. -->
+        <TextBlock x:Name="Breadcrumb" DockPanel.Dock="Left" FontSize="14" Margin="32,0,0,0"
+                   VerticalAlignment="Center" MaxWidth="560" TextTrimming="CharacterEllipsis"
+                   AutomationProperties.Name="Editing depth"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                   ToolTip="Enter goes down a depth, Esc comes back up. Ctrl+Alt+K edits the selected widget, or makes one from loose parts." />
+
         <Button x:Name="SettingsButton" DockPanel.Dock="Right" Click="Settings_Click"
                 Content="&#xE713;" ToolTip="Settings" AutomationProperties.Name="Settings"
                 FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
                 Width="36" Height="32" Padding="0" Margin="16,0,0,0" VerticalAlignment="Center" />
         <Button x:Name="ApplyButton" DockPanel.Dock="Right" Content="Apply" Click="Apply_Click"
-                Style="{DynamicResource AccentButtonStyle}" ToolTip="Ctrl+S"
+                Style="{DynamicResource AccentButtonStyle}" ToolTip="Apply (Ctrl+S)"
                 MinWidth="96" Height="32" Margin="16,0,0,0" VerticalAlignment="Center" />
         <Button x:Name="RedoButton" DockPanel.Dock="Right" Click="Redo_Click"
                 Content="&#xE7A6;" ToolTip="Redo (Ctrl+Y)" AutomationProperties.Name="Redo"
@@ -53,7 +61,19 @@
         <ColumnDefinition Width="320" />
       </Grid.ColumnDefinitions>
 
-      <v:GalleryPanel x:Name="Gallery" Grid.Column="0" />
+      <!-- Layers above Insert (brief 6): what is on the canvas, then what can go on it. -->
+      <Grid Grid.Column="0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" MinHeight="160" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <v:LayersPanel x:Name="Layers" Grid.Row="0" AutomationProperties.Name="Layers panel"
+                       ToolTip="Tab / Shift+Tab: next / previous. Ctrl+A: all. Ctrl+C, Ctrl+V, Ctrl+D: copy, paste, duplicate. Ctrl+] / Ctrl+[: bring to front / send to back. Delete: remove." />
+        <Border Grid.Row="1" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+          <v:GalleryPanel x:Name="Gallery" />
+        </Border>
+      </Grid>
 
       <Border Grid.Column="1" BorderThickness="1,0"
               BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"

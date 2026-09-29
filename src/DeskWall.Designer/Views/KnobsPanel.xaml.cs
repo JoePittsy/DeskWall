@@ -53,6 +53,10 @@ public partial class KnobsPanel : UserControl
         Render();
     }
 
+    /// <summary>LayersPanel activated a repeater's template child: Details shows it, when Details
+    /// is on screen (the repeater is selected by then, so it is the one being shown).</summary>
+    public void ShowTemplateChild(ComponentDef child, RepeaterDef parent) => _details?.ShowTemplateChild(child, parent);
+
     /// <summary>The running sources, for the Details binding picker and for the no-selection view's
     /// "is this source actually working" list.</summary>
     public LiveSources? Live

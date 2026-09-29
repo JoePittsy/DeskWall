@@ -21,14 +21,24 @@ namespace DeskWall.Designer.Views;
 /// <para>
 /// Job: get a widget onto the wallpaper, where the owner wants it and looking right, in under a
 /// minute, without seeing a coordinate or a binding. Three panes and a verb: pick from the gallery
-/// on the left, drag it about on the wallpaper in the middle, change what it says on the right, Apply.
+/// on the left (under Layers, which lists what is already placed), drag it about on the wallpaper
+/// in the middle, change what it says on the right, Apply.
+/// </para>
+/// <para>
+/// One canvas, three depths (brief section 3), named by the breadcrumb in the top bar. The keys
+/// live in <see cref="OnPreviewKeyDown"/> so they work wherever the focus is, except in a text box:
+/// Enter and Esc go down and up a depth (Esc climbs before it clears the selection); Tab and
+/// Shift+Tab cycle siblings on the canvas; Ctrl+C, V, D and A; Ctrl+] and Ctrl+[ bring to front
+/// and send to back; Ctrl+Alt+K makes a widget from loose parts or edits the selected one;
+/// Shift+1, Shift+2, Ctrl+plus, Ctrl+minus and Ctrl+0 zoom.
 /// </para>
 /// <para>
 /// Deliberately left out: a menu bar; a display selector and a "copy from another display" button
 /// (a layout belongs to the display in front of you, and the store scales the rest); a file name
 /// with a dirty marker (Apply is enabled exactly when there is something to apply, which says the
-/// same thing with no text); duplicate, bring-to-front and the rest of a drawing program's verbs;
-/// panel collapse keys; a confirmation for Apply. The status line at the foot says when it last
+/// same thing with no text); menus or buttons for the keyboard verbs above (their tooltips name
+/// them), one-step forward and backward, and the system clipboard; panel collapse keys; a
+/// confirmation for Apply. The status line at the foot says when it last
 /// reached the wallpaper and whether the daemon is there to paint it.
 /// </para>
 /// <para>
@@ -77,6 +87,14 @@ public partial class MainWindow : Window
         Gallery.DuplicateRequested += DuplicateTemplate;
         Gallery.DeleteRequested += DeleteTemplate;
         Knobs.RemoveRequested += Remove;
+        // The shell owns depth: the canvas asks, and the one path (the model) answers, so a
+        // double-click, Enter, Esc and Ctrl+Alt+K cannot disagree about where they end up.
+        Preview.DepthRequested += Preview.GoToDepth;
+        Preview.EditWidgetRequested += copyId =>
+        {
+            if (Copies.Find(_model.Layout, copyId) is { } copy) Preview.GoToDepth(Depth.Widget(copy.Widget, copy.Id));
+        };
+        Layers.TemplateChildActivated += Knobs.ShowTemplateChild;
         Providers.Status += SetStatus;
         // The records go into LiveSources, not into a second tree of their own: the binding
         // picker, the preview and the value trees all read that one, so a provider that is not in
@@ -100,18 +118,20 @@ public partial class MainWindow : Window
     /// made here and the gallery is the first thing seen, which is the whole first-run story.</summary>
     private void Open(DisplaySignature signature, LayoutResolution? resolution)
     {
-        if (_model is not null) _model.Changed -= OnModelChanged;
+        if (_model is not null) { _model.Changed -= OnModelChanged; _model.DepthChanged -= RefreshBreadcrumb; }
 
         var target = ShellState.OpenFrom(resolution, signature, LoadAuthored, DefaultBaseImage,
             WidgetCatalog.Finder(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir));
         _model = new DesignerModel(target.Layout, target.Signature, target.Path);
         _model.Changed += OnModelChanged;
+        _model.DepthChanged += RefreshBreadcrumb;
         _backupBeforeApply = target.Migrated;
 
         ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
 
         Preview.Attach(_model, _renderer);
         Knobs.Attach(_model);
+        Layers.Attach(_model);
         Gallery.Load(_catalog);
 
         RebuildLiveSources();
@@ -144,7 +164,23 @@ public partial class MainWindow : Window
         RedoButton.IsEnabled = _model.CanRedo;
         ApplyButton.IsEnabled = _model.Path is null || _model.Dirty;
         Gallery.SetCounts(Counts());
+        RefreshBreadcrumb();
         RefreshStatus();
+    }
+
+    /// <summary>"Layout", or "Layout › Hardware dial (copy)" / "(widget)": the widget's name,
+    /// its key when it cannot be read.</summary>
+    private void RefreshBreadcrumb()
+    {
+        var depth = _model.Depth;
+        var name = depth.WidgetKey is { } key ? Copies.TryFind(_model.Finder(), key)?.Name ?? key : null;
+        Breadcrumb.Text = depth.Kind switch
+        {
+            DepthKind.Copy => $"Layout \u203a {name} (copy)",
+            DepthKind.Widget => $"Layout \u203a {name} (widget)",
+            _ => "Layout",
+        };
+        System.Windows.Automation.AutomationProperties.SetName(Breadcrumb, "Editing: " + Breadcrumb.Text);
     }
 
     /// <summary>What the top line calls the open layout: the name of the file being edited, ellipsed
@@ -230,6 +266,9 @@ public partial class MainWindow : Window
     /// undo entry. One at a time would be a surprise now that three can be selected at once.</summary>
     private void RemoveSelection()
     {
+        // Deeper, the selection is parts: hidden on the copy, or gone from the widget. Mapping them
+        // through the layout's targets would take out the whole copy they belong to.
+        if (_model.Depth.Kind != DepthKind.Layout) { _model.Remove([.. _model.Selection]); return; }
         var targets = Targets.From(_model, _model.Selection);
         if (targets.Count == 0) return;
         _model.Edit(targets.Count > 1 ? "Remove widgets" : "Remove widget", l =>
@@ -379,21 +418,84 @@ public partial class MainWindow : Window
         RefreshChrome();
     }
 
+    /// <summary>The in-process clipboard (Ctrl+C): <see cref="DesignerModel.CopyJson"/>, and how
+    /// many times it has been pasted, so each paste lands one step further off the original.</summary>
+    private string? _clip;
+    private int _pastes;
+
+    /// <summary>How far a paste or duplicate lands from what it came from, per paste.</summary>
+    private const int PasteOffset = 16;
+
+    private const string CopyCannotGainParts = "A copy cannot gain parts: Ctrl+Alt+K edits its widget.";
+
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
         if (e.Handled) return;
-        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
-        // Not while a box is being typed into: Delete and Ctrl+Z belong to the text there.
-        var typing = Keyboard.FocusedElement is System.Windows.Controls.TextBox;
-        switch (e.Key)
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;   // with Alt down it arrives as a system key
+        var mods = Keyboard.Modifiers;
+        var ctrl = mods == ModifierKeys.Control;
+        var focus = Keyboard.FocusedElement;
+        // Not while a box is being typed into: Delete, Enter and Ctrl+Z belong to the text there.
+        if (key == Key.S && ctrl) { Apply(); e.Handled = true; return; }
+        if (focus is System.Windows.Controls.TextBox) return;
+        // Enter presses a focused button; Esc ends a canvas drag (the canvas holds the mouse).
+        var onButton = focus is System.Windows.Controls.Primitives.ButtonBase;
+        var dragging = Mouse.Captured is not null;
+        var onCanvas = focus is null || ReferenceEquals(focus, this) || Preview.IsKeyboardFocusWithin;
+        var sel = _model.Selection.ToArray();
+        switch (key)
         {
-            case Key.S when ctrl: Apply(); e.Handled = true; break;
-            case Key.Z when ctrl && !typing: _model.Undo(); e.Handled = true; break;
-            case Key.Y when ctrl && !typing: _model.Redo(); e.Handled = true; break;
-            case Key.Delete when !typing: RemoveSelection(); e.Handled = true; break;
-            case Key.Escape when !typing: _model.ClearSelection(); _model.SetDepth(Depth.Layout); e.Handled = true; break;
+            case Key.Z when ctrl: _model.Undo(); break;
+            case Key.Y when ctrl: _model.Redo(); break;
+            case Key.Delete when mods == ModifierKeys.None: RemoveSelection(); break;
+            case Key.Escape when mods == ModifierKeys.None && !dragging:
+                if (!_model.Climb()) _model.ClearSelection();
+                break;
+            case Key.Enter when mods == ModifierKeys.None && !onButton:
+                // The canvas takes the keys from here: the arrows nudge the parts just opened.
+                if (_model.Descend()) Preview.Focus();
+                break;
+            // Only on the canvas: everywhere else Tab is how the keyboard moves between panels.
+            case Key.Tab when onCanvas && (mods == ModifierKeys.None || mods == ModifierKeys.Shift):
+                _model.SelectSibling(mods == ModifierKeys.Shift ? -1 : 1);
+                break;
+            case Key.A when ctrl: _model.SelectAll(); break;
+            case Key.C when ctrl:
+                if (_model.CopyJson(sel) is { } json) { _clip = json; _pastes = 0; }
+                break;
+            case Key.V when ctrl: Paste(); break;
+            case Key.D when ctrl:
+                var made = _model.Duplicate(sel, PasteOffset, PasteOffset);
+                if (made.Count > 0) _model.Select(made);
+                else if (_model.Depth.Kind == DepthKind.Copy && sel.Length > 0) SetStatus(CopyCannotGainParts);
+                break;
+            case Key.OemCloseBrackets when ctrl: _model.BringToFront(sel); break;
+            case Key.OemOpenBrackets when ctrl: _model.SendToBack(sel); break;
+            case Key.K when mods == (ModifierKeys.Control | ModifierKeys.Alt): _model.MakeOrEditWidget(); break;
+            // The canvas has these too; up here they work wherever the focus is.
+            case Key.D1 when mods == ModifierKeys.Shift: Preview.FitAll(); break;
+            case Key.D2 when mods == ModifierKeys.Shift: Preview.FitSelection(); break;
+            case Key.OemPlus or Key.Add when ctrl: Preview.ZoomIn(); break;
+            case Key.OemMinus or Key.Subtract when ctrl: Preview.ZoomOut(); break;
+            case Key.D0 or Key.NumPad0 when ctrl: Preview.ZoomTo(1); break;
+            default: return;
         }
+        e.Handled = true;
+    }
+
+    private void Paste()
+    {
+        if (_clip is null) return;
+        var step = PasteOffset * (_pastes + 1);
+        var made = _model.Paste(_clip, step, step);
+        if (made.Count == 0)
+        {
+            if (_model.Depth.Kind == DepthKind.Copy) SetStatus(CopyCannotGainParts);
+            return;
+        }
+        _pastes++;
+        _model.Select(made);
     }
 
     // ---- the status line ------------------------------------------------------------------------------
