@@ -19,4 +19,10 @@
   <ItemGroup>
     <ProjectReference Include="..\DeskWall.Core\DeskWall.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The shipped widgets (WidgetCatalog.ShippedDir), so a dev deskwall expands v2 copies exactly
+         as the install does. The designer links the same files; publish.ps1's merge skips
+         hash-identical files, so the install is unaffected. -->
+    <None Include="..\..\widgets\*.json" Link="widgets\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

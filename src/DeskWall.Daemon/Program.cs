@@ -12,6 +12,7 @@ using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
 using DeskWall.Core.Verify;
 using DeskWall.Core.Wallpaper;
+using DeskWall.Core.Widgets;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 
@@ -46,6 +47,8 @@ internal static class Program
                     return Stop();
                 case "layouts":
                     return Layouts(opts);
+                case "migrate":
+                    return Migrate(opts);
                 case "paths":
                     Console.WriteLine(Paths.RuntimeDir);
                     return 0;
@@ -86,6 +89,8 @@ internal static class Program
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
         w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
         w.WriteLine("  layouts set <path>         register a layout for this display");
+        w.WriteLine("  migrate [--check] [<path>] convert v1 layouts (default: every file in layouts.json) to v2");
+        w.WriteLine("                             linked copies; --check prints the result and writes nothing");
         w.WriteLine("  paths                      the runtime directory");
         w.WriteLine("  calibrate                  measure the shell's shortcut-arrow overlay");
         w.WriteLine("  shortcuts [--layout <path>]  planned vs actual icon positions (read-only)");
@@ -235,6 +240,71 @@ internal static class Program
         }
     }
 
+    /// <summary>deskwall migrate [--check] [&lt;path&gt;...]: v1 (stamped widget instances) to v2 (linked
+    /// copies), plan D5. Default: every file registered in layouts.json. --check writes nothing and
+    /// prints, per file, each copy with its non-default knobs and overrides, the components left
+    /// loose, and "equivalent: yes|no". The real run backs the file up to &lt;name&gt;.v1.json first and
+    /// refuses if that backup already exists (so a second migrate can never overwrite the only v1
+    /// copy), refuses a result that is not equivalent, then saves v2 through LayoutFile.Save (temp
+    /// file, then rename). 0 when every file is fine, 4 when any was refused or not equivalent.</summary>
+    private static int Migrate(List<string> opts)
+    {
+        var check = opts.Contains("--check");
+        var paths = opts.Where(o => o != "--check").Select(Path.GetFullPath).ToList();
+        if (paths.Count == 0) paths = [.. LayoutStore.Default(Console.Error.WriteLine).Entries.Values.Distinct(StringComparer.OrdinalIgnoreCase)];
+        if (paths.Count == 0) { Console.WriteLine("(no layouts registered)"); return 0; }
+        var find = LayoutStore.DefaultFinder();
+        var failed = 0;
+        foreach (var path in paths)
+        {
+            Console.WriteLine(path);
+            if (!MigrateOne(path, check, find)) failed++;
+        }
+        return failed == 0 ? 0 : 4;
+    }
+
+    private static bool MigrateOne(string path, bool check, Func<string, WidgetTemplate?> find)
+    {
+        if (!File.Exists(path)) { Console.WriteLine("  refused: no such file"); return false; }
+        var backup = Path.ChangeExtension(path, ".v1.json");
+        if (File.Exists(backup))
+        {
+            if (!check) { Console.WriteLine($"  refused: backup {backup} already exists"); return false; }
+            Console.WriteLine($"  note: backup {backup} already exists, so migrate will refuse this file");
+        }
+        LayoutFile v1;
+        try { v1 = LayoutFile.Load(path); }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or InvalidOperationException)
+        {
+            Console.WriteLine($"  refused: cannot be read: {ex.Message}");
+            return false;
+        }
+        if (v1.Version > LayoutStore.MaxVersion) { Console.WriteLine($"  refused: version {v1.Version}; this build understands up to {LayoutStore.MaxVersion}"); return false; }
+        if (v1.Version >= 2) { Console.WriteLine($"  already version {v1.Version}; nothing to do"); return true; }
+
+        var result = LayoutMigrator.Migrate(v1, find);
+        foreach (var c in result.V2.Copies ?? [])
+        {
+            Console.WriteLine($"  copy {c.Id}  widget {c.Widget}  at {c.X},{c.Y}{(c.Z != 0 ? $"  z {c.Z}" : "")}");
+            foreach (var (k, v) in c.Knobs) Console.WriteLine($"    knob {k} = {v}");
+            foreach (var (k, v) in c.Overrides) Console.WriteLine($"    override {k} = {v}");
+        }
+        foreach (var c in result.V2.Components) Console.WriteLine($"  loose {c.Id}");
+        foreach (var n in result.Notes) Console.WriteLine($"  note: {n}");
+        Console.WriteLine($"  equivalent: {(result.Equivalent ? "yes" : "no")}");
+        if (check) return result.Equivalent;
+        if (!result.Equivalent) { Console.WriteLine("  refused: not equivalent; the file is unchanged"); return false; }
+
+        // The backup is the byte-for-byte original, and overwrite: false is the refusal again for a
+        // second process that got here first.
+        try { File.Copy(path, backup, overwrite: false); }
+        catch (IOException ex) { Console.WriteLine($"  refused: cannot write backup {backup}: {ex.Message}"); return false; }
+        result.V2.Save(path);
+        Console.WriteLine($"  backup {backup}");
+        Console.WriteLine($"  wrote version {result.V2.Version}");
+        return true;
+    }
+
     /// <summary>deskwall tick [--layout path] [--force] [--measure] [--no-apply] [--no-shortcuts]. Without --layout it
     /// resolves the layout exactly as the daemon does, through the store, so a scripted one-shot tick
     /// and the resident one draw the same thing. --layout still bypasses the store, for scripting.</summary>
@@ -242,7 +312,11 @@ internal static class Program
     {
         var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
         if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
+        // Read, expand and scale: what a v2 layout adds to activation, which the daemon pays on a
+        // layout edit or display change, never per tick (plan D4).
+        var load = System.Diagnostics.Stopwatch.StartNew();
         if (ResolveLayout(opts, monitor, out var exit) is not { } layout) return exit;
+        load.Stop();
         var clock = SystemClock.Instance;
         var sources = layout.Sources.Select(s => SourceFactory.Create(s, clock)).ToList();
         var registry = new SourceRegistry();
@@ -252,7 +326,9 @@ internal static class Program
         try
         {
             var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
-            if (opts.Contains("--measure")) Console.WriteLine(t.ToTable());
+            // "load" is not a row of the tick's own table, and must not start with "total", which
+            // is what the budget test's ^total regex reads.
+            if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick)");
             else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
             if (runner.LastShortcutOutcome is { } o)
             {
@@ -405,8 +481,15 @@ internal static class Program
         if (layoutPath is not null)
         {
             if (!File.Exists(layoutPath)) { Console.Error.WriteLine($"no layout at {layoutPath}"); return null; }
+            var file = LayoutFile.Load(layoutPath);
+            if (file.Version > LayoutStore.MaxVersion)
+            {
+                Console.Error.WriteLine($"layout {layoutPath} is version {file.Version}; this build understands up to {LayoutStore.MaxVersion}");
+                return null;
+            }
             exit = 0;
-            return LayoutFile.Load(layoutPath);
+            // The same expansion the store does, so a scripted tick draws what the daemon would.
+            return LayoutStore.Expand(file, Path.GetFullPath(layoutPath), LayoutStore.DefaultFinder(), Console.Error.WriteLine);
         }
         var res = LayoutStore.Default(Console.Error.WriteLine).Resolve(monitor.Signature);
         if (res is null)

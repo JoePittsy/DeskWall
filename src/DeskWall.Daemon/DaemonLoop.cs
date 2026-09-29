@@ -9,6 +9,7 @@ using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Tick;
 using DeskWall.Core.Wallpaper;
+using DeskWall.Core.Widgets;
 using DeskWall.Daemon.Host;
 
 namespace DeskWall.Daemon;
@@ -69,6 +70,10 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         // settings.json decides, read once here at start. It is never re-read: turning the tray icon
         // off or on is a restart, which is what the designer's settings page says it is.
         var wantTray = tray && DaemonSettings.TrayIconEnabled();
+
+        // The watcher can only watch a directory that exists, and the owner's first fork of a shipped
+        // widget is what creates a file here; without the folder that first fork would never repaint.
+        Directory.CreateDirectory(WidgetCatalog.UserDir);
 
         using var win = new HostWindow();
         using var timer = new WaitableTimer();
@@ -302,8 +307,13 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     private Active? Activate(MonitorInfo monitor)
     {
         store.Reload();      // layouts.json may have been written by a second process (deskwall layouts set)
-        _watcher?.Rescan();  // and it may now name a layout in a directory nobody was watching
-        var res = store.Resolve(monitor.Signature);
+        LayoutResolution? res;
+        // After the resolve, not before: layouts.json may now name a layout in a directory nobody was
+        // watching, and only the resolve knows which widget files that layout's copies read. In a
+        // finally, so a resolve that throws still leaves the new layout's folder watched and the
+        // owner's fix to it still wakes the daemon.
+        try { res = store.Resolve(monitor.Signature); }
+        finally { _watcher?.Rescan(); }
         if (res is null)
         {
             _announced = null;
