@@ -21,6 +21,7 @@ public sealed class LiveSources : IDisposable
     private readonly SourceRegistry _registry = new();
     private readonly object _registryLock = new();
     private readonly Timer _timer;
+    private readonly Timer? _warm;
     /// <summary>The bus this instance signals. Owned (and disposed) only when the caller did not
     /// supply one.</summary>
     private readonly EventBus _bus;
@@ -64,7 +65,17 @@ public sealed class LiveSources : IDisposable
         }
         // Fire an immediate tick, then every 5 s. Each source's own NextDue still governs whether it actually runs.
         _timer = new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+        // A hardware source has no CPU load until its second sample (10 s in), and then publishes on
+        // the whole minute, so a dial dropped in the designer, and "CPU load" in the Data panel,
+        // would stay blank for up to a minute. One extra refresh just after that sample fills them
+        // in. The designer only: the daemon's schedule is its own.
+        var cold = _entries.Where(e => e.Source is not null && string.Equals(e.Def.Type, "hardware", StringComparison.OrdinalIgnoreCase)).ToList();
+        if (cold.Count > 0)
+            _warm = new Timer(_ => { foreach (var e in cold) _ = RefreshEntryAsync(e); }, null, WarmUp, Timeout.InfiniteTimeSpan);
     }
+
+    /// <summary>When the extra hardware refresh runs: just after the sampler's second reading.</summary>
+    public static readonly TimeSpan WarmUp = TimeSpan.FromSeconds(12);
 
     public RecordValue Tree() { lock (_registryLock) return _registry.Tree(); }
 
@@ -160,6 +171,7 @@ public sealed class LiveSources : IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Dispose();
+        _warm?.Dispose();
         _bus.WakeRequested -= _onWake;
         foreach (var e in _entries)
             if (e.Source is ISignalSource sig) sig.Changed -= _onSignal;

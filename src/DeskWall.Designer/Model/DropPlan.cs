@@ -173,9 +173,10 @@ public sealed class DropPlan
         return [.. shapes, .. TextOptions(value)];
     }
 
+    /// <summary>Centred in its box, so the text lands where it was dropped (on a dial, in its middle).</summary>
     private static IReadOnlyList<DropOption> TextOptions(ValueEntry value)
         => FormatPresets.For(value.Kind).Select(p => new DropOption("Text " + p.Label,
-            new TextDef { Id = "text", Rect = new Rect(0, 0, 120, 24), Text = Bound(value, p.Format) }, null, Bound(value, p.Format))).ToList();
+            new TextDef { Id = "text", Rect = new Rect(0, 0, 120, 24), Text = Bound(value, p.Format), Align = PropertyValue.Literal("center") }, null, Bound(value, p.Format))).ToList();
 
     /// <summary>The Fraction property takes only a documented 0..1 value: a byte count bound to an
     /// arc would draw full at every size. Everything else is <see cref="ValueCatalog.Fits"/>.</summary>

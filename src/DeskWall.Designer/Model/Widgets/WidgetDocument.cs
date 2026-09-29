@@ -166,7 +166,7 @@ public sealed class WidgetDocument
         return def;
     }
 
-    private static ComponentDef NewPart(PartKind kind, int step) => kind switch
+    public static ComponentDef NewPart(PartKind kind, int step = 0) => kind switch
     {
         PartKind.Text => new TextDef
         {

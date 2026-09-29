@@ -1,0 +1,225 @@
+<UserControl x:Class="DeskWall.Designer.Views.InsertPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <UserControl.Resources>
+    <!-- The card IS the button. A phone home screen adds a widget when you tap the widget, and a
+         column of eight Add buttons would be eight more controls saying what the card already is;
+         the "+ Add" caption inside names the gesture without being a second target. -->
+    <Style x:Key="CardButton" TargetType="Button">
+      <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" SnapsToDevicePixels="True" CornerRadius="8"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}">
+              <Grid>
+                <ContentPresenter />
+                <Border x:Name="Wash" CornerRadius="8" Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                        Opacity="0" IsHitTestVisible="False" />
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                <Setter TargetName="Wash" Property="Opacity" Value="1" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Opacity" Value="0.75" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- A data row: flat until hovered or focused. A button rather than a list item because Enter on
+         a list item belongs to the window (it goes down a depth), and Enter on a button presses it. -->
+    <Style x:Key="RowButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" CornerRadius="4" Padding="{TemplateBinding Padding}"
+                    Background="{TemplateBinding Background}" BorderThickness="1" BorderBrush="Transparent">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <DataTemplate x:Key="CardTemplate">
+      <Button Style="{StaticResource CardButton}" Click="Card_Click" Tag="{Binding Key}"
+              ToolTip="{Binding Description}"
+              AutomationProperties.Name="{Binding Name}"
+              AutomationProperties.HelpText="{Binding Description}"
+              PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move">
+        <!-- Right-click, not a row of buttons on the card: the card's one job is "add this", and
+             editing your own widgets is a rarer thing you go looking for. -->
+        <Button.ContextMenu>
+          <ContextMenu>
+            <!-- Edit is offered on every widget. A shipped one is copy-on-write: saving writes a
+                 file of the same key in the owner's folder, which the catalog prefers, and Reset
+                 deletes it again. -->
+            <MenuItem Header="Edit" Click="Edit_Click" />
+            <MenuItem Header="Duplicate to mine" Click="Duplicate_Click" />
+            <MenuItem Header="{Binding DeleteHeader}" Click="Delete_Click" Visibility="{Binding MineVisibility}" />
+            <Separator />
+            <MenuItem Header="New widget" Click="New_Click" />
+          </ContextMenu>
+        </Button.ContextMenu>
+        <Grid Margin="12,10,12,11">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <DockPanel Grid.Row="0">
+            <TextBlock DockPanel.Dock="Right" Text="+ Add" VerticalAlignment="Center" Margin="8,0,0,0"
+                       FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+            <Border DockPanel.Dock="Right" CornerRadius="9" Padding="7,1" Margin="8,0,0,0"
+                    VerticalAlignment="Center" Visibility="{Binding CountVisibility}"
+                    Background="{DynamicResource AccentFillColorDefaultBrush}">
+              <TextBlock Text="{Binding Count}" FontSize="12"
+                         Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+            </Border>
+            <!-- One quiet word: the panel must not say "Clock" when what it will place is the
+                 owner's edited Clock. -->
+            <TextBlock DockPanel.Dock="Right" Text="edited" Style="{StaticResource Caption}"
+                       VerticalAlignment="Center" Margin="8,0,0,0"
+                       Visibility="{Binding EditedVisibility}" />
+            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          </DockPanel>
+          <TextBlock Grid.Row="1" Text="{Binding Description}" Style="{StaticResource Caption}"
+                     TextWrapping="Wrap" Margin="0,3,0,0" />
+          <TextBlock Grid.Row="2" Text="{Binding Requires}" Visibility="{Binding RequiresVisibility}"
+                     Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+        </Grid>
+      </Button>
+    </DataTemplate>
+
+    <!-- "CPU load · 27%": the name in the primary colour, the value as it is now in the secondary. -->
+    <DataTemplate x:Key="RowTemplate">
+      <Button Style="{StaticResource RowButton}" Click="Row_Click"
+              AutomationProperties.Name="{Binding SpokenName}"
+              ToolTip="{Binding Path}"
+              PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move">
+        <TextBlock TextTrimming="CharacterEllipsis" FontSize="13">
+          <Run Text="{Binding Label, Mode=OneWay}" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          <Run Text="{Binding Sample, Mode=OneWay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+        </TextBlock>
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <!-- Parts on top (four, always in reach), then Widgets and Data, each collapsible: the rows of an
+       open section share what height is left. No tabs, so building a widget out of parts and data
+       never costs a switch. -->
+  <Grid x:Name="Sections" Margin="0,8,0,0">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <StackPanel Grid.Row="0" Margin="16,8,16,8">
+      <TextBlock Text="Parts" Style="{StaticResource SectionHeader}" />
+      <UniformGrid x:Name="PartsRow" Rows="1" Margin="0,8,0,0"
+                   KeyboardNavigation.DirectionalNavigation="Cycle"
+                   KeyboardNavigation.TabNavigation="Once"
+                   AutomationProperties.Name="Parts">
+        <Button Content="Text" Tag="Text" Margin="0,0,3,0" HorizontalAlignment="Stretch" Click="Part_Click" PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move"
+                AutomationProperties.Name="Text part" ToolTip="Drag onto the canvas, or press Enter to put it in the middle" />
+        <Button Content="Image" Tag="Image" Margin="1,0,2,0" HorizontalAlignment="Stretch" Click="Part_Click" PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move"
+                AutomationProperties.Name="Image part" ToolTip="Drag onto the canvas, or press Enter to put it in the middle" />
+        <Button Content="Bar" Tag="Bar" Margin="2,0,1,0" HorizontalAlignment="Stretch" Click="Part_Click" PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move"
+                AutomationProperties.Name="Bar part" ToolTip="Drag onto the canvas, or press Enter to put it in the middle" />
+        <Button Content="Dial" Tag="Dial" Margin="3,0,0,0" HorizontalAlignment="Stretch" Click="Part_Click" PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move"
+                AutomationProperties.Name="Dial part" ToolTip="Drag onto the canvas, or press Enter to put it in the middle" />
+      </UniformGrid>
+    </StackPanel>
+
+    <Expander x:Name="WidgetsSection" Grid.Row="1" IsExpanded="True" Margin="8,0,8,4"
+              Expanded="Section_Toggled" Collapsed="Section_Toggled"
+              AutomationProperties.Name="Widgets">
+      <Expander.Header>
+        <TextBlock Text="Widgets" Style="{StaticResource SectionHeader}" />
+      </Expander.Header>
+      <DockPanel>
+        <TextBlock x:Name="EmptyNote" DockPanel.Dock="Bottom" Style="{StaticResource Hint}" Margin="8,0,8,8"
+                   Visibility="Collapsed"
+                   Text="No widget templates found. They ship beside the designer in widgets\, and you can add your own under the DeskWall folder." />
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,4,8,8">
+          <StackPanel>
+            <ItemsControl x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}" Focusable="False" />
+            <!-- At the foot, not the head: the list is for picking one of the fourteen that already
+                 exist, and building your own is what you do once you have found none of them fits. -->
+            <Button x:Name="NewButton" Content="+ New widget" Click="New_Click"
+                    HorizontalAlignment="Left" Padding="12,5" Margin="0,4,0,0"
+                    ToolTip="Build one out of parts" />
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Expander>
+
+    <Expander x:Name="DataSection" Grid.Row="2" IsExpanded="True" Margin="8,0,8,8"
+              Expanded="Section_Toggled" Collapsed="Section_Toggled"
+              AutomationProperties.Name="Data">
+      <Expander.Header>
+        <TextBlock Text="Data" Style="{StaticResource SectionHeader}" />
+      </Expander.Header>
+      <DockPanel>
+        <!-- WPF's TextBox has no placeholder: the hint is a caption behind it, shown while it is empty. -->
+        <Grid DockPanel.Dock="Top" Margin="8,4,8,6">
+          <TextBox x:Name="SearchBox" TextChanged="Search_Changed"
+                   AutomationProperties.Name="Search data"
+                   ToolTip="Search the live values by name, such as cpu or drive" />
+          <TextBlock x:Name="SearchHint" Text="Search, such as cpu or C:" IsHitTestVisible="False"
+                     Margin="12,0,0,0" VerticalAlignment="Center" FontSize="13"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Grid>
+        <TextBlock x:Name="DataNote" DockPanel.Dock="Top" Style="{StaticResource Hint}" Margin="8,0,8,6"
+                   Text="Waiting for the first values." />
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,0,4,4">
+          <ItemsControl x:Name="Rows" ItemTemplate="{StaticResource RowTemplate}" Focusable="False"
+                        KeyboardNavigation.DirectionalNavigation="Contained"
+                        KeyboardNavigation.TabNavigation="Once"
+                        AutomationProperties.Name="Live values">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Expander>
+  </Grid>
+</UserControl>
