@@ -122,21 +122,19 @@ public partial class SourcesPanel : UserControl
     private FrameworkElement Row(SourceDef def)
     {
         var panel = new DockPanel();
-        var state = new TextBlock
+        var state = Themed(new TextBlock
         {
             Text = Age(def.Name),
             FontSize = 12,
             Margin = new Thickness(8, 0, 0, 0),
-            Foreground = Brush(Snapshot(def.Name)?.LastError is null ? "TextFillColorSecondaryBrush" : "SystemFillColorCriticalBrush"),
-        };
+        }, Snapshot(def.Name)?.LastError is null ? "TextFillColorSecondaryBrush" : "SystemFillColorCriticalBrush");
         DockPanel.SetDock(state, Dock.Right);
         panel.Children.Add(state);
-        panel.Children.Add(new TextBlock
+        panel.Children.Add(Themed(new TextBlock
         {
             Text = $"{def.Name}  \u00b7  {def.Type}",
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Foreground = Brush("TextFillColorPrimaryBrush"),
-        });
+        }, "TextFillColorPrimaryBrush"));
         return panel;
     }
 
@@ -274,13 +272,12 @@ public partial class SourcesPanel : UserControl
     private FrameworkElement BuildRow(SourceDef def, SourceField field, Dictionary<string, string> values)
     {
         var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-        stack.Children.Add(new TextBlock
+        stack.Children.Add(Themed(new TextBlock
         {
             Text = field.Label,
             FontSize = 12,
             Margin = new Thickness(0, 0, 0, 3),
-            Foreground = Brush("TextFillColorSecondaryBrush"),
-        });
+        }, "TextFillColorSecondaryBrush"));
 
         var row = new DockPanel();
         if (BuildKnobToggle(def, field) is { } toggle)
@@ -412,5 +409,11 @@ public partial class SourcesPanel : UserControl
         }
     }
 
-    private Brush Brush(string key) => TryFindResource(key) as Brush ?? SystemColors.ControlTextBrush;
+    /// <summary>The text's colour as a live theme reference (it follows a theme switch), not a
+    /// lookup of the brush the theme had when the row was built.</summary>
+    private static TextBlock Themed(TextBlock text, string key)
+    {
+        text.SetResourceReference(TextBlock.ForegroundProperty, key);
+        return text;
+    }
 }

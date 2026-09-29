@@ -487,7 +487,10 @@ public partial class PropertiesPanel : UserControl
             line.Children.Add(label);
 
             FrameworkElement? below = null;
-            if (Adjustable.ToKnob(doc, target)?.Type == KnobType.Number)
+            // A percentage knob ("Warn at") is bounded in percent too: 0 and 100, not 0 and 1.
+            var asKnob = Adjustable.ToKnob(doc, target);
+            var percent = asKnob is not null && PropertyRows.IsPercentKnob(asKnob);
+            if (asKnob?.Type == KnobType.Number)
             {
                 var range = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
                 range.Children.Add(Bound("Min", target.Min, (d, v) => Find(d).Min = v));
@@ -502,24 +505,35 @@ public partial class PropertiesPanel : UserControl
                 var text = Label(caption);
                 text.Margin = new Thickness(0, 0, 6, 0);
                 panel.Children.Add(text);
-                var box = new TextBox { Width = 64, Text = value?.ToString("R", CultureInfo.InvariantCulture) ?? "" };
-                Identify(box, $"Knob {target.Label}, {caption.ToLowerInvariant()}imum (blank for none)", $"knob-{caption.ToLowerInvariant()}/{id}");
+                string Shown(double? v) => v is not { } n ? ""
+                    : percent ? PropertyRows.PercentText(PropertyValue.Literal(n)) ?? n.ToString("R", CultureInfo.InvariantCulture)
+                    : n.ToString("R", CultureInfo.InvariantCulture);
+                var box = new TextBox { Width = 64, Text = Shown(value) };
+                Identify(box, $"Knob {target.Label}, {caption.ToLowerInvariant()}imum{(percent ? " in percent" : "")} (blank for none)", $"knob-{caption.ToLowerInvariant()}/{id}");
                 OnCommit(box, () =>
                 {
                     var t = box.Text.Trim();
                     double? v = t.Length == 0 ? null
+                        : percent ? (double.TryParse(PropertyRows.FromPercentText(t)?.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : value)
                         : double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) ? n : value;
                     if (_model is not null) Lens.EditWidget(_model, key, $"Set {target.Label} {caption.ToLowerInvariant()}", d => set(d, v));
                 });
                 panel.Children.Add(box);
+                if (percent)
+                {
+                    var sign = Label("%");
+                    sign.Width = double.NaN;
+                    sign.Margin = new Thickness(4, 0, 0, 0);
+                    panel.Children.Add(sign);
+                }
                 return panel;
             }
         }
         foreach (var knob in doc.PassThroughKnobs)
         {
             var kept = Label(knob.Label);
-            kept.ToolTip = "Written by hand in the widget file; kept as it is.";
-            Add(Shell($"knob-row/{knob.Id}", "By hand", kept, false, null, null, null));
+            kept.ToolTip = "This knob was written straight into the widget file (it sets several things at once), so it is kept exactly as it is; each copy still changes it.";
+            Add(Shell($"knob-row/{knob.Id}", "Kept as written", kept, false, null, null, null));
         }
     }
 

@@ -59,6 +59,8 @@ internal static class ValueTreeView
         }
 
         var item = new TreeViewItem { Header = header, Tag = path, IsExpanded = expanded?.Contains(path) == true };
+        // Its header is a grid of text blocks, which a screen reader would read as nothing.
+        System.Windows.Automation.AutomationProperties.SetName(item, isContainer ? label : $"{label}, {value.ToText(null)}");
 
         if (onPathClicked is not null && !isContainer)
         {

@@ -118,4 +118,21 @@ public class ValueCatalogTests
         Assert.True(Entry(all, "system.uptime").Diagnostic);
         Assert.False(Entry(all, "hardware.cpu").Diagnostic);
     }
+
+    /// <summary>Critique 3, P3: "Drives · [2 items]" and "Days since crash · -1" in the Data list.</summary>
+    [Fact]
+    public void The_Data_List_Never_Shows_A_List_Itself_And_Says_No_Crash_In_Words()
+    {
+        var drive = Rec(("letter", new TextValue("C")), ("freeGB", new NumberValue(463)));
+        var tree = Rec(("disks", Rec(("drives", new ListValue([drive], "letter")))),
+            ("system", Rec(("daysSinceCrash", new NumberValue(-1)))));
+        var all = ValueCatalog.From(tree, [Def("disks", "disks"), Def("system", "system")]);
+        var rows = all.Select(e => new DeskWall.Designer.Views.InsertPanel.DataRow(e)).ToList();
+
+        Assert.Contains(all, e => e.Kind == ValueKind.List);   // still there for a repeater's items
+        Assert.DoesNotContain(rows, r => r.Entry.Kind == ValueKind.List && (r.Matches("") || r.Matches("drives")));
+        Assert.Contains(rows, r => r.Path == "disks.drives[C].freeGB" && r.Matches(""));
+        Assert.Equal("no crash on record", DeskWall.Designer.Views.InsertPanel.DataRow.SampleText(Entry(all, "system.daysSinceCrash")));
+        Assert.Equal("3", DeskWall.Designer.Views.InsertPanel.DataRow.SampleText(Entry(all, "system.daysSinceCrash") with { Sample = new NumberValue(3) }));
+    }
 }

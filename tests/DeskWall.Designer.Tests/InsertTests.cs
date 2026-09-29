@@ -60,6 +60,7 @@ public class InsertTests
         Insert.Part(m, PartKind.Text, 500, 300);
         Assert.Equal("text-2", Insert.Part(m, PartKind.Text, 500, 400));
         Assert.Equal("center", ((TextDef)m.Find("text-2")!).Align.LiteralText);
+        Assert.Equal("none", ((TextDef)m.Find("text-2")!).Effect.LiteralText);   // as the shipped dial's texts (critique 3)
     }
 
     [Fact]

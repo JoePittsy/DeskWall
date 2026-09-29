@@ -100,6 +100,7 @@ public sealed class WidgetDocument
             Rect = new Rect(step, step, 120, 24),
             Text = PropertyValue.Literal("Text"),
             Size = PropertyValue.Literal(16),
+            Effect = PropertyValue.Literal("none"),
         },
         PartKind.Image => new ImageDef
         {

@@ -26,7 +26,8 @@ public static class Shortcuts
             new(EditParts, "Go down a depth: a copy's parts, then its widget"),
             new("Esc", "Come back up a depth, then clear the selection"),
             new(MakeOrEdit, "Make a widget from loose parts, or edit the selected copy's widget"),
-            new("Double-click", "Open a copy, then its widget; outside it, come back up"),
+            new("Double-click", "Open a copy, then its widget"),
+            new("Click outside", "Come back up a depth from an open copy or widget"),
         ]),
         new("Selection", [
             new("Tab / Shift+Tab", "Next / previous thing on the canvas"),
@@ -56,6 +57,8 @@ public static class Shortcuts
         ]),
         new("Help", [
             new("Menu key / Shift+F10", "The canvas menu"),
+            new("Shift+F10 on a property row", "Its menu: bind, expose as knob, reset"),
+            new("Menu key on a widget card", "Its menu: edit, duplicate, reset, new widget"),
             new($"{Sheet} or ?", "Show or hide this list"),
         ]),
     ];

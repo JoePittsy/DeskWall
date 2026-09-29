@@ -678,12 +678,30 @@ public sealed class DesignerModel
             : Depth.Kind == DepthKind.Layout ? _selection.Select(CopyOf).FirstOrDefault(c => c is not null)
             : null;
 
-    /// <summary>Ctrl+Alt+K. Loose components selected at layout depth: Make widget, then widget depth
-    /// on it. A copy (or one of its parts) selected, or copy depth: Edit widget. False otherwise.</summary>
+    /// <summary>The selected loose components at layout depth (not copies, nor a copy's parts): what
+    /// Make widget would take.</summary>
+    public IReadOnlyList<string> LooseSelection
+        => Depth.Kind != DepthKind.Layout ? []
+            : _selection.Where(id => CopyOf(id) is null && Layout.Components.Exists(c => c.Id == id)).ToList();
+
+    /// <summary>Ctrl+Alt+K. Loose components selected at layout depth: Make widget from them, then
+    /// widget depth on it; copies selected beside them (Ctrl+A) stay as they are, and
+    /// <see cref="Notice"/> says so, rather than the key quietly opening one copy's widget. Only copies
+    /// (or their parts) selected, or copy depth: Edit widget. False otherwise.</summary>
     public bool MakeOrEditWidget()
     {
         if (Depth.Kind == DepthKind.Copy) { SetDepth(Depth.Widget(Depth.WidgetKey!, Depth.CopyId)); return true; }
         if (Depth.Kind != DepthKind.Layout || _selection.Count == 0) return false;
+        var loose = LooseSelection;
+        if (loose.Count > 0 && loose.Count < _selection.Count)
+        {
+            var left = _selection.Count - loose.Count;
+            if (Lens.MakeWidget(this, loose) is not { } fromLoose) return false;
+            SetDepth(Depth.Widget(Copies.Find(Layout, fromLoose)!.Widget, fromLoose));
+            Select([]);
+            Notify($"Made a widget from the {loose.Count} loose part{(loose.Count == 1 ? "" : "s")}; the {left} placed widget{(left == 1 ? "" : "s")} also selected stay{(left == 1 ? "s" : "")} as {(left == 1 ? "it is" : "they are")} (a widget cannot hold another).");
+            return true;
+        }
         if (_selection.Select(CopyOf).FirstOrDefault(c => c is not null) is { } copy)
         {
             SetDepth(Depth.Widget(copy.Widget, copy.Id));

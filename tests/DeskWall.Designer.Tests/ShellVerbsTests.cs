@@ -24,6 +24,29 @@ public class ShellVerbsTests
 
     private static WidgetCopy Copy(DesignerModel m, string id) => m.Layout.Copies!.Single(c => c.Id == id);
 
+    /// <summary>Critique 3, P3: Ctrl+A then Ctrl+Alt+K with loose parts and a copy selected opened
+    /// the copy's widget. It now makes a widget of the loose parts and says the copy stayed.</summary>
+    [Fact]
+    public void Make_Widget_With_A_Copy_Also_Selected_Takes_The_Loose_Parts_And_Says_So()
+    {
+        var m = Loose();
+        var dial = DeskWall.Core.Layout.LayoutFile.Parse(m.ToJson()).Copies!.Single();
+        var said = new List<string>();
+        m.Notice += said.Add;
+        m.SelectAll();
+        Assert.Equal(["a", "b"], m.LooseSelection);
+        Assert.True(m.MakeOrEditWidget());
+
+        Assert.Equal(DepthKind.Widget, m.Depth.Kind);
+        Assert.NotEqual("dial", m.Depth.WidgetKey);
+        Assert.Equal(2, m.WidgetEdits[m.Depth.WidgetKey!].Components.Count);
+        Assert.Empty(m.Layout.Components);
+        var copy = Copy(m, "dial-1");
+        Assert.Equal((dial.X, dial.Y, 0, 0), (copy.X, copy.Y, copy.Overrides.Count, copy.Knobs.Count));
+        Assert.False(m.WidgetEdits.ContainsKey("dial"));
+        Assert.Equal("Made a widget from the 2 loose parts; the 1 placed widget also selected stays as it is (a widget cannot hold another).", Assert.Single(said));
+    }
+
     private static int MaxZ(DesignerModel m, string copyId) => m.Expanded().Layout.Components.Where(c => c.Widget == copyId).Max(c => c.Z);
 
     private static int MinZ(DesignerModel m, string copyId) => m.Expanded().Layout.Components.Where(c => c.Widget == copyId).Min(c => c.Z);

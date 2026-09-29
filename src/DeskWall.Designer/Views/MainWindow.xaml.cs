@@ -627,8 +627,9 @@ public partial class MainWindow : Window
             menu.Items.Add(item);
         }
         var copy = _model.EditableCopy();
-        var loose = _model.Depth.Kind == DepthKind.Layout && any && copy is null;
-        if (copy is not null) Item("Edit widget", Shortcuts.MakeOrEdit, true, () => _model.MakeOrEditWidget());
+        // Loose parts in the selection make a widget, even beside copies (Ctrl+A): the same rule as the key.
+        var loose = _model.LooseSelection.Count > 0;
+        if (copy is not null && !loose) Item("Edit widget", Shortcuts.MakeOrEdit, true, () => _model.MakeOrEditWidget());
         else Item("Make widget", Shortcuts.MakeOrEdit, loose, () => _model.MakeOrEditWidget());
         Item("Edit parts", Shortcuts.EditParts, _model.Depth.Kind == DepthKind.Layout && copy is not null, () => _model.Descend());
         menu.Items.Add(new System.Windows.Controls.Separator());

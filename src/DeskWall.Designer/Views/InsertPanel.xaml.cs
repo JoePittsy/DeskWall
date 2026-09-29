@@ -295,14 +295,19 @@ public partial class InsertPanel : UserControl
         public string Sample => " · " + SampleText(_entry);
         public string SpokenName => $"{_entry.Label}, {SampleText(_entry)}";
 
+        /// <summary>The value in its first format preset. Days since crash is -1 when the event log has
+        /// no crash at all (docs/sources.md), which says it in words rather than as a count.</summary>
         public static string SampleText(ValueEntry e)
-            => e.Sample.ToText(FormatPresets.For(e.Kind) is [var first, ..] ? first.Format : null);
+            => e.Sample is NumberValue { Number: < 0 } && e.Path.EndsWith(".daysSinceCrash", StringComparison.OrdinalIgnoreCase) ? "no crash on record"
+                : e.Sample.ToText(FormatPresets.For(e.Kind) is [var first, ..] ? first.Format : null);
 
-        /// <summary>Everything but the diagnostic values while the box is empty; a search finds those too.</summary>
+        /// <summary>Everything but the diagnostic values while the box is empty; a search finds those
+        /// too. Never a list itself ("Drives · [2 items]"): a list feeds a repeater's items, bound
+        /// from its row, and dropped on the canvas it makes nothing; its values are rows of their own.</summary>
         public bool Matches(string? query)
-            => string.IsNullOrWhiteSpace(query) ? !_entry.Diagnostic
+            => _entry.Kind != ValueKind.List && (string.IsNullOrWhiteSpace(query) ? !_entry.Diagnostic
                : query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w =>
-                   Label.Contains(w, StringComparison.OrdinalIgnoreCase) || Path.Contains(w, StringComparison.OrdinalIgnoreCase));
+                   Label.Contains(w, StringComparison.OrdinalIgnoreCase) || Path.Contains(w, StringComparison.OrdinalIgnoreCase)));
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

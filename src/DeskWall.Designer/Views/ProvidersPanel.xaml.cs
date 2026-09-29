@@ -115,22 +115,20 @@ public partial class ProvidersPanel : UserControl
         foreach (var f in view.Fields)
         {
             var row = new DockPanel();
-            var value = new TextBlock
+            var value = Themed(new TextBlock
             {
                 Text = f.Value ?? "-",
                 FontSize = 11,
                 Margin = new Thickness(8, 0, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                Foreground = Brush("TextFillColorSecondaryBrush"),
-            };
+            }, "TextFillColorSecondaryBrush");
             DockPanel.SetDock(value, Dock.Right);
             row.Children.Add(value);
-            row.Children.Add(new TextBlock
+            row.Children.Add(Themed(new TextBlock
             {
                 Text = f.Path,
                 FontSize = 11,
-                Foreground = Brush("TextFillColorPrimaryBrush"),
-            });
+            }, "TextFillColorPrimaryBrush"));
             Fields.Items.Add(new ListBoxItem
             {
                 Content = row,
@@ -279,5 +277,11 @@ public partial class ProvidersPanel : UserControl
         _bus.Dispose();
     }
 
-    private Brush Brush(string key) => TryFindResource(key) as Brush ?? SystemColors.ControlTextBrush;
+    /// <summary>The text's colour as a live theme reference (it follows a theme switch), not a
+    /// lookup of the brush the theme had when the row was built.</summary>
+    private static TextBlock Themed(TextBlock text, string key)
+    {
+        text.SetResourceReference(TextBlock.ForegroundProperty, key);
+        return text;
+    }
 }

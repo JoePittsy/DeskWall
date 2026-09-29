@@ -36,6 +36,9 @@ public partial class SettingsPage : Window
     public SettingsPage(DesignerModel? model, DisplaySignature signature, LayoutStore store)
     {
         InitializeComponent();
+        // 820 is what the page wants; on a 1366x768 screen the work area is about 720, so the window
+        // takes what there is and the page scrolls inside it (critique 3).
+        Height = Math.Min(Height, SystemParameters.WorkArea.Height);
         _model = model;
         _signature = signature;
         _store = store;
