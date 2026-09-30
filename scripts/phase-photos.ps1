@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
   Grade the one dusk photo of the ridge into dawn, day and night variants, so a layout can bind
@@ -49,7 +49,7 @@ if (-not $AllowLive -and (Resolve-Path -LiteralPath (New-Item -ItemType Director
 if (-not (Test-Path -LiteralPath $Source)) { throw "No source photo at $Source." }
 
 Add-Type -AssemblyName System.Drawing
-Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+Add-Type -ReferencedAssemblies System.Drawing, System.Drawing.Primitives, System.Drawing.Common, System.Collections, System.Runtime.InteropServices, System.Runtime -TypeDefinition @'
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
