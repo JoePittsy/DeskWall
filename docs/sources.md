@@ -546,6 +546,9 @@ refreshes on events: a track change, play/pause, a seek of more than 3 s, or a c
 ignored). A progress bar therefore jumps on those events rather than creeping every minute.
 Paused or absent playback has empty display fields. Thumbnail bytes are hashed; only changed art is decoded to PNG under
 `runtime/media/art.png`. Thumbnails above 8 MB are omitted. Subscriptions are removed on disposal.
+Every call into the media service is bounded at 5 s (`MediaSource.CallTimeout`) and by the tick's
+token: the daemon's tick waits on this refresh, so a service that stops answering fails the source
+(last values kept, retried on the scheduler's back-off) rather than freezing the wallpaper.
 Windows SDK projections compiled successfully under native AOT in the spike.
 
 `disks.worstUsedFraction` is the maximum used fraction across fixed ready drives (0 when none).

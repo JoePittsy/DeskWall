@@ -1,5 +1,6 @@
 ﻿using DeskWall.Core.Values;
 using DeskWall.Core.Render;
+using Windows.Foundation;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
 using System.Security.Cryptography;
@@ -9,6 +10,13 @@ namespace DeskWall.Core.Sources;
 /// <summary>Current Windows media session. Changes are signalled, never polled.</summary>
 public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposable
 {
+    internal MediaSource(string name, Func<IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager>> request, TimeSpan timeout) : this(name)
+        => (_request, _timeout) = (request, timeout);
+
+    /// <summary>How long any one call into the media service may take before the refresh fails.</summary>
+    public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
+    private readonly Func<IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager>> _request = GlobalSystemMediaTransportControlsSessionManager.RequestAsync;
+    private readonly TimeSpan _timeout = CallTimeout;
     public string Name => name;
     public event Action<ISource>? Changed;
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
@@ -67,7 +75,7 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             if (_disposed) return Empty();
             if (_manager is null)
             {
-                var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+                var manager = await Bounded(_request(), ct).ConfigureAwait(false);
                 if (_disposed) return Empty();
                 _manager = manager;
                 _manager.CurrentSessionChanged += CurrentChanged;
@@ -86,17 +94,17 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             }
             if (_session is null) return Empty();
             var session = _session;
-            var properties = await session.TryGetMediaPropertiesAsync();
+            var properties = await Bounded(session.TryGetMediaPropertiesAsync(), ct).ConfigureAwait(false);
             if (_disposed) return Empty();
             var playing = session.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
             var art = "";
             if (playing && properties.Thumbnail is { } thumbnail)
             {
-                using var stream = await thumbnail.OpenReadAsync();
+                using var stream = await Bounded(thumbnail.OpenReadAsync(), ct).ConfigureAwait(false);
                 if (stream.Size > 0 && stream.Size <= 8 * 1024 * 1024)
                 {
                     using var reader = new DataReader(stream);
-                    var length = await reader.LoadAsync((uint)stream.Size);
+                    var length = await Bounded(reader.LoadAsync((uint)stream.Size), ct).ConfigureAwait(false);
                     var bytes = new byte[length]; reader.ReadBytes(bytes);
                     var hash = Convert.ToHexString(SHA256.HashData(bytes));
                     if (_artHash != hash || !File.Exists(_art))
@@ -136,6 +144,20 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             _gate.Release();
         }
     }
+    /// <summary>One call into the media service, bounded by <see cref="CallTimeout"/> and the token.
+    /// The service is out of process and the daemon's tick thread blocks on this refresh, so a call
+    /// that never answers must fail the source rather than freeze the wallpaper. WaitAsync, not
+    /// only AsTask(ct): an operation that ignores Cancel would otherwise still never complete.</summary>
+    private async Task<T> Bounded<T>(IAsyncOperation<T> operation, CancellationToken ct)
+    {
+        try { return await operation.AsTask(ct).WaitAsync(_timeout, ct).ConfigureAwait(false); }
+        catch (TimeoutException)
+        {
+            try { operation.Cancel(); } catch (Exception) { }
+            throw new TimeoutException($"the media service did not answer within {_timeout.TotalSeconds:0.#} s");
+        }
+    }
+
     /// <summary>Seconds into the track and its length, the position carried forward from when the
     /// app last stamped it if it is playing. Zero and zero when the app does not report a timeline.</summary>
     private (double Position, double Duration) Timeline(GlobalSystemMediaTransportControlsSession session, bool playing)
