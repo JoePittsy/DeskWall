@@ -51,14 +51,17 @@ path the resident daemon uses, useful for scripting and for this documentation's
 3. **Sleep.** The waitable timer is set to the earliest due time across every active source
    (`Scheduler.NextWake`, clamped to `[now + 250 ms, now + 15 min]`); the wait also wakes on any
    window message.
-4. **Wake on:** the timer, a display change, a session unlock, a layout-store or layout-file
+4. **Wake on:** the timer, a display change, a session unlock, an Explorer restart (the
+   `TaskbarCreated` broadcast), a layout-store or layout-file
    change (`LayoutWatcher`, debounced), a widget file change (watched folder), a tray command, or
    a source finishing a fetch that overran into the next tick. `TickPlan.From(reasons)` turns the
    batch of reasons the pump collected into `{ Tick, Force, Reactivate, DelayForExplorer,
-   Shutdown }`. A display change adds a two-second `Thread.Sleep` before the tick runs, because
-   Explorer is still re-laying the desktop and hands back stale metrics until it finishes (spec
-   3.1); this blocks the pump, including a tray Exit, for those two seconds. A widget file change
-   triggers a Reactivate.
+   Shutdown }`. A display change or an Explorer restart adds a two-second `Thread.Sleep` before
+   the tick runs, because Explorer is still re-laying the desktop and hands back stale metrics
+   until it finishes (spec 3.1); this blocks the pump, including a tray Exit, for those two
+   seconds. The Explorer restart's tick is forced because a forced tick is the only one that
+   re-places shortcuts whose planned positions have not changed (spec 9 "Explorer restart keeps
+   icons"). A widget file change triggers a Reactivate.
 5. **After every tick:** log the outcome, update the tray tooltip, compute the next wake,
    `Footprint.Trim()` (`SetProcessWorkingSetSize`, giving freed pages back so Task Manager shows
    the idle number rather than the render peak).

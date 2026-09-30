@@ -81,6 +81,19 @@ public class TickPlanTests
         Assert.False(d.Reactivate);
     }
 
+    /// <summary>Spec 9 "Explorer restart keeps icons": only a forced tick re-places shortcuts whose
+    /// fingerprint has not changed, and the new desktop needs the same settling time as a mode
+    /// change. The display is the same, so the sources are not rebuilt.</summary>
+    [Fact]
+    public void ExplorerRestarted_Forces_And_Delays_But_Does_Not_Reactivate()
+    {
+        var d = From(WakeKind.ExplorerRestarted);
+        Assert.True(d.Tick);
+        Assert.True(d.Force);
+        Assert.True(d.DelayForExplorer);
+        Assert.False(d.Reactivate);
+    }
+
     [Fact]
     public void Shutdown_Wins_Over_Everything()
     {

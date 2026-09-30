@@ -255,7 +255,7 @@ Spec 9 manual acceptance:
 | Item | Status | Evidence |
 |---|---|---|
 | Apollo resolution change repairs itself | Wallpaper half seen here; icons need JOES-PC | Unplanned on 2026-09-30 at 20:25:04: the ultrawide went away mid-run and two scratch daemons logged `scaled layout ... to ...SHP1517... 1920x1200` then `tick DisplayChange (1920x1200): redrawn 7 total 206 ms`. Icon re-placement: R3a. |
-| Explorer restart keeps icons | Needs JOES-PC | R3b. |
+| Explorer restart keeps icons | Fix made here; icons need JOES-PC | The review found nothing re-placed icons after an Explorer restart: `TaskbarCreated` only re-added the tray icon, and an unforced tick skips shortcuts whose fingerprint is unchanged. The host window now raises a forced, 2 s-delayed `ExplorerRestarted` wake (tray or not). Live on a scratch daemon (`TaskbarCreated` posted to its own window only): `tick ExplorerRestarted (taskbar): redrawn 7 total 57 ms`. Whether Explorer then keeps the positions: R3b. |
 | Sleep and wake resumes on schedule | Needs JOES-PC | Sleeping this laptop would end the agent session. R3c. |
 | Dead `http` endpoint leaves the old value | **PASS** (scratch home, AOT exe) | A local `http` source (`every` 15 s) bound to a 96 px text; `python -m http.server` served `{"v":"ALPHA"}`, then was killed. 40 s later the text's pixels in `deskwall.jpg` hashed identical and the daemon had not repainted (Timer ticks `skipped`). Control: serving `{"v":"BRAVO"}` changed the hash. As designed (`docs/sources.md`), the value is dropped once the source has missed 3 of its own refreshes: `[WARN] source 'probe' is stale (missed 3 refreshes)`, 43 s after the kill at `every` 15, so a 900 s weather source holds its last value ~45 minutes. |
 | Malformed layout keeps the old wallpaper | **PASS** (same run) | Truncated the registered layout mid-array. Daemon logged `[ERROR] layout ...accept.json cannot be read: JsonException: '2' is an invalid end of a number...` and `[WARN] no layout for ...; waiting`, stayed alive, retried once a minute, and did not touch `deskwall.jpg` (mtime unchanged over 75 s, crop hash unchanged). |
@@ -275,15 +275,23 @@ to wait for it and see its output:
 ```powershell
 function dw { $o = "$env:TEMP\dw-o.txt"; $e = "$env:TEMP\dw-e.txt"
   $p = Start-Process "$env:LOCALAPPDATA\Programs\DeskWall\deskwall.exe" -ArgumentList $args -Wait -NoNewWindow -PassThru -RedirectStandardOutput $o -RedirectStandardError $e
-  Get-Content $o, $e; "exit $($p.ExitCode)" }
+  Get-Content $o, $e; Write-Host "exit $($p.ExitCode)" }
 ```
 
-**R0. Build and test the branch.**
+**R0. Get the branch without disturbing the POC.** The `DeskWall Tick` task runs `poc\` from
+the owner's main checkout, and the branch's last commit deletes `poc\`, so never switch that
+checkout to the branch before R6. On JOES-XPS-17, push it once:
+`git push -u origin spike/parity-gate`. Then on JOES-PC, in a separate worktree at the commit
+before the POC deletion:
 
 ```powershell
-cd D:\Source\Personal\DeskWall; git fetch; git switch spike/parity-gate
+(Get-ScheduledTask 'DeskWall Tick').Actions      # note which checkout the POC runs from (<POC checkout> in R2)
+git -C <main checkout> fetch origin
+git -C <main checkout> worktree add ..\DeskWall-parity origin/spike/parity-gate~1
+cd ..\DeskWall-parity
+git log -1 --format=%s                           # must NOT be "Retire the PowerShell POC ..."
 dotnet build            # expect 0 warnings
-dotnet test             # expect all green (2026-09-30 on the XPS: 518 Core, 595 Designer)
+dotnet test             # expect all green (2026-09-30 on the XPS: 522 Core, 595 Designer)
 ```
 
 **R1. Budget suite (reference numbers).** Close the ultrawide's other apps; the suite repaints
@@ -304,16 +312,16 @@ then make the budget decision above.
 `layouts/README.md` in `%LOCALAPPDATA%\DeskWall\secrets.json`, and this branch installed.
 
 ```powershell
-powershell -NoProfile -File poc\verify.ps1          # the POC's column, for comparison
+powershell -NoProfile -File <POC checkout>\poc\verify.ps1   # the POC's column, for comparison
 Copy-Item "$env:LOCALAPPDATA\DeskWall\verify-desktop.png" "$env:LOCALAPPDATA\DeskWall\verify-desktop-poc.png"
 Disable-ScheduledTask -TaskName "DeskWall Tick"     # the POC stops painting and placing slots 0..3
-scripts\publish.ps1 -Aot                            # installs this branch and restarts the daemon
+scripts\publish.ps1 -Aot                            # from the worktree: installs this branch and restarts the daemon
 dw layouts set layouts\steam-recent.json
 dw calibrate
 Start-Sleep 70                                      # one tick places the four cover shortcuts
 dw shortcuts                                        # planned vs reported, every row should match
 dw verify                                           # expect 4 x "left pad 5, bottom pad 5 ... OK", "RESULT: OK", exit 0
-dw verify --json > "$env:LOCALAPPDATA\DeskWall\verify-report.json"
+dw verify --json; Copy-Item "$env:TEMP\dw-o.txt" "$env:LOCALAPPDATA\DeskWall\verify-report.json"
 ```
 
 Compare `verify-desktop.png` with `verify-desktop-poc.png` side by side (same clock position,
@@ -326,17 +334,25 @@ puts the POC back while it is fixed.
 - a. Apollo: start a stream at a different resolution, end it. `deskwall.log` shows
   `tick DisplayChange (...)` for each change and `shortcuts: placed 4` after the last.
 - b. Explorer: `Stop-Process -Id (Get-Process explorer).Id -Force; Start-Process explorer`.
-  Log shows `taskbar re-created` and the next tick re-places the icons.
+  About 2 s after the taskbar comes back the log shows `tick ExplorerRestarted (taskbar)`
+  followed by `shortcuts: placed 4`; then `dw verify` is `RESULT: OK`. If Explorer moves the
+  icons again after that tick (it lays the desktop out from its own saved positions), that is a
+  finding: record it rather than re-running until it passes.
 - c. Sleep: Start > Power > Sleep for at least 3 minutes, wake. Log shows
   `tick SessionUnlock (resume)` within seconds of waking, and the clock is right within a minute.
 - d/e. Dead endpoint and malformed layout: passed on the XPS (above). To repeat here, point a
   scratch copy of the layout's weather source at `http://127.0.0.1:9/` and watch the value hold
   until `is stale`; truncate a scratch layout and watch `cannot be read` with the wallpaper kept.
 
-**R4. 24 hours.** Leave the daemon running a full day with the POC task disabled, then:
+**R4. 24 hours.** R3 deliberately provokes errors (a malformed layout logs `[ERROR]`), and the
+log keeps up to 2 MB of history, so count only lines written after the window starts. Leave the
+daemon running a full day with the POC task disabled:
 
 ```powershell
-Select-String "$env:LOCALAPPDATA\DeskWall\deskwall*.log" -Pattern '\[ERROR\]|tick .* failed'   # expect nothing
+$start = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')        # when the 24 h begin
+# ... 24 hours later:
+Get-Content "$env:LOCALAPPDATA\DeskWall\deskwall.1.log", "$env:LOCALAPPDATA\DeskWall\deskwall.log" -ErrorAction SilentlyContinue |
+  Where-Object { $_.Length -ge 19 -and $_.Substring(0, 19) -ge $start -and $_ -match '\[ERROR\]|tick .* failed' }   # expect nothing
 ```
 
 **R5. Uninstall leaves the desktop as found.**
@@ -359,8 +375,9 @@ dw install
 ```
 
 **R7. Merge.** Tick the four master-plan boxes and this plan's Task 7 items with the evidence
-above, put the date into the POC commit's subject ("v1 reached parity on <date>"), and merge
-`spike/parity-gate` into `main`.
+above, put the date into the POC commit's subject ("v1 reached parity on <date>"), merge
+`spike/parity-gate` into `main`, and only then update the main checkout (its `poc\` goes away,
+which is fine now the task is unregistered). `git worktree remove ..\DeskWall-parity`.
 
 ## Self-review notes
 

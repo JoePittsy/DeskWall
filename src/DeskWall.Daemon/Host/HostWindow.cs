@@ -110,6 +110,7 @@ internal sealed unsafe class HostWindow : IDisposable
         {
             if (msg != 0 && msg == self._taskbarCreated)
             {
+                self._pending.Add(new WakeReason(WakeKind.ExplorerRestarted, "taskbar"));
                 self.TaskbarCreated?.Invoke();
                 return (LRESULT)0;
             }
