@@ -267,3 +267,56 @@ Notes on the findings from the first run:
   four clock-only Timer ticks at `165/94`, `130/62`, `170/109`, `76/47` ms wall/cpu. The one-shot
   comparison above was running during the middle three; the undisturbed last one is the best
   single number for a warm resident clock-only tick so far, and it is still over 60/40.
+
+### Parity-gate pass, 2026-09-30, JOES-XPS-17 (not the reference machine)
+
+Branch `spike/parity-gate`. Native AOT `deskwall.exe` 9.5 MB, published into the worktree's
+`bin\` only (never installed). i9-13900H, 20 logical cores. The budget suite ran on the laptop
+panel (1920x1200 @ 100%, the only display attached at the time), so the tick row draws a smaller
+frame than JOES-PC's 3440x1440 and is not comparable to the rows above. The owner's installed
+daemon was not stopped for the run; the suite's scratch daemon has its own home and lock.
+
+| Test | Measured | Budget | Verdict |
+|---|---|---|---|
+| `ColdStart_To_First_Wallpaper` | 121 ms | < 500 ms | OK |
+| `Idle_PrivateBytes_After_Trim` | 9.68 MB (working set 0.40 MB) | < 10 MB | OK |
+| `Idle_Cpu_Between_Wakes` | 0 ms (328 ms total over 240 s, all inside ticks) | < 50 ms | OK |
+| `Idle_Handles_And_Threads` | 304 h / 7 t | < 100 h / < 5 t | OVER |
+| `ClockOnly_Tick_Wall_And_Cpu` | 78 ms wall / 78 ms cpu (resolve 7, draw 52, encode 17) | < 60 ms wall / < 40 ms cpu | OVER |
+
+The same two rows as JOES-PC on 2026-09-21. To find out whether they are tunable, two scratch
+AOT daemons ran `clock-disks.json` side by side for 10 minutes at 3440x1440 (the ultrawide was
+attached for the first 9), sampled every minute from outside, and were then attributed by a
+throwaway tool (`NtQueryInformationThread` start address per thread, `NtQuerySystemInformation`
+handle table grouped by `NtQueryObject` type name):
+
+| Minute | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Windows pool (default): handles | 310 | 311 | 309 | 306 | 308 | 308 | 307 | 306 | 305 | 309 |
+| Windows pool: threads | 19 | 18 | 9 | 8 | 9 | 10 | 10 | 8 | 8 | 12 |
+| Portable pool (`DOTNET_ThreadPool_UseWindowsThreadPool=0`): handles | 306 | 305 | 307 | 306 | 310 | 310 | 307 | 304 | 305 | 309 |
+| Portable pool: threads | 18 | 17 | 9 | 8 | 10 | 11 | 9 | 7 | 8 | 13 |
+
+Private bytes sat at 10.1-10.9 MB in both, except the minute-5 sample (29.5 MB) which landed
+on the 5-minute `disks` refresh mid-render. Clock-only Timer ticks in both logs: 122-162 ms wall
+(this wall includes `SetWallpaper`, which the suite's `--no-apply` row does not).
+
+Attribution at minute 10 (the default pool; the portable pool was identical but for one thread):
+
+- **Threads (12):** 3 start in `deskwall.exe` (main/message loop, finalizer, the synchronous
+  `EventPipeServer` thread), 1 in `combase.dll` (COM's), 8 at `ntdll!TppWorkerThread` idle in
+  `EventPairLow` -- Windows thread-pool workers that the pool itself retires and re-creates
+  (8-13 over the run). The spec's "under 5" is reachable only with no thread pool and no COM
+  apartment helper, i.e. not with WIC/D2D/async I/O in-process.
+- **Handles (309):** ~120 of a type that cannot be duplicated into another process (the
+  signature of ETW provider registrations; d3d11, dxgi, D3D10Warp, d2d1 and DWrite each register
+  several), 81 Event, 19 Thread, 17 File, 15 Key, 9 WaitCompletionPacket, 8 each ALPC Port,
+  Semaphore and Section, 6 IRTimer, then small change. None of it grows tick to tick.
+
+Finding for the owner (not something to loosen or tune away): both OVER rows are the cost of
+holding Direct3D/Direct2D/DirectWrite/WIC resident, which spec 3.1 chose. Meeting them means
+rendering in a short-lived child process per tick (costs a process start, ~100 ms, per tick) or
+unloading the stack between ticks; either is an architecture change. The alternative is to
+restate the two rows in spec 1.2 as measured (about 300 handles / 10 threads; ~80-150 ms per
+clock tick) and close the gate on that. Recorded for Joe's decision; the parity-gate box for the
+budget table stays unticked until he makes it.

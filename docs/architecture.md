@@ -202,6 +202,15 @@ What the first run found, and what the fix wave did about it:
   handles / 17 threads two seconds after start, before any tick; 261 / 10 after several ticks.
   The Direct2D, DirectWrite and WIC factories are process-lifetime singletons (`Surface`) and the
   render target is per frame. Nothing in the fix wave touched this and the numbers did not move.
+  Attributed on 2026-09-30 (JOES-XPS-17, AOT, `clock-disks.json`, 10 minutes resident; spike
+  results "Parity-gate pass"): of ~305 handles, ~120 are of a type that cannot be duplicated
+  out of the process (consistent with the ETW registrations of the d3d11/dxgi/WARP/d2d1/DWrite
+  stack) and 81 are events; of 7-13 threads, only 3 run DeskWall code (main, finalizer, the
+  event-pipe server), one is COM's, and the rest are idle Windows thread-pool workers. Switching
+  to .NET's portable thread pool (`DOTNET_ThreadPool_UseWindowsThreadPool=0`) measured the same.
+  Meeting either row means not holding the graphics stack in the resident process (render in a
+  short-lived child, or unload it between ticks), which is a change to spec 3.1's process model
+  and so the owner's decision, not a tuning pass.
 
 **The `column-system.json` layout, resident on JOES-PC, 2026-09-21** (AOT, `hardware` source
 sampling every 10 s, weather and Tailscale recipes, four dials; sampled from outside every minute
