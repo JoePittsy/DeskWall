@@ -35,6 +35,9 @@ public sealed class TickRunner(
     /// <summary>What stage 7 did on the last run, or null when there is no manager or nothing changed.</summary>
     public ShortcutOutcome? LastShortcutOutcome { get; private set; }
 
+    /// <summary>`tick --preview`: values pinned over the refreshed tree before the resolve.</summary>
+    public PreviewOverrides? Preview { get; init; }
+
     public async Task<TickTimings> RunAsync(bool force, bool apply, CancellationToken ct)
     {
         var t = new TickTimings();
@@ -71,7 +74,9 @@ public sealed class TickRunner(
         var canvas = new Rect(0, 0, monitor.Bounds.W, monitor.Bounds.H);
         // Tree(sources, now) drops a source that has missed registry.StaleAfter of its own schedules
         // (finding 15); with StaleAfter left at its default 0 it is exactly the old Tree().
-        var resolved = MapRemoteImages(LayoutResolver.Resolve(layout, registry.Tree(sources, now), images is null ? null : images.Lookup));
+        var tree = registry.Tree(sources, now);
+        if (Preview is not null) tree = Preview.Apply(tree);
+        var resolved = MapRemoteImages(LayoutResolver.Resolve(layout, tree, images is null ? null : images.Lookup));
         LastShortcuts = resolved.OfType<ResolvedShortcut>().ToList();
         var state = FrameState.Load(_statePath);
         var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey || PaintBoundsMoved(state, c)).ToList();

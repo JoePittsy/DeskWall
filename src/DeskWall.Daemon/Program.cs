@@ -99,6 +99,8 @@ internal static class Program
         w.WriteLine("                             --no-tray wins; otherwise settings.json trayIcon decides");
         w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply] [--no-shortcuts]");
         w.WriteLine("                             --repeat N (up to 10) measures warm ticks, 12 s apart; requires --no-apply --no-shortcuts");
+        w.WriteLine("                             --preview key=value,... pins source values (time.at=HH:mm, hardware.cpu=0.9, ...);");
+        w.WriteLine("                             requires --no-apply --no-shortcuts");
         w.WriteLine("  install                    start at sign-in, and start now");
         w.WriteLine("  stop                       stop the running daemon for this runtime dir, and wait for it to exit");
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
@@ -334,6 +336,10 @@ internal static class Program
         var repeats = repeatText is null ? 1 : Math.Clamp(int.Parse(repeatText, CultureInfo.InvariantCulture), 1, 10);
         if (repeats > 1 && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
             throw new ArgumentException("Repeated measurements require --no-apply --no-shortcuts.");
+        var previewText = TakeOption(opts, "--preview");
+        var preview = previewText is null ? null : PreviewOverrides.Parse(previewText);
+        if (preview is not null && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
+            throw new ArgumentException("--preview draws a state the machine is not in; it requires --no-apply --no-shortcuts.");
         var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
         if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
         // Read, expand and scale: what a v2 layout adds to activation, which the daemon pays on a
@@ -346,7 +352,7 @@ internal static class Program
         var registry = new SourceRegistry();
         WallpaperSetter.RecordRestorePoint();
         var manager = opts.Contains("--no-shortcuts") ? null : new ShortcutManager(Calibration.Load());
-        var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager);
+        var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager) { Preview = preview };
         try
         {
             for (var run = 0; run < repeats; run++)

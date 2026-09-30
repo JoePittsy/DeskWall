@@ -45,6 +45,11 @@ Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`
 |---|---|
 | `dayFraction`, `weekFraction`, `yearFraction` | 0..1, rounded to 4 decimals |
 | `dayPercent`, `weekPercent`, `yearPercent` | the same, 0..100, rounded to a whole number |
+| `phase` | `night`, `dawn`, `day` or `dusk` from `dayFraction`: dawn from 0.21, day from 0.29, dusk from 0.71, night from 0.83 |
+
+`phase` exists so a layer that only needs four colours is one Step rule
+(`time.phase | "?night=#..,dawn=#..,day=#..,dusk=#.."`), and the palette for that layer lives in
+that one place. Use a Blend on `dayFraction` where the change should be gradual.
 
 Both forms exist because a `bar`'s `fraction` wants 0..1 and a `text` wants the percent, and a
 format string cannot multiply by 100. The **week starts on Monday** (`((int)DayOfWeek + 6) % 7`),

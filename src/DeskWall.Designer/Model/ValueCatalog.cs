@@ -145,6 +145,7 @@ public static partial class ValueCatalog
         ["time.dayPercent"] = ("Day progress %", false),
         ["time.weekPercent"] = ("Week progress %", false),
         ["time.yearPercent"] = ("Year progress %", false),
+        ["time.phase"] = ("Phase of day", false),
 
         ["disks.drives"] = ("Drives", false),
         ["disks.drives[*].letter"] = ("{0}: drive letter", false),
