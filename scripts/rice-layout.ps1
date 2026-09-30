@@ -7,15 +7,23 @@
 #>
 param(
     [string]$In = 'layouts/alpine-vision-photos.json',
-    [string]$Out = 'layouts/alpine-rice.json'
+    [string]$Out = 'layouts/alpine-rice.json',
+    # 'rice' (Nord on the photo) or 'vapor' (hot pink and cyan on the synthesised wallpaper, scripts/vapor-wallpaper.ps1).
+    [ValidateSet('rice', 'vapor')][string]$Theme = 'rice'
 )
 $ErrorActionPreference = 'Stop'
 $j = Get-Content $In -Raw | ConvertFrom-Json -Depth 20
 $missed = [System.Collections.Generic.List[string]]::new()
 
-# Palette (Nord-derived). Alpha first, as the layout writes colours.
-$ink = '#E6ECEFF4'; $dim = '#99D8DEE9'; $frost = '#FF88C0D0'; $second = '#FF81A1C1'
-$warn = '#FFEBCB8B'; $danger = '#FFBF616A'; $track = '#4DD8DEE9'
+# Palette. Alpha first, as the layout writes colours.
+if ($Theme -eq 'vapor') {
+    $ink = '#F2F6E9FF'; $dim = '#B3B9A6D6'; $frost = '#FFFF71CE'; $second = '#FF01CDFE'
+    $warn = '#FFFFB86C'; $danger = '#FFFF3860'; $track = '#40F6E9FF'
+    $j.baseImage.bind = $j.baseImage.bind.Replace('assets/alpine/ridge-', 'assets/vapor/ridge-')
+} else {
+    $ink = '#E6ECEFF4'; $dim = '#99D8DEE9'; $frost = '#FF88C0D0'; $second = '#FF5E81AC'   # the darker Nord blue: the light one read as grey on the hills
+    $warn = '#FFEBCB8B'; $danger = '#FFBF616A'; $track = '#4DD8DEE9'
+}
 
 function Get-Comp([string]$id) { $c = $j.components | Where-Object id -eq $id; if (-not $c) { $missed.Add("component $id") }; $c }
 function Set-Prop($obj, [string]$name, $value, [string]$where) {
@@ -45,6 +53,8 @@ function Recolour-Prop($obj, [string]$name, [string]$rgb, [string]$alpha, [strin
 
 # 1. Delete: washes, halos, glows, the kitsch.
 $drop = 'sky-grade','sky-top','sky-band','stars-big','stars-warm','sun-glow','moon-halo','heat-shimmer','lightning','snow-big','uptime-piste','valley-count'
+# Vapor: the wallpaper carries its own sun, and heat patches speckle a flat silhouette at idle.
+if ($Theme -eq 'vapor') { $drop += 'sun','moon','gpu-snowfield','cpu-snowfield' }
 $j.components = @($j.components | Where-Object { $_.id -notin $drop })
 
 # 2. Every text: one family, no effects.
@@ -77,7 +87,7 @@ Set-Prop $rm 'thickness' 3 'ridge-muted'; Set-Prop $rm 'glow' 12 'ridge-muted'; 
 Recolour-Prop $rm 'glowColor' 'BF616A' '' 'ridge-muted'
 $f = Get-Comp 'cpu-foothills'
 Set-Prop $f 'thickness' 3 'cpu-foothills'; Set-Prop $f 'glow' 8 'cpu-foothills'; Set-Prop $f 'glowStrength' 0.25 'cpu-foothills'
-Set-Prop $f 'stroke' '#FF5E81AC' 'cpu-foothills'; Set-Prop $f 'glowColor' '#FF5E81AC' 'cpu-foothills'; Set-Prop $f 'areaFill' '#1A5E81AC' 'cpu-foothills'   # the darker Nord blue: the light one read as grey on the hills
+Set-Prop $f 'stroke' $second 'cpu-foothills'; Set-Prop $f 'glowColor' $second 'cpu-foothills'; Set-Prop $f 'areaFill' ('#1A' + $second.Substring(3)) 'cpu-foothills'
 if ($f) { $f.rect = @(0, 780, 3440, 660) }   # lower and shallower: it echoes the ridge, it does not compete
 
 # 6. Now playing, bottom-left.

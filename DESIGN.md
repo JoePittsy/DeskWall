@@ -47,3 +47,18 @@ it. Sun 140 px and moon 120 px on their arcs, no halos.
 `scripts/rice-layout.ps1` derives this layout from `layouts/alpine-vision-photos.json`; every
 value above lives there. Judge changes with `scripts/gallery.ps1 -Layout layouts/alpine-rice.json`
 (`docs/superpowers/plans/gallery-rice/all.png` is the shipped montage).
+
+## Second world: vapor (`layouts/vapor.json`)
+
+Same structure, different world. The wallpaper is synthesised by `scripts/vapor-wallpaper.ps1`
+from the ridge trace: a three-stop gradient sky per phase, a 330 px striped sun setting behind the
+main peak at (2560, 640), the mountain as a flat silhouette, a cyan perspective grid on the valley
+floor from y 1000. Palette: ink `#F2F6E9FF`, dim `#B3B9A6D6`, accent hot pink `#FFFF71CE` (ridge,
+dials, drives), secondary cyan `#FF01CDFE` (foothills), warn peach `#FFFFB86C`, danger `#FFFF3860`,
+tracks `#40F6E9FF`. The layout's own sun, moon and heat snowfields are dropped: the wallpaper's sun
+is the hero and a flat silhouette shows every speckle. Derive with
+`scripts/rice-layout.ps1 -Theme vapor -Out layouts/vapor.json`; judge with
+`scripts/gallery.ps1 -Layout layouts/vapor.json` (`docs/superpowers/plans/gallery-vapor/all.png`).
+
+Switching themes is two copies until `deskwall theme` exists (see the vaporwave lane brief):
+back up `%LOCALAPPDATA%\DeskWall\column-system.json`, then copy `layouts/<theme>.json` over it.
