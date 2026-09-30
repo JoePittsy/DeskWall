@@ -14,6 +14,10 @@ public static class PropertyReader
 
     public static double? Number(PropertyValue p, RecordValue scope)
     {
+        // A map or a blend turns the value into another one ("?<0.9=400,*=700", "~0=12,1=48"), so
+        // its text is the number. Any other format ("N0") only prettifies, and is ignored as before.
+        if (p.IsBound && p.Binding!.Format is { } f && (f.StartsWith('?') || Value.IsBlend(f)))
+            return double.TryParse(BindingResolver.ResolveText(p.Binding, scope), NumberStyles.Float, CultureInfo.InvariantCulture, out var m) ? m : null;
         if (p.IsBound)
             return BindingResolver.Resolve(p.Binding!, scope) switch
             {

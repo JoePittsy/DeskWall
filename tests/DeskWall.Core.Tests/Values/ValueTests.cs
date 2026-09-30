@@ -135,4 +135,26 @@ public class ValueTests
         Assert.Equal("1,235", new TextValue("1234.6").ToText("{0:N0}"));
         Assert.Equal("1234,6", new TextValue("1234,6").ToText("{0:N0}"));   // not invariant-parseable
     }
+
+    [Fact]
+    public void A_Map_Key_Can_Be_A_Comparison_Tried_In_Order()
+    {
+        const string bands = "?<=0.3=blue,<0.7=green,*=blue";
+        Assert.Equal("blue", new NumberValue(0.3).ToText(bands));
+        Assert.Equal("green", new NumberValue(0.31).ToText(bands));
+        Assert.Equal("blue", new NumberValue(0.7).ToText(bands));
+        Assert.Equal("hot", new TextValue("91").ToText("?>90=hot"));
+        Assert.Equal("", new TextValue("n/a").ToText("?>90=hot"));          // not a number: no comparison matches
+        Assert.Equal("#D13438", new BoolValue(true).ToText("?true=#D13438,false=#EBFFFFFF"));   // exact keys unchanged
+    }
+
+    [Fact]
+    public void A_Blend_Interpolates_Numbers_And_Colours_And_Clamps_At_The_Ends()
+    {
+        Assert.Equal("30", new NumberValue(0.5).ToText("~0=12,1=48"));
+        Assert.Equal("12", new NumberValue(-1).ToText("~0=12,1=48"));
+        Assert.Equal("48", new NumberValue(2).ToText("~1=48,0=12"));      // stops in any order
+        Assert.Equal("#FF808080", new NumberValue(0.5).ToText("~0=#000000,1=#FFFFFF"));
+        Assert.Equal("", new TextValue("n/a").ToText("~0=12,1=48"));
+    }
 }

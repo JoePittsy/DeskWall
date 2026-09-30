@@ -28,6 +28,20 @@
                      Margin="0,0,8,0" Style="{DynamicResource PropLabel}" />
           <ComboBox x:Name="FormatBox" SelectionChanged="FormatBox_SelectionChanged" />
         </DockPanel>
+        <StackPanel x:Name="RulesPanel" Margin="0,8,0,0" Visibility="Collapsed">
+          <DockPanel>
+            <TextBlock Text="Rules" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0"
+                       Style="{DynamicResource PropLabel}" />
+            <ComboBox x:Name="RulesMode" SelectionChanged="RulesMode_SelectionChanged">
+              <ComboBoxItem Content="None" />
+              <ComboBoxItem Content="Step: ranges pick a value" />
+              <ComboBoxItem Content="Blend: slide between values" />
+            </ComboBox>
+          </DockPanel>
+          <StackPanel x:Name="RuleRows" Margin="0,4,0,0" />
+          <Button x:Name="AddRuleButton" Content="+ Add" HorizontalAlignment="Left" Padding="8,2" Margin="0,4,0,0"
+                  Click="AddRule_Click" />
+        </StackPanel>
         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
           <Button x:Name="UnbindButton" Content="Unbind" Padding="12,4" Margin="0,0,8,0" Click="UnbindButton_Click" />
           <Button x:Name="DoneButton" Content="Done" Padding="12,4" Click="DoneButton_Click" />

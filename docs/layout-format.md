@@ -205,6 +205,10 @@ case-insensitively, and the matching entry's text is the result.
     weather.json.current.is_day | "?1=day,0=night,*=?"      a number driving text
 
 - `*=text` is the fallback for any value no key matched.
+- A key may be a **comparison** on the value as a number: `<0.3`, `<=0.3`, `>0.7`, `>=0.7`.
+  Entries are tried in order and the first that holds wins, so
+  `hardware.cpu | "?<0.3=#0078D4,<0.7=#107C10,*=#0078D4"` is three bands. A value that is not a
+  number matches no comparison. The designer's bind menu writes these as "Step" rules.
 - **No match and no `*` is the empty string**, not the unformatted value: drawing nothing when a
   flag is false is the point of the `muted` case above.
 - Keys are trimmed, so `?a=one, b=two` works; the picked text is taken verbatim, so it may be
@@ -212,6 +216,20 @@ case-insensitively, and the matching entry's text is the result.
 - A key or a picked text cannot contain `,` or `=`; there is no escape.
 - A format starting with `?` with no `=` anywhere is **not** a map and is handled as an ordinary
   format string, so nothing that worked before maps existed changed.
+
+### The blend format: a value slides between stops
+
+A format beginning with `~` is a list of `at=value` stops: the value, as a number, is placed
+between the two stops either side of it and the result interpolated. Numbers interpolate as
+numbers, colours per ARGB channel, anything else steps at the midpoint; below the first stop or
+above the last, that stop. Stops may be in any order. A value that is not a number is the empty
+string. The bind menu writes these as "Blend" rules.
+
+    hardware.cpu | "~0=12,1=48"                  font size 12 at 0%, 48 at 100%
+    hardware.gpuTempFraction | "~0.5=#107C10,0.9=#D13438"   green shading to red
+
+A number property (size, weight, opacity, a dial's sweep) bound with a map or a blend takes the
+result as its number; any other format on a number property is still ignored.
 
 No component knows about maps. `color`, `text` and an image's `source` are all ordinary bindable
 properties, so the one rule in `Value.ToText` makes all three react to a bool.

@@ -63,6 +63,8 @@ public partial class BindingChip : UserControl
         AutomationProperties.SetName(FormatBox, $"Show {PropertyLabel} as");
         AutomationProperties.SetName(UnbindButton, $"Unbind {PropertyLabel}");
         AutomationProperties.SetName(DoneButton, "Done");
+        AutomationProperties.SetName(RulesMode, $"Rules for {PropertyLabel}");
+        AutomationProperties.SetName(AddRuleButton, $"Add a rule for {PropertyLabel}");
         Refresh(tree);
         if (IsEditing) Filter();
     }
@@ -207,9 +209,143 @@ public partial class BindingChip : UserControl
                 ?? FormatBox.Items.OfType<ComboBoxItem>().FirstOrDefault();
         }
         finally { _syncing = false; }
+        ShowRules();
     }
 
-    private string? SelectedFormat => Editor == PropertySchema.Editor.Text ? (FormatBox.SelectedItem as ComboBoxItem)?.Tag as string : null;
+    private string? SelectedFormat => RulesFormat()
+        ?? (Editor == PropertySchema.Editor.Text ? (FormatBox.SelectedItem as ComboBoxItem)?.Tag as string : _customFormat);
+
+    // ---- rules: a number picks or blends the property's value (Model/Rules.cs) ---------------
+
+    private readonly List<(TextBox At, TextBox To)> _rows = [];
+    private TextBox? _otherwise;
+    /// <summary>A format on a non-text row that the rules cannot show (a hand-written bool map),
+    /// kept as it is rather than dropped when Done is pressed.</summary>
+    private string? _customFormat;
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+    /// <summary>A fraction's rows read in percent: 30 is 0.3.</summary>
+    private bool Percent => Highlighted?.Kind == ValueKind.Fraction;
+
+    private RuleMode Mode => (RuleMode)Math.Max(0, RulesMode.SelectedIndex);
+
+    private void ShowRules()
+    {
+        var e = Highlighted;
+        var numeric = e is not null && e.Kind is ValueKind.Fraction or ValueKind.Number && Editor != PropertySchema.Editor.Binding;
+        var current = e is not null && Binding is not null && string.Equals(PathText(Binding), e.Path, StringComparison.OrdinalIgnoreCase) ? Binding.Format : null;
+        var parsed = Rules.Parse(current);
+        _customFormat = parsed is null && Editor != PropertySchema.Editor.Text ? current : null;
+        RulesPanel.Visibility = numeric ? Visibility.Visible : Visibility.Collapsed;
+        _syncing = true;
+        try { RulesMode.SelectedIndex = numeric && parsed is { } p ? (int)p.Mode : 0; }
+        finally { _syncing = false; }
+        BuildRows(numeric ? parsed : null);
+    }
+
+    private void BuildRows((RuleMode Mode, List<Rule> Rows, string Otherwise)? rules)
+    {
+        RuleRows.Children.Clear();
+        _rows.Clear();
+        _otherwise = null;
+        var mode = Mode;
+        AddRuleButton.Visibility = mode == RuleMode.None ? Visibility.Collapsed : Visibility.Visible;
+        FormatRow.Visibility = Editor == PropertySchema.Editor.Text && mode == RuleMode.None ? Visibility.Visible : Visibility.Collapsed;
+        if (mode == RuleMode.None) return;
+        var mine = rules is { } r && r.Mode == mode ? r : ((RuleMode, List<Rule>, string)?)null;
+        var top = Percent ? 1 : 100;
+        foreach (var row in mine?.Item2 ?? (mode == RuleMode.Step ? [new Rule(top / 2.0, "")] : [new Rule(0, ""), new Rule(top, "")]))
+            AddRow(row);
+        if (mode == RuleMode.Step)
+        {
+            _otherwise = RuleBox(mine?.Item3 ?? "", "Otherwise value");
+            RuleRows.Children.Add(RuleLine("Otherwise", null, _otherwise, null));
+        }
+    }
+
+    private void AddRow(Rule rule)
+    {
+        var at = RuleBox((Percent ? rule.At * 100 : rule.At).ToString("0.###", Inv), Mode == RuleMode.Step ? "Below" : "At");
+        at.Width = 52;
+        var to = RuleBox(rule.To, "Value");
+        var remove = new Button { Content = "✕", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(4, 0, 0, 0), ToolTip = "Remove" };
+        AutomationProperties.SetName(remove, "Remove rule");
+        var line = RuleLine(Mode == RuleMode.Step ? "Below" : "At", at, to, remove);
+        remove.Click += (_, _) => { RuleRows.Children.Remove(line); _rows.Remove((at, to)); };
+        _rows.Add((at, to));
+        RuleRows.Children.Insert(_otherwise is null ? RuleRows.Children.Count : RuleRows.Children.Count - 1, line);
+    }
+
+    private DockPanel RuleLine(string label, TextBox? at, TextBox to, Button? remove)
+    {
+        var line = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var text = new TextBlock { Text = label, Width = 64, VerticalAlignment = VerticalAlignment.Center };
+        text.SetResourceReference(StyleProperty, "PropLabel");
+        DockPanel.SetDock(text, Dock.Left);
+        line.Children.Add(text);
+        if (at is not null)
+        {
+            DockPanel.SetDock(at, Dock.Left);
+            line.Children.Add(at);
+            var unit = new TextBlock { Text = Percent ? "% →" : "→", Margin = new Thickness(4, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(unit, Dock.Left);
+            line.Children.Add(unit);
+        }
+        if (remove is not null) { DockPanel.SetDock(remove, Dock.Right); line.Children.Add(remove); }
+        line.Children.Add(to);
+        return line;
+    }
+
+    private TextBox RuleBox(string text, string name)
+    {
+        var box = new TextBox { Text = text };
+        AutomationProperties.SetName(box, $"{name} for {PropertyLabel}");
+        box.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { Commit(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { EndEdit(); e.Handled = true; }
+        };
+        return box;
+    }
+
+    /// <summary>The rows as a format, or null when there are none (mode None, or not a number).</summary>
+    private string? RulesFormat()
+    {
+        if (RulesPanel.Visibility != Visibility.Visible || Mode == RuleMode.None) return null;
+        var rows = _rows.Select(r => double.TryParse(r.At.Text, NumberStyles.Float, Inv, out var a) ? new Rule(Percent ? a / 100 : a, r.To.Text.Trim()) : null)
+            .OfType<Rule>();
+        return Rules.Write(Mode, rows, _otherwise?.Text.Trim() ?? "");
+    }
+
+    private void RulesMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_syncing && IsLoaded) BuildRows(null);
+    }
+
+    private void AddRule_Click(object sender, RoutedEventArgs e)
+    {
+        var last = _rows.Select(r => double.TryParse(r.At.Text, NumberStyles.Float, Inv, out var a) ? a : 0).DefaultIfEmpty(0).Max();
+        AddRow(new Rule((last + 10) / (Percent ? 100 : 1), ""));
+        _rows[^1].At.Focus();
+    }
+
+    /// <summary>Done, or Enter in a rule: bind with what the editor now says. Nothing changed, or
+    /// nothing to bind yet, just closes.</summary>
+    private void Commit()
+    {
+        if (Highlighted is { } entry)
+        {
+            var bound = Binding is not null && string.Equals(PathText(Binding), entry.Path, StringComparison.OrdinalIgnoreCase);
+            if (!bound && RulesFormat() is not null) { Pick(); return; }
+            if (bound && BindingFor(entry, SelectedFormat).ToString() != Binding!.ToString())
+            {
+                EditorPanel.Visibility = Visibility.Collapsed;
+                Chosen?.Invoke(PropertyValue.Bound(BindingFor(entry, SelectedFormat)), entry);
+                return;
+            }
+        }
+        EndEdit();
+    }
 
     /// <summary>Bind to the highlighted value. The editor stays open only while the format can still
     /// be changed; otherwise it closes, which is the whole pick.</summary>
@@ -290,5 +426,5 @@ public partial class BindingChip : UserControl
         Unbound?.Invoke();
     }
 
-    private void DoneButton_Click(object sender, RoutedEventArgs e) => EndEdit();
+    private void DoneButton_Click(object sender, RoutedEventArgs e) => Commit();
 }

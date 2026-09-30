@@ -21,6 +21,8 @@ public abstract record Value
             // bindable properties, so one feature makes all three react to a bool.
             if (format is not null && format.StartsWith('?') && format.Contains('='))
                 return MapLookup(format, ToText(null));
+            if (IsBlend(format))
+                return Blend(format!, ToText(null));
             if (format is not null && format.Contains("{0"))
                 return string.Format(inv, format, NumericIfAsked(format));
             return this switch
@@ -55,13 +57,65 @@ public abstract record Value
             var comma = rest.IndexOf(',');
             var pair = comma < 0 ? rest : rest[..comma];
             rest = comma < 0 ? [] : rest[(comma + 1)..];
-            var eq = pair.IndexOf('=');
+            // "<=0.3=x": the operator's own '=' is not the pair's.
+            var lead = pair.Length - pair.TrimStart().Length;
+            var skip = pair.Length > lead + 1 && pair[lead] is '<' or '>' && pair[lead + 1] == '=' ? lead + 2 : 0;
+            var eq = pair[skip..].IndexOf('=');
             if (eq < 0) continue;                       // not a pair; a map is allowed to carry junk
+            eq += skip;
             var key = pair[..eq].Trim();
             if (key.Length == 1 && key[0] == '*') fallback = new string(pair[(eq + 1)..]);
+            else if (key.Length > 0 && key[0] is '<' or '>') { if (Holds(key, text)) return new string(pair[(eq + 1)..]); }
             else if (key.Equals(text, StringComparison.OrdinalIgnoreCase)) return new string(pair[(eq + 1)..]);
         }
         return fallback ?? "";
+    }
+
+    /// <summary>A comparison key: "&lt;0.3", "&lt;=0.3", "&gt;0.7", "&gt;=0.7" against the value as a number.
+    /// Entries are tried in order, so "?&lt;0.3=a,&lt;0.7=b,*=c" is three bands. A value that is not a
+    /// number matches no comparison.</summary>
+    private static bool Holds(ReadOnlySpan<char> key, string text)
+    {
+        var inclusive = key.Length > 1 && key[1] == '=';
+        var inv = CultureInfo.InvariantCulture;
+        if (!double.TryParse(key[(inclusive ? 2 : 1)..], NumberStyles.Float, inv, out var bound)
+            || !double.TryParse(text, NumberStyles.Float, inv, out var x)) return false;
+        return key[0] == '<' ? (inclusive ? x <= bound : x < bound) : (inclusive ? x >= bound : x > bound);
+    }
+
+    /// <summary>"~0=12,1=48": a blend. The value, as a number, is placed between the two stops
+    /// either side of it and the result interpolated: numbers as numbers, colours per ARGB channel,
+    /// anything else steps at the midpoint. Below the first stop or above the last, that stop.</summary>
+    public static bool IsBlend(string? format) => format is not null && format.StartsWith('~') && format.Contains('=');
+
+    private static string Blend(string format, string text)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        if (!double.TryParse(text, NumberStyles.Float, inv, out var x)) return "";
+        var stops = new List<(double At, string To)>();
+        foreach (var pair in format[1..].Split(','))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq > 0 && double.TryParse(pair[..eq].Trim(), NumberStyles.Float, inv, out var at)) stops.Add((at, pair[(eq + 1)..].Trim()));
+        }
+        if (stops.Count == 0) return "";
+        stops.Sort((a, b) => a.At.CompareTo(b.At));
+        if (x <= stops[0].At) return stops[0].To;
+        if (x >= stops[^1].At) return stops[^1].To;
+        var i = stops.FindIndex(s => s.At > x);
+        var (a0, v0) = stops[i - 1];
+        var (a1, v1) = stops[i];
+        var t = (x - a0) / (a1 - a0);
+        if (double.TryParse(v0, NumberStyles.Float, inv, out var n0) && double.TryParse(v1, NumberStyles.Float, inv, out var n1))
+            return (n0 + (n1 - n0) * t).ToString("0.###", inv);
+        try
+        {
+            var c0 = Render.Color.Parse(v0);
+            var c1 = Render.Color.Parse(v1);
+            byte L(byte p, byte q) => (byte)Math.Round(p + (q - p) * t);
+            return new Render.Color(L(c0.A, c1.A), L(c0.R, c1.R), L(c0.G, c1.G), L(c0.B, c1.B)).ToHex();
+        }
+        catch (FormatException) { return t < 0.5 ? v0 : v1; }
     }
 
     /// <summary>The argument for a composite format. A JSON API is free to return a number as a
