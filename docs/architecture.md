@@ -151,6 +151,7 @@ directory.
 | `blank.ico` | `BlankIcon.Ensure` | A fully transparent 256 px icon-in-ICO, generated once, used for every shortcut slot. |
 | `deskwall.log` (+ `.1.log`) | `RollingLog` | Append-only, rolled at 1 MB; `RollingLog.LastError` is what puts "ERROR see log" in the tray tooltip. |
 | `calibrate-log.txt` | `deskwall calibrate` | A plain-text tee of that command's console output, since `MinimizeAll` takes the console with it. |
+| `verify-desktop.png`, `clock-now.png`, `verify-log.txt` | `deskwall verify` | The right-hand 400 px column of the screenshot, the clock at 8x, and a tee of the report (same reason as `calibrate-log.txt`). |
 
 ## The cost budget and how it is enforced
 
@@ -232,7 +233,8 @@ handles, 15 threads resident; 67-90 ms clock-only tick) are in
 reference in spec 1.2 (about 370 ms wall / 190 ms CPU per tick, ~5 s cold start) every row is
 already a large improvement; against the spec's own table, three rows are open findings.
 
-`deskwall verify` (in progress in another lane at the time of writing -- see the phase 6 plan's
-Task 1) is the pixel-diff half of "measured, not eyeballed": it minimises windows, screenshots
-the primary monitor, diffs against the composed frame, and reports per-shortcut arrow padding and
-a clock crop, independent of the timing numbers above.
+`deskwall verify` (README "Verify") is the pixel-diff half of "measured, not eyeballed": it
+minimises windows, screenshots the primary monitor, diffs against the composed frame, and reports
+per-shortcut arrow padding and a clock crop, independent of the timing numbers above. It is a
+command, never on the tick path, and writes only `verify-desktop.png`, `clock-now.png` and
+`verify-log.txt` into the runtime dir.

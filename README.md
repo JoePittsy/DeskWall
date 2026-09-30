@@ -189,13 +189,35 @@ tick and about 5 s cold start (spec 1.2, from the POC's own `compose.ps1` timing
 
 ## Verify
 
-`deskwall verify` is the pixel-diff half of "measured, not eyeballed": minimise windows,
-screenshot the primary monitor, diff it against the composed frame, report per-shortcut arrow
-padding against the wanted 5 px and a clock crop, exit non-zero on any mismatch. **This command
-is being added in another lane** (phase 6 plan, Task 1) and is not present in this worktree's
-`Program.cs` at the time of writing; `deskwall shortcuts` (read-only slot/position reporting) and
-`deskwall calibrate` (measures the shell's arrow-overlay offset once per icon size/scale and
-writes `calibration.json`) already exist and cover part of the same ground.
+`deskwall verify` is the pixel-diff half of "measured, not eyeballed". It resolves the layout
+registered for the primary display, minimises every window for about a second, screenshots the
+primary monitor, puts the windows back, and diffs the screenshot against `frame.raw` (the frame
+the last tick composed) inside every shortcut component's cover, inset 2 px to dodge JPEG
+ringing. Whatever differs there is the shell's shortcut-arrow overlay, because the slot icons are
+transparent; verify prints one line per slot in this shape (`SlotCheck.ToLine`), then the verdict:
+
+```
+slot <n>  <component id>  cover (x,y,w,h)  wanted (x,y)  got (x,y)  box WxH  left pad N, bottom pad N  OK
+RESULT: OK
+```
+
+A slot passes only when both pads equal `--pad` (default 5) **and** the box is the calibrated
+arrow's size give or take 2 px: an opaque icon shares the arrow's bottom-left corner and would
+otherwise score a perfect 5/5. `got` is what the desktop folder view reports and is recorded,
+never trusted.
+
+```powershell
+deskwall verify [--pad N] [--threshold N] [--json]
+```
+
+Exit 0 when every slot passes; 4 when any slot fails or the layout has no shortcut components;
+1 when verify cannot run (no `frame.raw` yet, the frame is not the monitor's size, or desktop
+icons are hidden). It writes `verify-desktop.png` (the right-hand 400 px column),
+`clock-now.png` (the clock, 8x nearest-neighbour; the clock is the text component `clock` or
+the `clock` part of a widget copy, e.g. `clock-1.clock`) and `verify-log.txt` to the runtime
+dir, and changes nothing else. `deskwall calibrate` measures the arrow overlay once per icon
+size and scale into `calibration.json`; `deskwall shortcuts` is the read-only planned-vs-reported
+position table.
 
 ## Uninstall
 
