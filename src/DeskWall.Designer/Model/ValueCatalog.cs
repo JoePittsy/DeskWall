@@ -202,6 +202,17 @@ public static partial class ValueCatalog
         ["audio.muted"] = ("Muted", false),
         ["audio.device"] = ("Audio device", false),
 
+        ["notifications.status"] = ("Notification access", false),
+        ["notifications.count"] = ("Notifications", false),
+        ["notifications.apps"] = ("Notifying apps", false),
+        ["notifications.apps[*].name"] = ("{0}: app", false),
+        ["notifications.apps[*].count"] = ("{0}: notifications", false),
+        ["notifications.latestApp"] = ("Latest notification app", false),
+        ["notifications.latestTitle"] = ("Latest notification", false),
+        ["notifications.latestText"] = ("Latest notification text", false),
+        ["notifications.latestAt"] = ("Latest notification at", false),
+        ["notifications.changedAt"] = ("Notifications changed at", false),
+
         ["command.text"] = ("Command output", false),
         ["command.exitCode"] = ("Exit code", false),
         ["command.ranAt"] = ("Ran at", false),

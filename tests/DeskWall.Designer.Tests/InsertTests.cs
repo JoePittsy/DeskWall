@@ -33,7 +33,7 @@ public class InsertTests
               "sources": [ { "name": "hardware", "type": "hardware", "every": 60 }, { "name": "feed", "type": "rss", "every": 900 } ] }
             """), new DisplaySignature("T", 1000, 800, 100), null);
         var defs = Insert.DataSources(m);
-        Assert.Equal(["hardware", "feed", "time", "disks", "system", "audio", "battery", "media"], defs.Select(d => d.Name));
+        Assert.Equal(["hardware", "feed", "time", "disks", "system", "audio", "battery", "media", "notifications"], defs.Select(d => d.Name));
         Assert.Equal(60, defs[0].EverySeconds);
     }
 

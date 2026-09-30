@@ -23,6 +23,7 @@ public static class Insert
         new() { Name = "audio", Type = "audio" },
         new() { Name = "battery", Type = "battery" },
         new() { Name = "media", Type = "media" },
+        new() { Name = "notifications", Type = "notifications" },
     ];
 
     /// <summary>The sources the Data panel runs: at widget depth the widget's own first, then the

@@ -13,7 +13,7 @@ public class SourceFormsTests
     public void The_Built_Ins_Need_No_Form()
     {
         foreach (var type in SourceForms.BuiltIn) Assert.Empty(SourceForms.For(type));
-        Assert.Equal(["time", "disks", "system", "hardware", "audio", "battery", "media"], SourceForms.BuiltIn);
+        Assert.Equal(["time", "disks", "system", "hardware", "audio", "battery", "media", "notifications"], SourceForms.BuiltIn);
     }
 
     /// <summary>A built-in needs no settings, so the Data panel runs it by default and its values

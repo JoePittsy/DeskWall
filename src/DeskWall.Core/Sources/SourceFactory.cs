@@ -26,6 +26,7 @@ public static class SourceFactory
                 : CommandSource.FromDef(def, clock, secrets),
             "hardware" => Hardware.HardwareSource.FromDef(def),
             "audio" => Audio.AudioSource.FromDef(def),
+            "notifications" => Notifications.NotificationSource.FromDef(def, clock),
             _ => throw new NotSupportedException($"source type '{def.Type}' (source '{def.Name}')"),
         };
     }

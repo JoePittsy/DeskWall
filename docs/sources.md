@@ -9,7 +9,7 @@ A source is declared in a layout file's `sources` array:
 | Field | Notes |
 |---|---|
 | `name` | The root field bindings use to reach this source's values (`steam.json...`). |
-| `type` | One of `time`, `disks`, `system`, `hardware`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
+| `type` | One of `time`, `disks`, `system`, `hardware`, `audio`, `battery`, `media`, `notifications`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
 | `every` | Seconds between refreshes. Optional; each type has its own default (below). Ignored by `time`, which is always due on the next whole minute. **A top-level field, not a `settings` key** -- each type's "Settings" line below names it only to give its default, and a source that finds `every` inside `settings` ignores it. |
 | `settings` | A flat string-to-string map; each source type documents its own keys below. |
 
@@ -544,6 +544,71 @@ empty display fields. Thumbnail bytes are hashed; only changed art is decoded to
 Windows SDK projections compiled successfully under native AOT in the spike.
 
 `disks.worstUsedFraction` is the maximum used fraction across fixed ready drives (0 when none).
+
+## `notifications`
+
+Settings: `include`, `exclude` (optional, comma-separated app names; each entry matches the app's
+display name *or* its app user model id, case-insensitive, exactly). `every` (default 300 s) is
+the sweep interval described below, not a poll.
+
+What is waiting in the Windows notification centre (toasts only), through WinRT's
+`UserNotificationListener`. Push, like `audio` and `media`: an `ISignalSource` that tells the bus
+when what it publishes changed. Zero-config, so it is one of the designer's built-in sources.
+
+| Field | Meaning |
+|---|---|
+| `status` | `ok`, `denied` (Settings > Privacy & security > Notifications does not let desktop apps read them), or `unavailable` (the listener could not be reached). When not `ok` it is the **only** field, so every bound property falls back to its own default. |
+| `count` | toasts in the centre after the filters |
+| `apps` | list of `{ name, count }`, keyed by `name` (`notifications.apps[Outlook].count`), most toasts first, ties most-recent first |
+| `latestApp`, `latestTitle`, `latestText` | the newest toast: app display name, its first text line, the remaining lines joined with a space. Empty strings when the centre is empty. |
+| `latestAt` | `TimeValue`, when the newest toast was raised; absent when the centre is empty |
+| `changedAt` | `TimeValue`, when the published set last changed -- an arrival *or* a dismissal. Stable between changes, so it does not dirty the content key. |
+
+```json
+{ "name": "notifications", "type": "notifications",
+  "settings": { "exclude": "Windows Security, Microsoft Store" } }
+```
+
+A badge: `{notifications.count}` in a text part, or a repeater over `notifications.apps` showing
+`{name} {count}`.
+
+**Access.** `GetAccessStatus` is asked on the first refresh, and `RequestAccessAsync` only while it
+answers "unspecified". From an unpackaged process neither prompts: both answer from the privacy
+setting. Measured on JOES-XPS-17: `Allowed` with the setting at its default. A `denied` source is
+never due again; after changing the setting, reload the layout or restart the daemon.
+
+**Being told.** The brief asked for `NotificationChanged`. It is subscribed first, but it throws
+`0x80070490` (element not found) in a process without package identity, which both executables
+are. So the reader watches what the notification platform itself writes:
+`%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db*`. Measured: silent at idle (0 events
+in 10 s), about 30 events for one toast arriving. The platform also writes that store about ten
+times per toast returned **on every read** -- anyone's read -- so a watcher that reads on every
+event feeds itself, and two processes running the source (the daemon and the designer's Data
+panel) would feed each other. Reads therefore go through a session-wide gate, a 24-byte named
+mapping `Local\DeskWall.NotificationReads` (`SharedReadGate`): readers in flight, a 10 s cap on
+believing one is in flight (a reader that died mid-read must not blind everybody), and the time
+the last read's echo is over (750 ms after it ends). Store events inside that window are dropped.
+
+**The read.** A burst of events is debounced (300 ms) into one background read, off the tick
+thread; a reading that differs from the published one sets the pending flag and signals the bus,
+exactly like `audio`. One reading that matches is not a change, so badge and tile writes, and
+other processes' reads, cost a read and nothing more. Because a toast that lands inside a read's
+suppressed echo would otherwise wait, every event-driven read is followed by one confirming read
+2 s later (never by another). Cost, measured on JOES-XPS-17 with 3-4 toasts: 280-540 ms wall and
+60-230 ms CPU per read (the first in a process is the dearest), almost all of it inside the
+notification service's own call. The latency from `Show()` to the bus signal was about 1.4 s.
+
+**The sweep.** The store watcher sees every arrival but not every dismissal: in one run a
+`History.Clear` wrote the WAL within a second, in another it wrote nothing until the next read,
+because NTFS updates a file's last-write metadata lazily while its writer holds it open. So while
+the published `count` is above zero, the source is also due every `every` seconds (rounded up to
+the whole minute, so it rides the clock's wake) and reads inline on that tick. An empty centre
+has nothing to dismiss and is never swept; a `denied` one never either. Worst case, a dismissal
+takes `every` to disappear from the wallpaper.
+
+Known blind spot: a toast whose writes all land inside the echo window of a read the source did not
+follow up -- a confirming read, a sweep, or the other process's read -- is not seen until the next
+change, or the next sweep if the centre was not empty.
 
 ## Playnite recent games recipe
 

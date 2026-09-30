@@ -61,6 +61,20 @@ public class SourceFactoryTests
         Assert.Equal(new DateTimeOffset(2026, 9, 22, 9, 31, 0, TimeSpan.Zero), s.NextDue(t, t));
     }
 
+    /// <summary>The factory builds the real WinRT reader; construction must not touch the listener,
+    /// the store or the shared gate, because the designer rebuilds sources on every edit.</summary>
+    [Fact]
+    public void Notifications_Type_Creates_NotificationSource_Cheaply()
+    {
+        var def = new SourceDef { Name = "notes", Type = "Notifications" };
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        using var s = Assert.IsType<DeskWall.Core.Sources.Notifications.NotificationSource>(
+            SourceFactory.Create(def, new FakeClock(DateTimeOffset.UnixEpoch)));
+        Assert.True(started.ElapsedMilliseconds < 200, $"construction took {started.ElapsedMilliseconds} ms");
+        var t = new DateTimeOffset(2026, 9, 22, 9, 30, 12, TimeSpan.Zero);
+        Assert.Equal(t, s.NextDue(null, t));
+    }
+
     /// <summary>Sources outlive nothing: the daemon replaces the whole set on every layout change,
     /// so whoever owns a set has to let go of the ones that hold a timer or a native library.</summary>
     [Fact]
