@@ -60,11 +60,18 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
     }
     private void Detach()
     {
-        if (_session is null) return;
-        _session.MediaPropertiesChanged -= MediaChanged;
-        _session.PlaybackInfoChanged -= PlaybackChanged;
-        _session.TimelinePropertiesChanged -= TimelineChanged;
+        if (_session is not { } session) return;
         _session = null;
+        // Each on its own: a session whose app has gone can refuse one removal, and a throw here
+        // used to leave _session set, so every later refresh tried (and failed) the same Detach.
+        Try(() => session.MediaPropertiesChanged -= MediaChanged);
+        Try(() => session.PlaybackInfoChanged -= PlaybackChanged);
+        Try(() => session.TimelinePropertiesChanged -= TimelineChanged);
+    }
+
+    private static void Try(Action action)
+    {
+        try { action(); } catch (Exception) { }
     }
     public async ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
@@ -114,8 +121,10 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
         }
         finally
         {
-            if (_disposed) Release();
+            // Release first, then look: checking _disposed before releasing left a window in which
+            // Dispose saw the gate held, returned, and nobody ever removed the WinRT handlers.
             _gate.Release();
+            if (_disposed) ReleaseIfIdle();
         }
     }
     /// <summary>The cover as a PNG path, or "" when there is none this refresh. Never fails the
@@ -208,13 +217,23 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
     private void Release()
     {
         Detach();
-        if (_manager is not null) _manager.CurrentSessionChanged -= CurrentChanged;
+        if (_manager is { } manager) Try(() => manager.CurrentSessionChanged -= CurrentChanged);
         _manager = null;
     }
+
+    /// <summary>Let go of the WinRT subscriptions unless a refresh holds the gate, in which case that
+    /// refresh does it on its way out (it re-checks <see cref="_disposed"/> after releasing).</summary>
+    private void ReleaseIfIdle()
+    {
+        if (!_gate.Wait(0)) return;
+        try { Release(); } finally { _gate.Release(); }
+    }
+
+    internal bool HoldsSubscriptions => _manager is not null || _session is not null;
+
     public void Dispose()
     {
         _disposed = true;
-        if (!_gate.Wait(0)) return;
-        try { Release(); } finally { _gate.Release(); }
+        ReleaseIfIdle();
     }
 }

@@ -90,4 +90,32 @@ public class MediaSourceTests
         Assert.Equal(art, s.SaveArt(bytes));
         Assert.Equal(written, File.GetLastWriteTimeUtc(art));
     }
+
+    /// <summary>Harden review finding 4. Every layout edit disposes the sources and builds new ones;
+    /// a media source that keeps its WinRT handlers is kept alive by them, one per reload.</summary>
+    [Fact]
+    public async Task Dispose_After_A_Refresh_Lets_Go_Of_The_Media_Service()
+    {
+        var s = new MediaSource("media");
+        await s.RefreshAsync(default);
+        Assert.True(s.HoldsSubscriptions);
+        s.Dispose();
+        Assert.False(s.HoldsSubscriptions);
+    }
+
+    /// <summary>Dispose while a refresh holds the gate cannot release the handlers itself; the refresh
+    /// must, on its way out. (The narrower race this commit closes - Dispose landing between the
+    /// refresh's disposed check and its gate release - is two instructions wide and is fixed by
+    /// ordering, releasing the gate before looking.)</summary>
+    [Fact]
+    public async Task Dispose_During_A_Refresh_Is_Finished_By_That_Refresh()
+    {
+        var request = new TaskCompletionSource<GlobalSystemMediaTransportControlsSessionManager>();
+        var s = new MediaSource("media", () => request.Task.AsAsyncOperation(), TimeSpan.FromSeconds(30));
+        var refresh = s.RefreshAsync(default).AsTask();
+        s.Dispose();
+        request.SetResult(await GlobalSystemMediaTransportControlsSessionManager.RequestAsync());
+        await refresh;
+        Assert.False(s.HoldsSubscriptions);
+    }
 }
