@@ -71,6 +71,32 @@ source that shells out to Tailscale. Each has its own requirement:
   yet on that process's first (and only) tick; the resident daemon fills them once its own sampler
   has been running for a bit.
 
+## Recent games (Hearth)
+
+`layouts/widgets/recent-games.json` is a widget recipe for the games Hearth (the owner's Playnite
+add-on) has been playing, with no Steam key needed: a `file` source reading
+`runtime:feeds/hearth-recent.json` (`docs/sources.md` "Recipe: Hearth recently-played games") into
+a horizontal repeater of 120x180 covers (8 px corner radius), each a click-to-launch shortcut
+claiming slots 8 upward. Its one knob, **Count** (default 4, 1..8), sets how many of Hearth's up
+to 8 entries draw, by setting the repeater's width so the extra items fall past
+`Overflow stops, it does not wrap or shrink` (`docs/layout-format.md` "Repeater semantics") rather
+than by trimming the bound list -- there is no list-slicing in the binding language, so this is
+the mechanism every widget with a count-like knob has available.
+
+It lives in `layouts/widgets/`, not the shipped `widgets/` folder beside the exe, because this
+recipe was built on a lane that could not touch `widgets/` (another lane was rewriting it on
+`main` at the same time -- `docs/superpowers/plans/2026-09-30-lane-hearth.md`). To try it before
+the lanes merge, copy the file into `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the
+same user-override location `docs/layout-format.md` "Where widget files come from" describes) or
+a scratch `--home`'s `widgets\` folder, then add a version 2 `copies` entry with
+`"widget": "recent-games"` to any layout. Once merged it belongs beside the other shipped
+widgets and this note should go with it.
+
+Needs Hearth installed and writing the feed file; see
+`docs/superpowers/plans/2026-09-30-hearth-feed-spec.md` for what Hearth itself has to do, and
+`docs/superpowers/plans/2026-09-30-lane-hearth-report.md` for how this was proved with a fake
+feed.
+
 ## Shortcut slots
 
 A `shortcut` component names a `slot`: the desktop icon it owns. One `.lnk` per slot lives on the
