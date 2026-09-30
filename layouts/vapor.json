@@ -427,7 +427,7 @@
       "id": "reboot-pending",
       "rect": [
         3000,
-        596,
+        556,
         420,
         28
       ],
@@ -449,7 +449,7 @@
       "id": "recent-crash",
       "rect": [
         3000,
-        628,
+        588,
         420,
         28
       ],
@@ -814,7 +814,7 @@
       "id": "battery-text",
       "rect": [
         3000,
-        564,
+        524,
         420,
         28
       ],
@@ -956,166 +956,50 @@
       }
     },
     {
-      "type": "text",
-      "id": "time-day-label",
-      "rect": [
-        3000,
-        444,
-        200,
-        22
-      ],
-      "z": 1,
-      "text": "Day",
-      "font": "Bahnschrift",
-      "size": 14,
-      "weight": 400,
-      "color": "#B3B9A6D6",
-      "effect": "None"
-    },
-    {
-      "type": "text",
-      "id": "time-day-value",
-      "rect": [
-        3200,
-        444,
-        220,
-        22
-      ],
-      "z": 1,
-      "text": {
-        "bind": "time.dayPercent | \"{0}%\""
-      },
-      "font": "Bahnschrift",
-      "size": 14,
-      "weight": 400,
-      "color": "#F2F6E9FF",
-      "align": "right",
-      "effect": "None"
-    },
-    {
       "type": "bar",
-      "id": "time-day-bar",
+      "id": "year-ticks",
       "rect": [
-        3000,
-        470,
-        420,
-        2
+        258,
+        952,
+        2924,
+        48
       ],
-      "z": 1,
-      "fraction": {
-        "bind": "time.dayFraction"
-      },
-      "threshold": 2,
-      "track": "#40F6E9FF",
-      "fill": "#FFFF71CE"
-    },
-    {
-      "type": "text",
-      "id": "time-week-label",
-      "rect": [
-        3000,
-        480,
-        200,
-        22
-      ],
-      "z": 1,
-      "text": "Week",
-      "font": "Bahnschrift",
-      "size": 14,
-      "weight": 400,
-      "color": "#B3B9A6D6",
-      "effect": "None"
-    },
-    {
-      "type": "text",
-      "id": "time-week-value",
-      "rect": [
-        3200,
-        480,
-        220,
-        22
-      ],
-      "z": 1,
-      "text": {
-        "bind": "time.weekPercent | \"{0}%\""
-      },
-      "font": "Bahnschrift",
-      "size": 14,
-      "weight": 400,
-      "color": "#F2F6E9FF",
-      "align": "right",
-      "effect": "None"
-    },
-    {
-      "type": "bar",
-      "id": "time-week-bar",
-      "rect": [
-        3000,
-        506,
-        420,
-        2
-      ],
-      "z": 1,
-      "fraction": {
-        "bind": "time.weekFraction"
-      },
-      "threshold": 2,
-      "track": "#40F6E9FF",
-      "fill": "#FFFF71CE"
-    },
-    {
-      "type": "text",
-      "id": "time-year-label",
-      "rect": [
-        3000,
-        516,
-        200,
-        22
-      ],
-      "z": 1,
-      "text": "Year",
-      "font": "Bahnschrift",
-      "size": 14,
-      "weight": 400,
-      "color": "#B3B9A6D6",
-      "effect": "None"
-    },
-    {
-      "type": "text",
-      "id": "time-year-value",
-      "rect": [
-        3200,
-        516,
-        220,
-        22
-      ],
-      "z": 1,
-      "text": {
-        "bind": "time.yearPercent | \"{0}%\""
-      },
-      "font": "Bahnschrift",
-      "size": 14,
-      "weight": 400,
-      "color": "#F2F6E9FF",
-      "align": "right",
-      "effect": "None"
-    },
-    {
-      "type": "bar",
-      "id": "time-year-bar",
-      "rect": [
-        3000,
-        542,
-        420,
-        2
-      ],
-      "z": 1,
+      "z": -4,
       "fraction": {
         "bind": "time.yearFraction"
       },
       "threshold": 2,
       "track": "#40F6E9FF",
-      "fill": "#FFFF71CE"
+      "fill": "#FFFF71CE",
+      "direction": "horizontal",
+      "shape": "M260,0 V44 M525,0 V44 M791,0 V44 M1056,0 V44 M1322,0 V44 M1587,0 V44 M1853,0 V44 M2118,0 V44 M2384,0 V44 M2649,0 V44 M2915,0 V44 M3180,0 V44",
+      "thickness": 4,
+      "glow": 10,
+      "glowColor": "#FFFF71CE",
+      "glowStrength": 0.35
+    },
+    {
+      "type": "bar",
+      "id": "week-lights",
+      "rect": [
+        1112,
+        1092,
+        1216,
+        16
+      ],
+      "z": -4,
+      "fraction": {
+        "bind": "time.weekFraction"
+      },
+      "threshold": 2,
+      "track": "#40F6E9FF",
+      "fill": "#FFFF71CE",
+      "direction": "horizontal",
+      "shape": "M1120,0 h0.01 M1320,0 h0.01 M1520,0 h0.01 M1720,0 h0.01 M1920,0 h0.01 M2120,0 h0.01 M2320,0 h0.01",
+      "thickness": 12,
+      "glow": 14,
+      "glowColor": "#FFFF71CE",
+      "glowStrength": 0.4
     }
   ],
   "copies": [

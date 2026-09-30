@@ -146,22 +146,21 @@ if ($dr) {
     $dr.cellHeight = 44; $dr.gap = 8; $dr.rect = @(3000, 330, 420, 96)
 }
 $vp = Get-Comp 'valley-peers'; if ($vp) { foreach ($tp in $vp.template) { foreach ($n in 'fill','track') { if ($tp.PSObject.Properties[$n]) { Recolour-Prop $tp $n 'EBCB8B' 'B3' "valley-peers.$($tp.id)" } } } }
-# Day / week / year progress: three hairline rows in the drives' grammar, under them.
-$y0 = 444
-foreach ($row in @(@('Day', 'dayFraction', 'dayPercent'), @('Week', 'weekFraction', 'weekPercent'), @('Year', 'yearFraction', 'yearPercent'))) {
-    $key = $row[0].ToLowerInvariant()
-    $j.components = @($j.components) + [pscustomobject]@{
-        type = 'text'; id = "time-$key-label"; rect = @(3000, $y0, 200, 22); z = 1; text = $row[0]; font = 'Bahnschrift'; size = 14; weight = 400; color = $dim; effect = 'None'
-    } + [pscustomobject]@{
-        type = 'text'; id = "time-$key-value"; rect = @(3200, $y0, 220, 22); z = 1; text = [pscustomobject]@{ bind = "time.$($row[2]) | `"{0}%`"" }; font = 'Bahnschrift'; size = 14; weight = 400; color = $ink; align = 'right'; effect = 'None'
-    } + [pscustomobject]@{
-        type = 'bar'; id = "time-$key-bar"; rect = @(3000, ($y0 + 26), 420, 2); z = 1; fraction = [pscustomobject]@{ bind = "time.$($row[1])" }; threshold = 2; track = $track; fill = $frost
-    }
-    $y0 += 36
+# Week and year as landscape furniture (the day is the sun). Twelve ticks rise from the horizon,
+# one per month, lit left to right by the year; seven lights sit on the valley floor for the days.
+$inv = [Globalization.CultureInfo]::InvariantCulture
+$months = (0..11 | ForEach-Object { $x = 260 + $_ * (2920 / 11); "M$($x.ToString('0', $inv)),0 V44" }) -join ' '
+$days = (0..6 | ForEach-Object { $x = 1120 + $_ * 200; "M$($x.ToString('0', $inv)),0 h0.01" }) -join ' '
+$j.components = @($j.components) + [pscustomobject]@{
+    type = 'bar'; id = 'year-ticks'; rect = @(258, 952, 2924, 48); z = -4; fraction = [pscustomobject]@{ bind = 'time.yearFraction' }; threshold = 2
+    track = $track; fill = $frost; direction = 'horizontal'; shape = $months; thickness = 4; glow = 10; glowColor = $frost; glowStrength = 0.35
+} + [pscustomobject]@{
+    type = 'bar'; id = 'week-lights'; rect = @(1112, 1092, 1216, 16); z = -4; fraction = [pscustomobject]@{ bind = 'time.weekFraction' }; threshold = 2
+    track = $track; fill = $frost; direction = 'horizontal'; shape = $days; thickness = 12; glow = 14; glowColor = $frost; glowStrength = 0.4
 }
-$bt = Get-Comp 'battery-text'; if ($bt) { $bt.rect = @(3000, 564, 420, 28); Set-Prop $bt 'size' 18 'battery-text'; Set-Prop $bt 'weight' 400 'battery-text'; Set-Prop $bt 'color' $dim 'battery-text'; Set-Prop $bt 'align' 'right' 'battery-text' }
-$rb = Get-Comp 'reboot-pending'; if ($rb) { $rb.rect = @(3000, 596, 420, 28); Set-Prop $rb 'size' 18 'reboot-pending'; Set-Prop $rb 'weight' 400 'reboot-pending'; Set-Prop $rb 'color' $warn 'reboot-pending'; Set-Prop $rb 'align' 'right' 'reboot-pending' }
-$rc = Get-Comp 'recent-crash'; if ($rc) { $rc.rect = @(3000, 628, 420, 28); Set-Prop $rc 'size' 18 'recent-crash'; Set-Prop $rc 'weight' 400 'recent-crash'; Set-Prop $rc 'color' $warn 'recent-crash'; Set-Prop $rc 'align' 'right' 'recent-crash' }
+$bt = Get-Comp 'battery-text'; if ($bt) { $bt.rect = @(3000, 524, 420, 28); Set-Prop $bt 'size' 18 'battery-text'; Set-Prop $bt 'weight' 400 'battery-text'; Set-Prop $bt 'color' $dim 'battery-text'; Set-Prop $bt 'align' 'right' 'battery-text' }
+$rb = Get-Comp 'reboot-pending'; if ($rb) { $rb.rect = @(3000, 556, 420, 28); Set-Prop $rb 'size' 18 'reboot-pending'; Set-Prop $rb 'weight' 400 'reboot-pending'; Set-Prop $rb 'color' $warn 'reboot-pending'; Set-Prop $rb 'align' 'right' 'reboot-pending' }
+$rc = Get-Comp 'recent-crash'; if ($rc) { $rc.rect = @(3000, 588, 420, 28); Set-Prop $rc 'size' 18 'recent-crash'; Set-Prop $rc 'weight' 400 'recent-crash'; Set-Prop $rc 'color' $warn 'recent-crash'; Set-Prop $rc 'align' 'right' 'recent-crash' }
 
 # 8. The clock: Bahnschrift Light 160 over the main peak, no shadow.
 $clock = $j.copies | Where-Object id -eq 'clock-1'
