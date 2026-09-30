@@ -15,10 +15,10 @@ public static class ComponentProperties
     public const string Hidden = "hidden";
     private static readonly Prop[] GeometryProps =
     [
-        new("X", c => c.X ?? PropertyValue.Literal(c.Rect.X), (c, v) => c.X = v),
-        new("Y", c => c.Y ?? PropertyValue.Literal(c.Rect.Y), (c, v) => c.Y = v),
-        new("W", c => c.W ?? PropertyValue.Literal(c.Rect.W), (c, v) => c.W = v),
-        new("H", c => c.H ?? PropertyValue.Literal(c.Rect.H), (c, v) => c.H = v),
+        new("X", c => c.X ?? PropertyValue.Literal(c.Rect.X), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { X = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.X = null; } else c.X = v; }),
+        new("Y", c => c.Y ?? PropertyValue.Literal(c.Rect.Y), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { Y = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.Y = null; } else c.Y = v; }),
+        new("W", c => c.W ?? PropertyValue.Literal(c.Rect.W), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { W = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.W = null; } else c.W = v; }),
+        new("H", c => c.H ?? PropertyValue.Literal(c.Rect.H), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { H = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.H = null; } else c.H = v; }),
     ];
 
     public static IReadOnlyList<Prop> For(ComponentDef def) => [.. Specific(def), .. GeometryProps];

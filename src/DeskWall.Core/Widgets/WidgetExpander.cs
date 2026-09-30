@@ -1,4 +1,4 @@
-using DeskWall.Core.Bindings;
+﻿using DeskWall.Core.Bindings;
 using DeskWall.Core.Layout;
 
 namespace DeskWall.Core.Widgets;
@@ -63,6 +63,7 @@ public static class WidgetExpander
                 c.Id = $"{copy.Id}.{c.Id}";
                 c.Widget = copy.Id;
                 c.Rect = c.Rect.Offset(copy.X, copy.Y);
+                c.GeometryOffsetX += copy.X; c.GeometryOffsetY += copy.Y;
                 c.Z += copy.Z;
             }
             result.Components.AddRange(parts.Components);
