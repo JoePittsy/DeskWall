@@ -48,6 +48,9 @@ public static class Overrides
             if (e.GetType() != b.GetType()) continue;
             foreach (var p in ComponentProperties.All(b))
             {
+                // x/y/w/h unset on both sides only echo the rect, which has its own key.
+                if (ComponentProperties.IsGeometry(p.Name) && !ComponentProperties.IsHeldGeometry(b, p.Name)
+                    && !ComponentProperties.IsHeldGeometry(e, p.Name)) continue;
                 var now = p.Get(e);
                 if (!Same(p.Get(b), now)) result[key + char.ToLowerInvariant(p.Name[0]) + p.Name[1..]] = now;
             }

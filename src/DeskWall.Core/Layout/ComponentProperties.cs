@@ -15,11 +15,38 @@ public static class ComponentProperties
     public const string Hidden = "hidden";
     private static readonly Prop[] GeometryProps =
     [
-        new("X", c => c.X ?? PropertyValue.Literal(c.Rect.X), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { X = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.X = null; } else c.X = v; }),
-        new("Y", c => c.Y ?? PropertyValue.Literal(c.Rect.Y), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { Y = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.Y = null; } else c.Y = v; }),
-        new("W", c => c.W ?? PropertyValue.Literal(c.Rect.W), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { W = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.W = null; } else c.W = v; }),
-        new("H", c => c.H ?? PropertyValue.Literal(c.Rect.H), (c, v) => { if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n)) { c.Rect = c.Rect with { H = (int)Math.Clamp(Math.Round(n), -1000000, 1000000) }; c.H = null; } else c.H = v; }),
+        Geometry("X", c => c.X, (c, v) => c.X = v, r => r.X, (r, n) => r with { X = n }),
+        Geometry("Y", c => c.Y, (c, v) => c.Y = v, r => r.Y, (r, n) => r with { Y = n }),
+        Geometry("W", c => c.W, (c, v) => c.W = v, r => r.W, (r, n) => r with { W = n }),
+        Geometry("H", c => c.H, (c, v) => c.H = v, r => r.H, (r, n) => r with { H = n }),
     ];
+
+    /// <summary>x/y/w/h read through to the rect unless set. A plain number is written back into the
+    /// rect, so only a binding (or an unparseable literal) is ever held separately.</summary>
+    private static Prop Geometry(string name, Func<ComponentDef, PropertyValue?> field, Action<ComponentDef, PropertyValue?> setField,
+        Func<Rect, int> read, Func<Rect, int, Rect> write)
+        => new(name, c => field(c) ?? PropertyValue.Literal(read(c.Rect)), (c, v) =>
+        {
+            if (!v.IsBound && double.TryParse(v.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n))
+            {
+                c.Rect = write(c.Rect, (int)Math.Clamp(Math.Round(n), -1000000, 1000000));
+                setField(c, null);
+            }
+            else setField(c, v);
+        });
+
+    /// <summary>Whether x/y/w/h (by name, any case) is set on the part rather than read from its rect.
+    /// False for every other property name.</summary>
+    public static bool IsHeldGeometry(ComponentDef c, string name) => name.ToUpperInvariant() switch
+    {
+        "X" => c.X is not null,
+        "Y" => c.Y is not null,
+        "W" => c.W is not null,
+        "H" => c.H is not null,
+        _ => false,
+    };
+
+    public static bool IsGeometry(string name) => name.ToUpperInvariant() is "X" or "Y" or "W" or "H";
 
     public static IReadOnlyList<Prop> For(ComponentDef def) => [.. Specific(def), .. GeometryProps];
     private static IReadOnlyList<Prop> Specific(ComponentDef def) => def switch
