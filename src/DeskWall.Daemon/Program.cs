@@ -60,6 +60,8 @@ internal static class Program
                     return Verify(opts);
                 case "shortcuts":
                     return Shortcuts(opts).GetAwaiter().GetResult();
+                case "calendar":
+                    return Calendar(opts);
                 case "help":
                 case "--help":
                 case "-h":
@@ -116,6 +118,52 @@ internal static class Program
         w.WriteLine("  shortcuts [--layout <path>]  planned vs actual icon positions (read-only)");
         w.WriteLine("  verify [--pad N] [--threshold N] [--json]");
         w.WriteLine("                             screenshot the desktop and measure the arrow padding per slot");
+        w.WriteLine("  calendar login [-Flow devicecode] [-Tenant <id>]");
+        w.WriteLine("                             first sign-in for runtime\\scripts\\graph-next-event.ps1, in its own window");
+    }
+
+    /// <summary>deskwall calendar login [script args]. The calendar recipe's script runs hidden and
+    /// never prompts, so the one interactive sign-in happens here: pwsh 7 in a console window of its
+    /// own (WAM needs a visible parent window; a device code needs somewhere to be read), waited for.
+    /// Extra arguments go to the script unchanged.</summary>
+    private static int Calendar(List<string> opts)
+    {
+        if (opts.Count == 0 || opts[0] != "login")
+        {
+            Console.Error.WriteLine("deskwall calendar: expected 'login'");
+            return 2;
+        }
+        var script = Paths.InRuntime("scripts", "graph-next-event.ps1");
+        if (!File.Exists(script))
+        {
+            Console.Error.WriteLine($"deskwall calendar: {script} not found; copy scripts\\graph-next-event.ps1 from the repo there first");
+            return 1;
+        }
+        var psi = new System.Diagnostics.ProcessStartInfo("pwsh.exe") { UseShellExecute = false, CreateNoWindow = false };
+        foreach (var a in (string[])["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Login", "-Pause", "-RuntimeDir", Paths.RuntimeDir])
+            psi.ArgumentList.Add(a);
+        foreach (var a in opts.Skip(1)) psi.ArgumentList.Add(a);
+
+        // Detached from the caller's console, the child gets a fresh window of its own rather than
+        // sharing a prompt the caller's shell is still reading (a WinExe is not waited for).
+        PInvoke.FreeConsole();
+        int code;
+        try
+        {
+            using var child = System.Diagnostics.Process.Start(psi)
+                ?? throw new InvalidOperationException("pwsh.exe did not start");
+            child.WaitForExit();
+            code = child.ExitCode;
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            PInvoke.AttachConsole(PInvoke.ATTACH_PARENT_PROCESS);
+            Console.Error.WriteLine($"deskwall calendar: could not start pwsh.exe (PowerShell 7): {ex.Message}");
+            return 1;
+        }
+        PInvoke.AttachConsole(PInvoke.ATTACH_PARENT_PROCESS);
+        Console.WriteLine(code == 0 ? "deskwall calendar: signed in" : $"deskwall calendar: sign-in did not complete (exit {code})");
+        return code == 0 ? 0 : 1;
     }
 
     /// <summary>deskwall run [--no-tray] [--no-shortcuts]. One daemon per session: a second one hands the

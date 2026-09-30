@@ -9,7 +9,7 @@ A source is declared in a layout file's `sources` array:
 | Field | Notes |
 |---|---|
 | `name` | The root field bindings use to reach this source's values (`steam.json...`). |
-| `type` | One of `time`, `disks`, `system`, `hardware`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
+| `type` | One of `time`, `disks`, `system`, `hardware`, `audio`, `battery`, `media`, `notifications`, `command`, `http`, `rss`, `file` (`SourceFactory.Create`). Anything else throws when the layout is loaded. |
 | `every` | Seconds between refreshes. Optional; each type has its own default (below). Ignored by `time`, which is always due on the next whole minute. **A top-level field, not a `settings` key** -- each type's "Settings" line below names it only to give its default, and a source that finds `every` inside `settings` ignores it. |
 | `settings` | A flat string-to-string map; each source type documents its own keys below. |
 
@@ -36,7 +36,8 @@ each source reads its own `settings` keys and defaults) and `SourceFactory.cs`.
 
 ## `time`
 
-No settings. Always due on the next whole minute (`NextDue` rounds up to `:00`).
+Settings (both optional): `sunrise`, `sunset`. Always due on the next whole minute (`NextDue`
+rounds up to `:00`).
 
 Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`TextValue`, e.g.
 `Saturday`), and how far through the day, week and year local time is:
@@ -45,16 +46,58 @@ Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`
 |---|---|
 | `dayFraction`, `weekFraction`, `yearFraction` | 0..1, rounded to 4 decimals |
 | `dayPercent`, `weekPercent`, `yearPercent` | the same, 0..100, rounded to a whole number |
-| `phase` | `night`, `dawn`, `day` or `dusk` from `dayFraction`: dawn from 0.21, day from 0.29, dusk from 0.71, night from 0.83 |
+| `phase` | `night`, `dawn`, `day` or `dusk`. Without sun settings, from `dayFraction`: dawn from 0.21, day from 0.29, dusk from 0.71, night from 0.83. With them, from the real sun: dawn is sunrise ±40 min, dusk is sunset ±40 min, day in between, night otherwise |
+| `sunFraction` | 0 at sunrise, 1 at sunset, clamped (0 before sunrise, 1 after sunset), 4 decimals: a sun bound to it rises and sets when the real one does. 06:00 to 18:00 without settings |
+| `nightFraction` | The same across the night: 0 at sunset, 1 at the next sunrise, 0 all day |
+| `sunrise`, `sunset` | `TimeValue`s today, only when the settings are given (`time.sunset \| HH:mm`) |
 
 `phase` exists so a layer that only needs four colours is one Step rule
 (`time.phase | "?night=#..,dawn=#..,day=#..,dusk=#.."`), and the palette for that layer lives in
-that one place. Use a Blend on `dayFraction` where the change should be gradual.
+that one place. Use a Blend on `dayFraction` where the change should be gradual (or on
+`sunFraction`/`nightFraction`, which follow the real sun).
 
 Both forms exist because a `bar`'s `fraction` wants 0..1 and a `text` wants the percent, and a
 format string cannot multiply by 100. The **week starts on Monday** (`((int)DayOfWeek + 6) % 7`),
 not on Sunday. The year divides by 366 in a leap year and 365 otherwise. All three are derived
 from the same local `now` the clock publishes, so a "day progress" widget needs no script.
+
+### Real sunrise and sunset
+
+`sunrise` and `sunset` each take either a fixed local `HH:mm` or a binding path to another
+source's value. The path is resolved against the value tree at every refresh: the tree the
+previous tick resolved against (`SourceTree.Latest`), so it lags by at most a minute. The value
+it reaches may be:
+
+- an ISO date-time (only the time of day is used; one without an offset is taken as local, one
+  with an offset is converted);
+- `HH:mm` text;
+- a `TimeValue`, or a number read as Unix seconds.
+
+A one-element record from a JSON array of scalars (`[0]` of `["..."]`) is unwrapped.
+
+Until a path first resolves, 06:00 and 18:00 stand in. After that, the last pair that resolved is
+kept while the other source is failing or stale, so the sky does not jump back to 06:00. A pair
+with the sunset before the sunrise is ignored the same way. A setting that is neither `HH:mm` nor
+a parseable path fails when the layout is loaded.
+
+Open-Meteo gives both for free. Add `daily=sunrise,sunset` to the weather source's URL (the
+`weather` widget's `widgets/weather.json`, which `column-system.json` places). Keep
+`timezone=auto`, which it already has, so the times are the town's own local times:
+
+```
+...&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&timezone=auto
+```
+
+and point the time source at the first day:
+
+```json
+{ "name": "time", "type": "time",
+  "settings": { "sunrise": "weather.json.daily.sunrise[0]", "sunset": "weather.json.daily.sunset[0]" } }
+```
+
+`deskwall tick --preview time.at=HH:mm` pins the time fields without the sun settings
+(`TimeSource.Fields(now)`), so under a preview `phase` falls back to the fixed thresholds and
+`sunFraction` to 06:00 to 18:00.
 
 ## `disks`
 
@@ -557,6 +600,71 @@ Windows SDK projections compiled successfully under native AOT in the spike.
 
 `disks.worstUsedFraction` is the maximum used fraction across fixed ready drives (0 when none).
 
+## `notifications`
+
+Settings: `include`, `exclude` (optional, comma-separated app names; each entry matches the app's
+display name *or* its app user model id, case-insensitive, exactly). `every` (default 300 s) is
+the sweep interval described below, not a poll.
+
+What is waiting in the Windows notification centre (toasts only), through WinRT's
+`UserNotificationListener`. Push, like `audio` and `media`: an `ISignalSource` that tells the bus
+when what it publishes changed. Zero-config, so it is one of the designer's built-in sources.
+
+| Field | Meaning |
+|---|---|
+| `status` | `ok`, `denied` (Settings > Privacy & security > Notifications does not let desktop apps read them), or `unavailable` (the listener could not be reached). When not `ok` it is the **only** field, so every bound property falls back to its own default. |
+| `count` | toasts in the centre after the filters |
+| `apps` | list of `{ name, count }`, keyed by `name` (`notifications.apps[Outlook].count`), most toasts first, ties most-recent first |
+| `latestApp`, `latestTitle`, `latestText` | the newest toast: app display name, its first text line, the remaining lines joined with a space. Empty strings when the centre is empty. |
+| `latestAt` | `TimeValue`, when the newest toast was raised; absent when the centre is empty |
+| `changedAt` | `TimeValue`, when the published set last changed -- an arrival *or* a dismissal. Stable between changes, so it does not dirty the content key. |
+
+```json
+{ "name": "notifications", "type": "notifications",
+  "settings": { "exclude": "Windows Security, Microsoft Store" } }
+```
+
+A badge: `{notifications.count}` in a text part, or a repeater over `notifications.apps` showing
+`{name} {count}`.
+
+**Access.** `GetAccessStatus` is asked on the first refresh, and `RequestAccessAsync` only while it
+answers "unspecified". From an unpackaged process neither prompts: both answer from the privacy
+setting. Measured on JOES-XPS-17: `Allowed` with the setting at its default. A `denied` source is
+never due again; after changing the setting, reload the layout or restart the daemon.
+
+**Being told.** The brief asked for `NotificationChanged`. It is subscribed first, but it throws
+`0x80070490` (element not found) in a process without package identity, which both executables
+are. So the reader watches what the notification platform itself writes:
+`%LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db*`. Measured: silent at idle (0 events
+in 10 s), about 30 events for one toast arriving. The platform also writes that store about ten
+times per toast returned **on every read** -- anyone's read -- so a watcher that reads on every
+event feeds itself, and two processes running the source (the daemon and the designer's Data
+panel) would feed each other. Reads therefore go through a session-wide gate, a 24-byte named
+mapping `Local\DeskWall.NotificationReads` (`SharedReadGate`): readers in flight, a 10 s cap on
+believing one is in flight (a reader that died mid-read must not blind everybody), and the time
+the last read's echo is over (750 ms after it ends). Store events inside that window are dropped.
+
+**The read.** A burst of events is debounced (300 ms) into one background read, off the tick
+thread; a reading that differs from the published one sets the pending flag and signals the bus,
+exactly like `audio`. One reading that matches is not a change, so badge and tile writes, and
+other processes' reads, cost a read and nothing more. Because a toast that lands inside a read's
+suppressed echo would otherwise wait, every event-driven read is followed by one confirming read
+2 s later (never by another). Cost, measured on JOES-XPS-17 with 3-4 toasts: 280-540 ms wall and
+60-230 ms CPU per read (the first in a process is the dearest), almost all of it inside the
+notification service's own call. The latency from `Show()` to the bus signal was about 1.4 s.
+
+**The sweep.** The store watcher sees every arrival but not every dismissal: in one run a
+`History.Clear` wrote the WAL within a second, in another it wrote nothing until the next read,
+because NTFS updates a file's last-write metadata lazily while its writer holds it open. So while
+the published `count` is above zero, the source is also due every `every` seconds (rounded up to
+the whole minute, so it rides the clock's wake) and reads inline on that tick. An empty centre
+has nothing to dismiss and is never swept; a `denied` one never either. Worst case, a dismissal
+takes `every` to disappear from the wallpaper.
+
+Known blind spot: a toast whose writes all land inside the echo window of a read the source did not
+follow up -- a confirming read, a sweep, or the other process's read -- is not seen until the next
+change, or the next sweep if the centre was not empty.
+
 ## Playnite recent games recipe
 
 `scripts/playnite-recent.ps1` runs under Windows PowerShell 5.1 with Playnite's own LiteDB.
@@ -571,3 +679,71 @@ The alpine layout uses `scripts/tailscale-lights.ps1` as a five-minute command r
 `peers` containing one record per online peer while the backend is Running, otherwise an empty
 list, plus `status` and `count` (the number of online peers, so a text can say "3 peers online"
 without counting the list). The layout draws a light per online peer from that list.
+
+## Calendar recipe
+
+`scripts/graph-next-event.ps1` (PowerShell 7) reads the signed-in account's calendar from
+Microsoft Graph (`/me/calendarView`) and prints the next three events in the coming 12 hours as
+one line of JSON. Copy it to `%LOCALAPPDATA%\DeskWall\scripts\` (the publish script does not ship
+`scripts/`), then add the source:
+
+```json
+{ "name": "calendar", "type": "command", "every": 300,
+  "settings": { "command": "pwsh.exe",
+                "args": "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File graph-next-event.ps1",
+                "workingDir": "runtime:scripts", "parse": "json", "timeout": "30",
+                "unixTimeFields": "start,end" } }
+```
+
+`timeout` is 30 rather than the default 10: loading the Graph module and refreshing the token
+takes 3 to 4 s on a warm machine. `unixTimeFields` makes `start`/`end` `TimeValue`s, so they take
+a date format. It is not a default source: it needs a sign-in, and a Microsoft 365 or Outlook.com
+account.
+
+Output (`calendar.json...`):
+
+| Field | Notes |
+|---|---|
+| `status` | `ok`, or `signin-required` (exit code 2, empty `events`) when there is no usable token |
+| `account` | The signed-in user principal name |
+| `count` | Events in `events`, 0..3 |
+| `events` | The list: `subject`, `start`, `end`, `startText`/`endText` (local `HH:mm`), `minutesUntil` (whole minutes; negative once started), `inProgress`, `isOnline`, `joinUrl`, `location`, `isAllDay` |
+| `next` | `events[0]`; absent when there is nothing in the window |
+
+Cancelled events are skipped, and so are all-day events unless `-IncludeAllDay` is added to the
+arguments. `-Count N` (1..20) and `-Hours N` (1..168) change the window. Any other failure
+(network, Graph) exits 1 and prints nothing, so the source keeps the last good events.
+
+Bindings: `calendar.json.next.subject`, `calendar.json.next.start | HH:mm`,
+`calendar.json.next.minutesUntil`, `calendar.json.next.isOnline | "?true=online"`, a repeater over
+`calendar.json.events`, and `calendar.json.status | "?signin-required=calendar: sign in"` so the
+layout says when the token has lapsed. `minutesUntil` is as old as the last run (up to five
+minutes); for a live countdown, compare `start` with `time.now` instead.
+
+**Signing in.** The script never prompts when it runs as a source, so sign in once:
+
+```powershell
+deskwall calendar login                    # Windows sign-in (WAM); the default
+deskwall calendar login -Flow devicecode   # device code, token kept by the script
+```
+
+Either one opens a PowerShell 7 window of its own, runs the script with `-Login`, and waits.
+Arguments after `login` go to the script unchanged, and any `-Flow`/`-Tenant` given there must be
+added to the source's `args` as well. The two flows:
+
+- `-Flow mg` (default) uses the `Microsoft.Graph.Authentication` module
+  (`Install-Module Microsoft.Graph.Authentication -Scope CurrentUser`) and its token cache. It
+  shares both with the owner's ms-todo skill. Afterwards `Connect-MgGraph` refreshes the token
+  silently. This is the flow for a work tenant with device-compliance Conditional Access: WAM
+  carries the device's state, and a device code cannot.
+- `-Flow devicecode` signs in with a device code against the public Microsoft Graph PowerShell
+  client (`14d82eec-204b-4c2f-b7e8-296a70dab67e`, scopes `Calendars.Read offline_access`). It keeps
+  the refresh token in `<runtime dir>\calendar-token.txt`, DPAPI-protected for the current user,
+  and saves every rotated token. Use it for a personal account (`-Tenant consumers`) or a tenant
+  without that policy. It needs no module.
+
+Without a visible console, WAM refuses at once ("A window handle must be configured"), which is
+what the source wants. The script exits 2 and the layout shows `signin-required`. From a hidden
+console window (Task Scheduler, `Start-Process -WindowStyle Hidden`), WAM would instead wait on a
+prompt nobody can see. So the script detaches from a hidden console before it connects, and exits
+1 there.

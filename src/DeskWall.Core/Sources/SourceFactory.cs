@@ -11,7 +11,7 @@ public static class SourceFactory
         var every = TimeSpan.FromSeconds(def.EverySeconds ?? DefaultEvery(def.Type));
         return def.Type.ToLowerInvariant() switch
         {
-            "time" => new TimeSource(def.Name, clock),
+            "time" => TimeSource.FromDef(def, clock),
             "media" => new MediaSource(def.Name),
             "battery" => new BatterySource(def.Name, every),
             "disks" => new DisksSource(def.Name, every),
@@ -26,6 +26,7 @@ public static class SourceFactory
                 : CommandSource.FromDef(def, clock, secrets),
             "hardware" => Hardware.HardwareSource.FromDef(def),
             "audio" => Audio.AudioSource.FromDef(def),
+            "notifications" => Notifications.NotificationSource.FromDef(def, clock),
             _ => throw new NotSupportedException($"source type '{def.Type}' (source '{def.Name}')"),
         };
     }

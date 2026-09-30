@@ -79,7 +79,8 @@ public class ValueCatalogTests
     [Fact]
     public async Task Every_Field_The_Real_Time_And_Disks_Sources_Publish_Has_A_Label()
     {
-        var time = await new TimeSource("time", SystemClock.Instance).RefreshAsync(CancellationToken.None);
+        // Sun settings, so sunrise/sunset are published and need labels too.
+        var time = await new TimeSource("time", SystemClock.Instance, "07:00", "19:00").RefreshAsync(CancellationToken.None);
         var disks = await new DisksSource("disks", TimeSpan.FromMinutes(5)).RefreshAsync(CancellationToken.None);
         var all = ValueCatalog.From(Rec(("time", time), ("disks", disks)), [Def("time", "time"), Def("disks", "disks")]);
 
@@ -87,6 +88,9 @@ public class ValueCatalogTests
         Assert.All(all, e => Assert.NotEqual(e.Path, e.Label));
         Assert.Equal(ValueKind.Fraction, Entry(all, "time.dayFraction").Kind);
         Assert.Equal(ValueKind.Number, Entry(all, "time.dayPercent").Kind);
+        Assert.Equal(ValueKind.Fraction, Entry(all, "time.sunFraction").Kind);
+        Assert.Equal(ValueKind.Fraction, Entry(all, "time.nightFraction").Kind);
+        Assert.Equal(ValueKind.Timestamp, Entry(all, "time.sunset").Kind);
     }
 
     [Theory]
