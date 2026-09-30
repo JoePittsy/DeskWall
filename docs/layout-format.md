@@ -10,7 +10,7 @@ placed on the canvas in physical pixels. Source of truth for this document: `Lay
 | Property | Type | Default | Notes |
 |---|---|---|---|
 | `version` | int | `1` | `1` or `2`; this build reads both. A file with a higher version is rejected, not half-read. Version 2 uses linked copies (below); version 1 uses stamped instances (read-only section at the end for migration). |
-| `baseImage` | string | required | Path to a JPEG or PNG. |
+| `baseImage` | string or `{"bind": ...}` | required | Path to a JPEG or PNG, or a binding that resolves to one each tick. `runtime:` and `%ENV%` expand. See "The base image" below. |
 | `baseFit` | `"cover"` \| `"contain"` \| `"stretch"` | `"cover"` | How the base image fills the canvas. |
 | `encode` | `"jpeg"` \| `"png"` | `"jpeg"` | Output format for the composed frame. |
 | `jpegQuality` | int | `92` | Passed to the WIC JPEG encoder, clamped to 1..100. Ignored when `encode` is `"png"`. |
@@ -33,6 +33,45 @@ Example:
     "text": { "bind": "time.now | HH:mm" }, "font": "Segoe UI Light", "size": 64, "weight": 300, "align": "right" } ]
 }
 ```
+
+### The base image
+
+`baseImage` is a `PropertyValue` like a component property ("Properties as literal or binding"):
+a literal path, or `{"bind": ...}` resolved against the same value tree as the components on
+every tick. Either way the result goes through `Paths.ExpandPath`, so `runtime:assets/...`
+resolves under the runtime dir and `%VAR%` expands. A binding needs its source declared in
+`sources` like any other. The usual one picks a photo per phase of the day with a map
+(`layouts/alpine-vision-photos.json`):
+
+```json
+"baseImage": { "bind": "time.phase | \"?night=runtime:assets/alpine/ridge-night.jpg,dawn=runtime:assets/alpine/ridge-dawn.jpg,day=runtime:assets/alpine/ridge-day.jpg,dusk=runtime:assets/alpine/ridge-dusk.jpg\"" }
+```
+
+- **The swap tick.** The base cache key is taken from the *resolved* file (path, mtime, canvas
+  size, fit), so the tick the phase changes on sees a different base key, skips the incremental
+  path and renders every component onto the new photo. Every other tick is exactly as before.
+- **Four photos stay decoded.** `BaseCache` keeps the four most recently used bases per canvas size
+  as pre-scaled raws (`runtime/base/<w>x<h>-<key>.raw`), so after the first day each swap reads a
+  raw instead of decoding a JPEG. The fifth photo evicts the one used longest ago. Measured at
+  3440x1440 (`docs/superpowers/plans/2026-09-30-lane-photo-report.md`): a first-seen photo costs a
+  48-149 ms decode, a cached one about 0 ms, and a warm swap tick draws in the same 80-125 ms as
+  the minute ticks on either side of it.
+- **A missing file keeps the last good base.** When the resolved path does not exist, the tick
+  draws on the base it used last and logs one warning (`base image X not found; keeping Y`), not
+  one a minute; the warning is re-armed once the path resolves to a file again. With no previous
+  base at all (a first tick) the missing file fails the tick as it always has. This applies to a
+  literal path too.
+- **A photo per phase replaces the sky-grade overlays.** A layout that tints the sky with
+  full-canvas layers bound to `time.dayFraction` (the `sky-grade`, `sky-top` and `sky-band`
+  layers of `alpine-vision.json`) is painting the mood on top of a photo that cannot change. When
+  the photo itself is graded per phase, those layers are not needed:
+  `alpine-vision-photos.json` keeps them at half alpha, as a light wash that still moves minute
+  by minute between the four photos' hard cuts, and a new layout can leave them out.
+  `scripts/phase-photos.ps1` makes the graded photos from one source photo.
+- **In the designer** the Layout panel's photo row has the same Bind chip and Unbind menu as any
+  other property, and the preview resolves the photo against the live (or pinned) values.
+- An empty resolve (a map with no match and no `*`) is a missing file, not the empty canvas;
+  give the map a `*=` entry if a value outside the list is possible.
 
 ## Every component: shared properties
 

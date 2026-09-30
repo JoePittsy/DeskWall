@@ -103,9 +103,13 @@ The tick itself:
    changed, nothing was removed, the display signature matches, and the base image's cache key
    matches, the tick ends here (`t.Skipped = true`) before any drawing, encoding or applying --
    the whole point of content keys (spec 4.4).
-3. **Base image.** `BaseCache.Ensure` scales the base image to the canvas once and caches the
-   result as a raw PBGRA dump under `runtime/base/<key>.raw`, keyed by path, mtime, target size
-   and fit, so a cache hit is a file copy, not a JPEG/PNG decode.
+3. **Base image.** The layout's `baseImage` is resolved against the value tree first (it may be
+   bound, e.g. to `time.phase`; a resolved path that does not exist falls back to the last base
+   drawn, `FrameState.BasePath`, with one warning). `BaseCache.Ensure` scales that photo to the
+   canvas once and caches the result as a raw PBGRA dump under `runtime/base/<w>x<h>-<key>.raw`,
+   keyed by the resolved path, mtime, target size and fit, so a cache hit is a file copy, not a
+   JPEG/PNG decode. It keeps the four most recently used raws per canvas size, so a layout that
+   swaps between four phase photos never re-decodes one.
 4. **Draw.** A forced tick, or one where the display signature or base image changed, renders
    every component fresh (`FrameRenderer.RenderAll`). Otherwise only components whose content key
    changed, or whose paint bounds intersect one that did, are redrawn onto the previous frame
@@ -144,9 +148,9 @@ directory.
 | `settings.json` | the designer | Tray on/off, start-at-logon, last-opened layout, panel layout. |
 | `calibration.json` | `deskwall calibrate` | Arrow-overlay rect per `(icon size, display scale)`. |
 | `shortcuts-owned.json` | `ShortcutManager` | Slot -> hash of the spec last written there; the only slots `ShortcutManager` will ever delete. |
-| `frame-state.json` | `TickRunner` | Content keys, paint bounds, signature, base-image key and shortcuts fingerprint from the last tick -- the skip gate's input. |
+| `frame-state.json` | `TickRunner` | Content keys, paint bounds, signature, base-image key, the last base photo drawn (and any missing one already warned about) and shortcuts fingerprint from the last tick -- the skip gate's input. |
 | `frame.raw` | `TickRunner` / `Surface.SaveRaw` | The full previous frame as raw PBGRA, loaded (not decoded) for incremental redraw. Deliberately never held in memory across ticks: at 3440x1440 it is ~19.8 MB, which alone would blow the 10 MB idle budget. |
-| `base/<key>.raw` | `BaseCache` | The base image pre-scaled to the canvas; entries untouched for a day are swept on the next tick that writes a new one. |
+| `base/<w>x<h>-<key>.raw` | `BaseCache` | Base photos pre-scaled to the canvas. A tick that writes a new one keeps the four most recently used for that canvas size (a hit refreshes its mtime) and deletes the rest of that size; other sizes (the designer's preview renders here too) and old unprefixed names go once untouched for a day. |
 | `images/<sha256-16>.img` + `.meta` | `RemoteImageCache` | Downloaded remote images and their revalidation metadata; entries unused for 30 days are swept once at daemon start. |
 | `deskwall.jpg` / `deskwall.png` | `TickRunner` | The composed frame actually set as the wallpaper. |
 | `restore.json` | `WallpaperSetter.RecordRestorePoint` | The pre-DeskWall wallpaper per monitor, written once; consumed and deleted by `deskwall uninstall`. |
