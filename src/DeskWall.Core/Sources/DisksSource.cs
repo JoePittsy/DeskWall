@@ -1,4 +1,4 @@
-using DeskWall.Core.Values;
+﻿using DeskWall.Core.Values;
 
 namespace DeskWall.Core.Sources;
 
@@ -25,6 +25,6 @@ public sealed class DisksSource(string name, TimeSpan every, Func<IReadOnlyList<
                 ["usedFraction"] = new NumberValue(total <= 0 ? 0 : (total - free) / total),
             }));
         }
-        return new(new RecordValue(new Dictionary<string, Value> { ["drives"] = new ListValue(items, "letter") }));
+        return new(new RecordValue(new Dictionary<string, Value> { ["drives"] = new ListValue(items, "letter"), ["worstUsedFraction"] = new NumberValue(items.Select(i => ((NumberValue)i.Get("usedFraction")!).Number).DefaultIfEmpty(0).Max()) }));
     }
 }

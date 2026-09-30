@@ -537,3 +537,15 @@ Windows global media session, event-driven (`ISignalSource`), no polling. Publis
 empty display fields. Thumbnail bytes are hashed; only changed art is decoded to PNG under
 `runtime/media/art.png`. Thumbnails above 8 MB are omitted. Subscriptions are removed on disposal.
 Windows SDK projections compiled successfully under native AOT in the spike.
+
+`disks.worstUsedFraction` is the maximum used fraction across fixed ready drives (0 when none).
+
+## Playnite recent games recipe
+
+`scripts/playnite-recent.ps1` runs under Windows PowerShell 5.1 with Playnite's own LiteDB.
+It copies games.db to a uniquely named temporary file, opens only that copy read-only, selects
+the four most recently played installed/non-hidden games and publishes `games`, `left`, `right`.
+Each record has id, name, ISO last activity, absolute cover path and quoted executable target.
+A locked copy uses the last successful runtime cache. No installation/cache emits empty lists
+and status `unavailable`, with diagnostics on stderr. It never closes Playnite. Portable installs
+can pass `-InstallDir` and `-LibraryDir`. Cache writes honour DESKWALL_HOME.
