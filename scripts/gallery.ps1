@@ -88,8 +88,10 @@ $scenes = [ordered]@{
 $frame = Join-Path $Scratch 'deskwall.jpg'
 $log = Join-Path $Scratch 'gallery-tick.log'
 $rendered = @()
+# "-Only a,b" through powershell.exe -File arrives as one string; split it either way.
+$onlyScenes = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 foreach ($name in $scenes.Keys) {
-    if ($Only.Count -gt 0 -and $Only -notcontains $name) { continue }
+    if ($onlyScenes.Count -gt 0 -and $onlyScenes -notcontains $name) { continue }
     $pins = $baseline + ',' + $scenes[$name]
     $argLine = "--home `"$Scratch`" tick --layout `"$layoutCopy`" --force --no-apply --no-shortcuts --measure --preview `"$pins`""
     if (Test-Path -LiteralPath $frame) { Remove-Item -LiteralPath $frame }

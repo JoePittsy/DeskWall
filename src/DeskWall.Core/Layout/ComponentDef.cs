@@ -57,6 +57,9 @@ public sealed class ImageDef : ComponentDef
     public PropertyValue Fit { get; set; } = PropertyValue.Literal("cover");
     public PropertyValue Radius { get; set; } = PropertyValue.Literal(0);
     public PropertyValue Opacity { get; set; } = PropertyValue.Literal(1);
+    /// <summary>A colour every pixel is multiplied by (RGB by RGB, alpha by A); empty is none. A white
+    /// PNG tinted by a Blend is one asset in any colour.</summary>
+    public PropertyValue Tint { get; set; } = PropertyValue.Literal("");
 }
 
 public sealed class BarDef : ComponentDef
@@ -76,6 +79,12 @@ public sealed class BarDef : ComponentDef
     /// <summary>For a shape: a halo this many px round the lit part, in the fill colour. The path is
     /// inset by it so the halo stays inside Rect.</summary>
     public PropertyValue Glow { get; set; } = PropertyValue.Literal(0);
+    /// <summary>Each of the four glow strokes' share of the glow colour's alpha. 0.12 is a halo you
+    /// have to look for; 0.35 is one you cannot miss.</summary>
+    public PropertyValue GlowStrength { get; set; } = PropertyValue.Literal(0.12);
+    /// <summary>0..1, multiplied into track, fill and glow. Lets a second value (the weather)
+    /// veil a bar whose colours are already bound to a first (the time of day).</summary>
+    public PropertyValue Opacity { get; set; } = PropertyValue.Literal(1);
 }
 
 /// <summary>A thin arc showing one fraction. Same value semantics as <see cref="BarDef"/>; the
@@ -120,6 +129,12 @@ public sealed class LineDef : ComponentDef
     public PropertyValue Stroke { get; set; } = PropertyValue.Literal("#AA9CCBEE");
     public PropertyValue Thickness { get; set; } = PropertyValue.Literal(2);
     public PropertyValue Glow { get; set; } = PropertyValue.Literal(0);
+    /// <summary>The glow's colour; empty is the stroke's.</summary>
+    public PropertyValue GlowColor { get; set; } = PropertyValue.Literal("");
+    /// <summary>Same as the bar's: each glow stroke's share of the glow colour's alpha.</summary>
+    public PropertyValue GlowStrength { get; set; } = PropertyValue.Literal(0.12);
+    /// <summary>With a baseline, the colour of the area under the line; empty is the stroke at 12%.</summary>
+    public PropertyValue AreaFill { get; set; } = PropertyValue.Literal("");
     public PropertyValue Min { get; set; } = PropertyValue.Literal(0);
     public PropertyValue Max { get; set; } = PropertyValue.Literal(1);
     public PropertyValue Baseline { get; set; } = PropertyValue.Literal("false");

@@ -107,11 +107,15 @@ public sealed class FrameRenderer(int width, int height)
             case ResolvedImage i:
                 if (i.Opacity <= 0 || string.IsNullOrWhiteSpace(i.Path)) break;
                 if (!File.Exists(i.Path)) { frame.FillRect(i.Rect, new Color(140, 0, 0, 0), i.Radius); break; }
-                using (var img = Surface.Load(i.Path)) frame.DrawSurface(img, i.Rect, i.Fit, i.Opacity, i.Radius);
+                using (var img = Surface.Load(i.Path))
+                {
+                    if (i.Tint is { } tint) img.Tint(tint);
+                    frame.DrawSurface(img, i.Rect, i.Fit, i.Opacity, i.Radius);
+                }
                 break;
             case ResolvedLine l:
-                if (l.Area is { } area) frame.DrawPath(l.Rect, area, 0, l.Stroke with { A = (byte)(l.Stroke.A * 0.12) }, pad: l.Glow + l.Thickness / 2);
-                if (l.Stroke.A > 0) frame.DrawPath(l.Rect, l.Path, l.Thickness, l.Stroke, pad: l.Glow, glow: l.Glow);
+                if (l.Area is { } area) frame.DrawPath(l.Rect, area, 0, l.AreaFill ?? l.Stroke with { A = (byte)(l.Stroke.A * 0.12) }, pad: l.Glow + l.Thickness / 2);
+                if (l.Stroke.A > 0) frame.DrawPath(l.Rect, l.Path, l.Thickness, l.Stroke, pad: l.Glow, glow: l.Glow, glowColor: l.GlowColor, glowStrength: l.GlowStrength);
                 break;
             case ResolvedBar b:
                 if (b.Track.A == 0 && b.Fill.A == 0 && (b.GlowColor?.A ?? 0) == 0) break;
@@ -122,7 +126,7 @@ public sealed class FrameRenderer(int width, int height)
                 if (b.Shape is { } shape)
                 {
                     if (b.Track.A > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Track, pad: b.Glow);
-                    if (fill.W > 0 && fill.H > 0 && (b.Fill.A > 0 || (b.GlowColor?.A ?? 0) > 0)) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow, b.GlowColor);
+                    if (fill.W > 0 && fill.H > 0 && (b.Fill.A > 0 || (b.GlowColor?.A ?? 0) > 0)) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow, b.GlowColor, b.GlowStrength);
                     break;
                 }
                 frame.FillRect(b.Rect, b.Track);

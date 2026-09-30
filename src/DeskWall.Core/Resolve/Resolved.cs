@@ -50,12 +50,12 @@ public sealed record ResolvedText(string Id, Rect Rect, int Z, string Text, Text
     public override Rect PaintBounds => TextMeasure.PaintBounds(Text, Style, Rect);
 }
 
-public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit Fit, float Radius, float Opacity) : Resolved(Id, Rect, Z)
+public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit Fit, float Radius, float Opacity, Color? Tint = null) : Resolved(Id, Rect, Z)
 {
     // Finding 14: without the file's own mtime, a revalidated cache file (Phase 4's remote image
     // cache keeps the same path across a content refresh) or any cover replaced in place never
     // redraws, because path/fit/radius/opacity are unchanged.
-    public override IEnumerable<string> KeyParts() => [Path, Fit.ToString(), Radius.ToString("R"), Opacity.ToString("R"), MTimeKeyPart()];
+    public override IEnumerable<string> KeyParts() => [Path, Fit.ToString(), Radius.ToString("R"), Opacity.ToString("R"), MTimeKeyPart(), Tint?.ToHex() ?? ""];
 
     private string MTimeKeyPart() => File.Exists(Path) ? File.GetLastWriteTimeUtc(Path).Ticks.ToString() : "missing";
 }
@@ -63,11 +63,11 @@ public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit
 /// <param name="Shape">Parsed path data, or null for the plain box (none given, or unreadable).</param>
 /// <param name="ShapeText">The path data as written, for the content key.</param>
 public sealed record ResolvedBar(string Id, Rect Rect, int Z, double Fraction, Color Track, Color Fill, Axis Direction,
-    PathData? Shape = null, string ShapeText = "", float Thickness = 0, float Glow = 0, Color? GlowColor = null) : Resolved(Id, Rect, Z)
+    PathData? Shape = null, string ShapeText = "", float Thickness = 0, float Glow = 0, Color? GlowColor = null, float GlowStrength = 0.12f) : Resolved(Id, Rect, Z)
 {
     // Fraction is keyed at 0.1 percent: a 172 px bar cannot show finer, and disk free space wobbles below that between reads.
     public override IEnumerable<string> KeyParts() =>
-        [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString(), Shape is null ? "" : ShapeText, Thickness.ToString("R"), Glow.ToString("R"), GlowColor?.ToHex() ?? ""];
+        [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString(), Shape is null ? "" : ShapeText, Thickness.ToString("R"), Glow.ToString("R"), GlowColor?.ToHex() ?? "", GlowStrength.ToString("R")];
 }
 
 /// <summary>A thin arc: Track over the full Sweep, Fill over Sweep * Fraction, both Thickness px
@@ -86,7 +86,8 @@ public sealed record ResolvedShortcut(string Id, Rect Rect, int Z, string Target
 }
 
 public sealed record ResolvedLine(string Id, Rect Rect, int Z, PathData Path, PathData? Area,
-    string Samples, Color Stroke, float Thickness, float Glow) : Resolved(Id, Rect, Z)
+    string Samples, Color Stroke, float Thickness, float Glow, Color? GlowColor = null, float GlowStrength = 0.12f, Color? AreaFill = null) : Resolved(Id, Rect, Z)
 {
-    public override IEnumerable<string> KeyParts() => [Samples, Stroke.ToHex(), Thickness.ToString("R"), Glow.ToString("R"), (Area is not null).ToString()];
+    public override IEnumerable<string> KeyParts() => [Samples, Stroke.ToHex(), Thickness.ToString("R"), Glow.ToString("R"), (Area is not null).ToString(),
+        GlowColor?.ToHex() ?? "", GlowStrength.ToString("R"), AreaFill?.ToHex() ?? ""];
 }

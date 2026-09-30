@@ -122,6 +122,7 @@ public static class ComponentProperties
         new("Fit", c => ((ImageDef)c).Fit, (c, v) => ((ImageDef)c).Fit = v),
         new("Radius", c => ((ImageDef)c).Radius, (c, v) => ((ImageDef)c).Radius = v),
         new("Opacity", c => ((ImageDef)c).Opacity, (c, v) => ((ImageDef)c).Opacity = v),
+        new("Tint", c => ((ImageDef)c).Tint, (c, v) => ((ImageDef)c).Tint = v),
     ];
 
     private static readonly Prop[] LineProps =
@@ -131,6 +132,9 @@ public static class ComponentProperties
         new("Stroke", c => ((LineDef)c).Stroke, (c, v) => ((LineDef)c).Stroke = v),
         new("Thickness", c => ((LineDef)c).Thickness, (c, v) => ((LineDef)c).Thickness = v),
         new("Glow", c => ((LineDef)c).Glow, (c, v) => ((LineDef)c).Glow = v),
+        new("GlowColor", c => ((LineDef)c).GlowColor, (c, v) => ((LineDef)c).GlowColor = v),
+        new("GlowStrength", c => ((LineDef)c).GlowStrength, (c, v) => ((LineDef)c).GlowStrength = v),
+        new("AreaFill", c => ((LineDef)c).AreaFill, (c, v) => ((LineDef)c).AreaFill = v),
         new("Min", c => ((LineDef)c).Min, (c, v) => ((LineDef)c).Min = v),
         new("Max", c => ((LineDef)c).Max, (c, v) => ((LineDef)c).Max = v),
         new("Baseline", c => ((LineDef)c).Baseline, (c, v) => ((LineDef)c).Baseline = v),
@@ -148,6 +152,8 @@ public static class ComponentProperties
         new("Shape", c => ((BarDef)c).Shape, (c, v) => ((BarDef)c).Shape = v),
         new("Thickness", c => ((BarDef)c).Thickness, (c, v) => ((BarDef)c).Thickness = v),
         new("Glow", c => ((BarDef)c).Glow, (c, v) => ((BarDef)c).Glow = v),
+        new("GlowStrength", c => ((BarDef)c).GlowStrength, (c, v) => ((BarDef)c).GlowStrength = v),
+        new("Opacity", c => ((BarDef)c).Opacity, (c, v) => ((BarDef)c).Opacity = v),
     ];
 
     private static readonly Prop[] DialProps =

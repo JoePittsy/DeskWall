@@ -69,6 +69,7 @@ Example:
 | `fit` | `"cover"` | `cover` \| `contain` \| `stretch`. |
 | `radius` | `0` | Corner radius in pixels. |
 | `opacity` | `1` | 0..1. |
+| `tint` | `""` | ARGB colour every pixel is multiplied by (RGB by RGB, alpha by A); empty is none. A white PNG tinted by a blend on `time.dayFraction` is one asset that is red at dawn and gold at noon. Part of the content key. |
 
 ### `bar`
 
@@ -83,6 +84,8 @@ Example:
 | `shape` | `""` | SVG path data (`M L H V C Z`, absolute and relative) drawn instead of the box. Its bounds are stretched to `rect`, so any path works and resizing the bar resizes it. The track is the whole path, the fill the same path clipped to the fraction. Unreadable data draws the plain box. |
 | `thickness` | `0` | With a `shape`: 0 fills it, more strokes it this wide (round caps and joins), inset by half so the ink stays inside `rect`. |
 | `glow` | `0` | With a `shape`: a soft halo this many px round the lit part, in the fill colour (stacked low-alpha strokes, like a text shadow). The path is inset by it too, so inflate `rect` by the glow to keep the line where it was. |
+| `glowStrength` | `0.12` | Each of the four glow strokes' share of the glow colour's alpha, 0..1. 0.12 is a halo you have to look for; 0.3 to 0.45 is one you cannot miss. |
+| `opacity` | `1` | 0..1, multiplied into track, fill and glow colour. A bound opacity that does not resolve hides the bar. Lets the weather veil stars whose colour is already bound to the time of day. |
 
 A shaped bar traced from the base photo's skyline, lit left to right by the volume, is a ridge line
 over the mountains (the `rect` is the path's bounds inflated by half the stroke, so it lands on the
@@ -604,7 +607,9 @@ pixel-identical to the layouts they replace.
 `min`/`max` default to 0/1 and fix the vertical scale; out-of-range samples clamp.
 Non-finite or absent samples are omitted; fewer than two samples draws nothing.
 `stroke` is an ARGB colour, `thickness` defaults to 2 px, `glow` to 0.
-`baseline: true` fills beneath the line at 12% of the stroke alpha.
+`baseline: true` fills beneath the line, in `areaFill` when set and otherwise at 12% of the
+stroke alpha. `glowColor` (blank is the stroke colour) and `glowStrength` (default 0.12, same
+meaning as a bar's) style the halo that `glow` draws.
 The content key includes normalised samples rounded to three decimals and all styling.
 
 ## Bindable geometry

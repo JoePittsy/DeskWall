@@ -88,6 +88,9 @@ public static class PropertyRows
         ["Thickness"] = (Group.Arc, "Stroke width", false),
         ["GlowColor"] = (Group.Colour, "Glow colour", false),
         ["Glow"] = (Group.Arc, "Glow", false),
+        ["GlowStrength"] = (Group.Arc, "Glow strength", false),
+        ["AreaFill"] = (Group.Colour, "Area fill", false),
+        ["Tint"] = (Group.Colour, "Tint", false),
         ["StartAngle"] = (Group.Arc, "Start angle", false),
         ["Sweep"] = (Group.Arc, "Sweep", false),
 

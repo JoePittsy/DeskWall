@@ -30,11 +30,32 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
     private void CurrentChanged(GlobalSystemMediaTransportControlsSessionManager sender, CurrentSessionChangedEventArgs args) => Signal();
     private void MediaChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args) => Signal();
     private void PlaybackChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args) => Signal();
+
+    // (end time, position, when the position was stamped) as of the last refresh.
+    private (TimeSpan End, TimeSpan Position, DateTimeOffset At) _timeline;
+    private bool _timelinePlaying;
+
+    /// <summary>Some apps raise this every second while playing. Only a change the last refresh could
+    /// not have predicted -- a seek, a new duration -- is worth a tick; ordinary forward progress
+    /// is extrapolated at the next refresh any other change causes.</summary>
+    private void TimelineChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args)
+    {
+        try
+        {
+            var t = sender.GetTimelineProperties();
+            if (t is null) return;
+            var (end, position, at) = _timeline;
+            var expected = position + (_timelinePlaying ? t.LastUpdatedTime - at : TimeSpan.Zero);
+            if (t.EndTime != end || Math.Abs((t.Position - expected).TotalSeconds) > 3) Signal();
+        }
+        catch (Exception) { }
+    }
     private void Detach()
     {
         if (_session is null) return;
         _session.MediaPropertiesChanged -= MediaChanged;
         _session.PlaybackInfoChanged -= PlaybackChanged;
+        _session.TimelinePropertiesChanged -= TimelineChanged;
         _session = null;
     }
     public async ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
@@ -60,6 +81,7 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
                 {
                     _session.MediaPropertiesChanged += MediaChanged;
                     _session.PlaybackInfoChanged += PlaybackChanged;
+                    _session.TimelinePropertiesChanged += TimelineChanged;
                 }
             }
             if (_session is null) return Empty();
@@ -94,8 +116,12 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
                     art = _art;
                 }
             }
+            var (position, duration) = Timeline(session, playing);
             return new RecordValue(new Dictionary<string, Value>
             {
+                ["position"] = new NumberValue(position),
+                ["duration"] = new NumberValue(duration),
+                ["progress"] = new NumberValue(duration > 0 ? Math.Clamp(position / duration, 0, 1) : 0),
                 ["title"] = new TextValue(playing ? properties.Title : ""),
                 ["artist"] = new TextValue(playing ? properties.Artist : ""),
                 ["album"] = new TextValue(playing ? properties.AlbumTitle : ""),
@@ -110,8 +136,28 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             _gate.Release();
         }
     }
+    /// <summary>Seconds into the track and its length, the position carried forward from when the
+    /// app last stamped it if it is playing. Zero and zero when the app does not report a timeline.</summary>
+    private (double Position, double Duration) Timeline(GlobalSystemMediaTransportControlsSession session, bool playing)
+    {
+        try
+        {
+            var t = session.GetTimelineProperties();
+            if (t is null) return (0, 0);
+            _timeline = (t.EndTime, t.Position, t.LastUpdatedTime);
+            _timelinePlaying = playing;
+            if (!playing) return (0, 0);
+            var duration = (t.EndTime - t.StartTime).TotalSeconds;
+            if (duration <= 0) return (0, 0);
+            var position = (t.Position - t.StartTime).TotalSeconds;
+            if (t.LastUpdatedTime.Year > 2000) position += Math.Max(0, (DateTimeOffset.Now - t.LastUpdatedTime).TotalSeconds);
+            return (Math.Clamp(position, 0, duration), duration);
+        }
+        catch (Exception) { return (0, 0); }
+    }
     private static RecordValue Empty() => new(new Dictionary<string, Value>
     {
+        ["position"] = new NumberValue(0), ["duration"] = new NumberValue(0), ["progress"] = new NumberValue(0),
         ["title"] = new TextValue(""), ["artist"] = new TextValue(""), ["album"] = new TextValue(""),
         ["playing"] = new BoolValue(false), ["app"] = new TextValue(""), ["art"] = new ImageValue(""),
     });

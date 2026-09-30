@@ -56,7 +56,8 @@ public static class LayoutResolver
                 result.Add(new ResolvedImage(id, rect, def.Z, Paths.ExpandRuntime(PropertyReader.Text(i.Source, scope) ?? ""),
                     PropertyReader.Enum<Fit>(i.Fit, scope) ?? Fit.Cover,
                     (float)(PropertyReader.Number(i.Radius, scope) ?? 0),
-                    (float)(PropertyReader.Number(i.Opacity, scope) ?? 1)));
+                    (float)(PropertyReader.Number(i.Opacity, scope) ?? 1),
+                    PropertyReader.Color(i.Tint, scope)));
                 break;
 
             case LineDef line:
@@ -76,7 +77,10 @@ public static class LayoutResolver
                 result.Add(new ResolvedLine(id, rect, def.Z, path, area, points,
                     PropertyReader.Color(line.Stroke, scope) ?? Color.Parse("#AA9CCBEE"),
                     (float)Math.Clamp(PropertyReader.Number(line.Thickness, scope) ?? 2, 0.1, 100),
-                    (float)Math.Clamp(PropertyReader.Number(line.Glow, scope) ?? 0, 0, 100)));
+                    (float)Math.Clamp(PropertyReader.Number(line.Glow, scope) ?? 0, 0, 100),
+                    PropertyReader.Color(line.GlowColor, scope),
+                    (float)Math.Clamp(PropertyReader.Number(line.GlowStrength, scope) ?? 0.12, 0, 1),
+                    PropertyReader.Color(line.AreaFill, scope)));
                 break;
 
             case BarDef b:
@@ -89,11 +93,16 @@ public static class LayoutResolver
                 PathData? shape = null;
                 // An unreadable path draws the plain box rather than aborting the tick.
                 if (!string.IsNullOrWhiteSpace(shapeText)) try { shape = PathData.Parse(shapeText); } catch (FormatException) { }
+                var bopacity = Math.Clamp(PropertyReader.Number(b.Opacity, scope) ?? (b.Opacity.IsBound ? 0 : 1), 0, 1);
+                var btrack = PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF");
+                var bglow = PropertyReader.Color(b.GlowColor, scope);
                 result.Add(new ResolvedBar(id, rect, def.Z, frac,
-                    PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF"), fill,
+                    btrack with { A = (byte)(btrack.A * bopacity) }, fill with { A = (byte)(fill.A * bopacity) },
                     PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal,
                     shape, shapeText, (float)Math.Max(0, PropertyReader.Number(b.Thickness, scope) ?? 0),
-                    (float)Math.Max(0, PropertyReader.Number(b.Glow, scope) ?? 0), PropertyReader.Color(b.GlowColor, scope)));
+                    (float)Math.Max(0, PropertyReader.Number(b.Glow, scope) ?? 0),
+                    bglow is { } g ? g with { A = (byte)(g.A * bopacity) } : null,
+                    (float)Math.Clamp(PropertyReader.Number(b.GlowStrength, scope) ?? 0.12, 0, 1)));
                 break;
 
             case DialDef dl:

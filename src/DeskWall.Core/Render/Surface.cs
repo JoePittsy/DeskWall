@@ -300,6 +300,29 @@ public sealed unsafe class Surface : IDisposable
         WithLock(LockWrite, r, (ptr, stride) => { for (var y = 0; y < r.H; y++) Marshal.Copy(buf, y * rowBytes, (IntPtr)(ptr + y * stride), rowBytes); });
     }
 
+    /// <summary>Multiply every pixel by <paramref name="tint"/>: colour channels by its RGB, alpha by
+    /// its A. A white disc tinted amber is an amber disc. In place; the pixels are premultiplied, so
+    /// scaling every channel by the tint's alpha as well keeps them valid.</summary>
+    public void Tint(Color tint)
+    {
+        var a = tint.A / 255f;
+        var mr = tint.R / 255f * a; var mg = tint.G / 255f * a; var mb = tint.B / 255f * a;
+        WithLock(LockWrite, new Rect(0, 0, Width, Height), (ptr, stride) =>
+        {
+            for (var y = 0; y < Height; y++)
+            {
+                var p = (byte*)ptr + (long)y * stride;
+                for (var x = 0; x < Width; x++, p += 4)
+                {
+                    p[0] = (byte)(p[0] * mb + 0.5f);
+                    p[1] = (byte)(p[1] * mg + 0.5f);
+                    p[2] = (byte)(p[2] * mr + 0.5f);
+                    p[3] = (byte)(p[3] * a + 0.5f);
+                }
+            }
+        });
+    }
+
     private void WithLock(uint flags, Rect r, Action<IntPtr, int> body)
     {
         ReleaseRenderTarget();   // D2D holds the bitmap while a target exists over it
@@ -441,8 +464,10 @@ public sealed unsafe class Surface : IDisposable
     /// <paramref name="pad"/> insets the path further (room for a glow; the track passes the same so
     /// the two stay aligned), and <paramref name="glow"/> draws that halo: four wider low-alpha
     /// strokes under the line, the same stacked-copies approximation as a text shadow (a true
-    /// Gaussian needs ID2D1DeviceContext; Phase 1 ledger ruling).</summary>
-    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null, float pad = 0, float glow = 0, Color? glowColor = null) => Draw(rt =>
+    /// Gaussian needs ID2D1DeviceContext; Phase 1 ledger ruling). <paramref name="glowStrength"/> is
+    /// each stroke's share of the glow colour's alpha; four stack, so 0.12 gives about 40% at the
+    /// line and 0.35 about 82%.</summary>
+    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null, float pad = 0, float glow = 0, Color? glowColor = null, float glowStrength = 0.12f) => Draw(rt =>
     {
         var (x0, y0, x1, y1) = path.Bounds;
         var inset = thickness / 2f + pad;
@@ -489,7 +514,7 @@ public sealed unsafe class Surface : IDisposable
             if (glow > 0)
             {
                 var halo = glowColor ?? c;
-                var soft = Brush(rt, halo with { A = (byte)(halo.A * 0.12) });
+                var soft = Brush(rt, halo with { A = (byte)Math.Clamp(halo.A * glowStrength, 0, 255) });
                 try
                 {
                     for (var k = 4; k >= 1; k--)

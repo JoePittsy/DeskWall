@@ -538,8 +538,13 @@ oldest-first lists of `{ "v": fraction }`, rounded to three decimals. Empty unti
 ## `media`
 
 Windows global media session, event-driven (`ISignalSource`), no polling. Publishes `title`,
-`artist`, `album`, `playing`, `app`, and `art` (`ImageValue`). Paused or absent playback has
-empty display fields. Thumbnail bytes are hashed; only changed art is decoded to PNG under
+`artist`, `album`, `playing`, `app`, and `art` (`ImageValue`), plus `position` and `duration`
+(seconds) and `progress` (0..1, position over duration; 0 when the app reports no duration).
+Position is extrapolated from the timeline's last update while playing. The source still only
+refreshes on events: a track change, play/pause, a seek of more than 3 s, or a changed end time
+(`TimelinePropertiesChanged` fires every few seconds on some apps, so smaller moves are
+ignored). A progress bar therefore jumps on those events rather than creeping every minute.
+Paused or absent playback has empty display fields. Thumbnail bytes are hashed; only changed art is decoded to PNG under
 `runtime/media/art.png`. Thumbnails above 8 MB are omitted. Subscriptions are removed on disposal.
 Windows SDK projections compiled successfully under native AOT in the spike.
 
@@ -557,4 +562,5 @@ can pass `-InstallDir` and `-LibraryDir`. Cache writes honour DESKWALL_HOME.
 
 The alpine layout uses `scripts/tailscale-lights.ps1` as a five-minute command recipe. It emits
 `peers` containing one record per online peer while the backend is Running, otherwise an empty
-list, plus `status`. The layout draws up to 18 valley lights from that list.
+list, plus `status` and `count` (the number of online peers, so a text can say "3 peers online"
+without counting the list). The layout draws a light per online peer from that list.
