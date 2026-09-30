@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Recent games (Hearth)",
+  "description": "Covers for the most recently played games from Hearth's feed; no Steam key needed. Each cover is a click-to-launch shortcut.",
+  "size": [504, 180],
+  "requires": "Needs Hearth (the owner's Playnite add-on) installed and writing %LOCALAPPDATA%\\DeskWall\\feeds\\hearth-recent.json (docs/superpowers/plans/2026-09-30-hearth-feed-spec.md)",
+  "sources": [
+    { "name": "hearth", "type": "file", "every": 300, "settings": {
+        "path": "runtime:feeds/hearth-recent.json", "parse": "json" } }
+  ],
+  "components": [
+    { "type": "repeater", "id": "games", "rect": [0, 0, 504, 180], "z": 1,
+      "items": { "bind": "hearth.json.games" }, "axis": "horizontal", "gap": 8, "cellHeight": 120,
+      "template": [
+        { "type": "image", "id": "cover", "rect": [0, 0, 120, 180], "radius": 8,
+          "source": { "bind": "cover" } },
+        { "type": "shortcut", "id": "play", "rect": [0, 0, 120, 180], "slot": 8,
+          "target": { "bind": "launch" }, "tooltip": { "bind": "name | \"Play {0}\"" } }
+      ] }
+  ],
+  "knobs": [
+    { "id": "count", "label": "Count", "type": "choice", "default": "4||504",
+      "choices": [ "1||120", "2||248", "3||376", "4||504", "5||632", "6||760", "7||888", "8||1016" ],
+      "sets": [ "components.games.w" ] }
+  ]
+}

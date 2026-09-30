@@ -361,6 +361,28 @@ This is the seam Hearth (the owner's Playnite add-on) is expected to feed throug
 a JSON or RSS-shaped file, a `file` source in the layout reads it, no Playnite- or LiteDB-specific
 code exists in DeskWall itself (spec 4.3).
 
+### Recipe: Hearth recently-played games
+
+Hearth writes `%LOCALAPPDATA%\DeskWall\feeds\hearth-recent.json` (atomically, temp + rename) on
+any game start/stop or library change -- the 8 most recent installed, non-hidden games, Steam
+sessions merged from `localconfig.vdf` the way `poc/data.ps1` does it, because Playnite never
+records those itself. Full feed schema, the exact merge rule and error handling:
+`docs/superpowers/plans/2026-09-30-hearth-feed-spec.md`.
+
+```json
+{ "name": "hearth", "type": "file", "every": 300,
+  "settings": { "path": "runtime:feeds/hearth-recent.json", "parse": "json" } }
+```
+
+`every` only bounds the retry after a failure (30 s floor, above); the watcher makes an edit
+reach the wallpaper in about a second regardless. Publishes `hearth.json.games`, a list of at
+most 8 items (`id`, `name`, `lastPlayed`, `cover`, `installed`, `playtimeMinutes`, `launch`) plus
+`hearth.json.writtenAt`. Before Hearth has ever run, the file does not exist and the source
+throws -- same as any other `file` source, spec 3.2 -- so a bound component draws its own
+fallback rather than a blank list. The `recent-games` widget (`layouts/widgets/recent-games.json`,
+`layouts/README.md` "Recent games (Hearth)") is this recipe already wired to a repeater of covers
+and shortcuts; use it directly rather than re-declaring the source by hand.
+
 ## Remote images
 
 An `image` component (or a repeater template's image child) may bind `source` to an `http(s)`
