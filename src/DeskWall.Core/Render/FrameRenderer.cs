@@ -87,11 +87,17 @@ public sealed class FrameRenderer(int width, int height)
                 using (var img = Surface.Load(i.Path)) frame.DrawSurface(img, i.Rect, i.Fit, i.Opacity, i.Radius);
                 break;
             case ResolvedBar b:
-                frame.FillRect(b.Rect, b.Track);
                 var f = Math.Clamp(b.Fraction, 0, 1);
                 var fill = b.Direction == Axis.Horizontal
                     ? new Rect(b.Rect.X, b.Rect.Y, (int)Math.Round(b.Rect.W * f), b.Rect.H)
                     : new Rect(b.Rect.X, b.Rect.Bottom - (int)Math.Round(b.Rect.H * f), b.Rect.W, (int)Math.Round(b.Rect.H * f));
+                if (b.Shape is { } shape)
+                {
+                    frame.DrawPath(b.Rect, shape, b.Thickness, b.Track);
+                    if (fill.W > 0 && fill.H > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill);
+                    break;
+                }
+                frame.FillRect(b.Rect, b.Track);
                 if (fill.W > 0 && fill.H > 0) frame.FillRect(fill, b.Fill);
                 break;
             case ResolvedDial d:

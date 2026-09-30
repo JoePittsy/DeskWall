@@ -65,9 +65,14 @@ public static class LayoutResolver
                 var fill = frac >= threshold
                     ? PropertyReader.Color(b.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
                     : PropertyReader.Color(b.Fill, scope) ?? Color.Parse("#EBFFFFFF");
+                var shapeText = PropertyReader.Text(b.Shape, scope) ?? "";
+                PathData? shape = null;
+                // An unreadable path draws the plain box rather than aborting the tick.
+                if (!string.IsNullOrWhiteSpace(shapeText)) try { shape = PathData.Parse(shapeText); } catch (FormatException) { }
                 result.Add(new ResolvedBar(id, rect, def.Z, frac,
                     PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF"), fill,
-                    PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal));
+                    PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal,
+                    shape, shapeText, (float)Math.Max(0, PropertyReader.Number(b.Thickness, scope) ?? 0)));
                 break;
 
             case DialDef dl:

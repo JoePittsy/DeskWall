@@ -434,6 +434,67 @@ public sealed unsafe class Surface : IDisposable
         finally { if (sink is not null) sink->Release(); if (geo is not null) geo->Release(); brush->Release(); }
     });
 
+    /// <summary>Draw <paramref name="path"/> with its bounds stretched to <paramref name="r"/>:
+    /// filled when <paramref name="thickness"/> is 0, else stroked that wide (round joins and caps),
+    /// inset by half the stroke so the ink stays inside the box the dirty-rect redraw clears. With
+    /// <paramref name="clip"/>, only the part inside it is drawn: a shaped bar's fill.</summary>
+    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null) => Draw(rt =>
+    {
+        var (x0, y0, x1, y1) = path.Bounds;
+        var inset = thickness / 2f;
+        var sx = x1 > x0 ? (r.W - thickness) / (x1 - x0) : 0;
+        var sy = y1 > y0 ? (r.H - thickness) / (y1 - y0) : 0;
+        D2D_POINT_2F P(float x, float y) => new() { x = r.X + inset + (x - x0) * sx, y = r.Y + inset + (y - y0) * sy };
+        var brush = Brush(rt, c);
+        ID2D1PathGeometry* geo = null; ID2D1GeometrySink* sink = null; ID2D1StrokeStyle* style = null;
+        var clipped = false;
+        try
+        {
+            s_d2d->CreatePathGeometry(&geo);
+            geo->Open(&sink);
+            foreach (var f in path.Figures)
+            {
+                sink->BeginFigure(P(f.X, f.Y), thickness > 0 ? D2D1_FIGURE_BEGIN.D2D1_FIGURE_BEGIN_HOLLOW : D2D1_FIGURE_BEGIN.D2D1_FIGURE_BEGIN_FILLED);
+                foreach (var s in f.Segments)
+                {
+                    if (s is PathData.Line l) sink->AddLine(P(l.X, l.Y));
+                    else if (s is PathData.Cubic b)
+                    {
+                        var bz = new D2D1_BEZIER_SEGMENT { point1 = P(b.X1, b.Y1), point2 = P(b.X2, b.Y2), point3 = P(b.X, b.Y) };
+                        sink->AddBezier(&bz);
+                    }
+                }
+                sink->EndFigure(f.Closed ? D2D1_FIGURE_END.D2D1_FIGURE_END_CLOSED : D2D1_FIGURE_END.D2D1_FIGURE_END_OPEN);
+            }
+            sink->Close();
+            if (clip is { } cr)
+            {
+                var rf = ToD2D(cr);
+                rt->PushAxisAlignedClip(&rf, D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                clipped = true;
+            }
+            if (thickness <= 0) rt->FillGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, null);
+            else
+            {
+                var props = new D2D1_STROKE_STYLE_PROPERTIES
+                {
+                    startCap = D2D1_CAP_STYLE.D2D1_CAP_STYLE_ROUND, endCap = D2D1_CAP_STYLE.D2D1_CAP_STYLE_ROUND,
+                    dashCap = D2D1_CAP_STYLE.D2D1_CAP_STYLE_ROUND, lineJoin = D2D1_LINE_JOIN.D2D1_LINE_JOIN_ROUND,
+                };
+                s_d2d->CreateStrokeStyle(&props, null, 0, &style);
+                rt->DrawGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, thickness, style);
+            }
+        }
+        finally
+        {
+            if (clipped) rt->PopAxisAlignedClip();
+            if (style is not null) style->Release();
+            if (sink is not null) sink->Release();
+            if (geo is not null) geo->Release();
+            brush->Release();
+        }
+    });
+
     private static D2D_POINT_2F Point(float cx, float cy, float radius, float deg)
     {
         var rad = (deg - 90) * Math.PI / 180;   // 0 deg = 12 o'clock, clockwise

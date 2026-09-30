@@ -96,6 +96,8 @@ public static class ComponentProperties
         new("Threshold", c => ((BarDef)c).Threshold, (c, v) => ((BarDef)c).Threshold = v),
         new("ThresholdFill", c => ((BarDef)c).ThresholdFill, (c, v) => ((BarDef)c).ThresholdFill = v),
         new("Direction", c => ((BarDef)c).Direction, (c, v) => ((BarDef)c).Direction = v),
+        new("Shape", c => ((BarDef)c).Shape, (c, v) => ((BarDef)c).Shape = v),
+        new("Thickness", c => ((BarDef)c).Thickness, (c, v) => ((BarDef)c).Thickness = v),
     ];
 
     private static readonly Prop[] DialProps =

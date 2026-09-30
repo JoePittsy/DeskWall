@@ -80,6 +80,15 @@ Example:
 | `threshold` | `1` | At or above this fraction, `thresholdFill` is used instead of `fill`. |
 | `thresholdFill` | `"#D13438"` | |
 | `direction` | `"horizontal"` | `horizontal` \| `vertical`. |
+| `shape` | `""` | SVG path data (`M L H V C Z`, absolute and relative) drawn instead of the box. Its bounds are stretched to `rect`, so any path works and resizing the bar resizes it. The track is the whole path, the fill the same path clipped to the fraction. Unreadable data draws the plain box. |
+| `thickness` | `0` | With a `shape`: 0 fills it, more strokes it this wide (round caps and joins), inset by half so the ink stays inside `rect`. |
+
+A shaped bar traced from the base photo's skyline, lit left to right by the volume, is a ridge line
+over the mountains (the `rect` is the path's bounds inflated by half the stroke, so it lands on the
+photo exactly):
+
+    { "type": "bar", "fraction": { "bind": "audio.volume" }, "shape": "M0,90 L22,80 ...",
+      "thickness": "3", "track": "#55FFFFFF", "threshold": "2", "rect": [-2, 355, 3443, 467] }
 
 Threshold colouring is a component property, not something a binding expression computes; the
 spec deliberately keeps bindings free of conditionals (spec 4.2).

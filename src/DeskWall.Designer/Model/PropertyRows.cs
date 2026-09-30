@@ -82,6 +82,7 @@ public static class PropertyRows
         ["Fit"] = (Group.Geometry, "Fit", false),
         ["Radius"] = (Group.Geometry, "Corner radius", false),
         ["Direction"] = (Group.Geometry, "Direction", false),
+        ["Shape"] = (Group.Geometry, "Path shape", false),
         ["Axis"] = (Group.Geometry, "Direction", false),
         ["Gap"] = (Group.Geometry, "Gap", false),
         ["CellHeight"] = (Group.Geometry, "Cell height", false),
