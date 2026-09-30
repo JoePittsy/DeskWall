@@ -84,7 +84,7 @@ public static class LayoutResolver
                 var threshold = PropertyReader.Number(b.Threshold, scope) ?? 1;
                 var fill = frac >= threshold
                     ? PropertyReader.Color(b.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
-                    : PropertyReader.Color(b.Fill, scope) ?? Color.Parse("#EBFFFFFF");
+                    : PropertyReader.Color(b.Fill, scope) ?? (b.Fill.IsBound ? Color.Transparent : Color.Parse("#EBFFFFFF"));
                 var shapeText = PropertyReader.Text(b.Shape, scope) ?? "";
                 PathData? shape = null;
                 // An unreadable path draws the plain box rather than aborting the tick.

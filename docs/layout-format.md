@@ -617,3 +617,6 @@ Display scaling and designer zoom apply after binding resolution through retaine
 The designer geometry rows accept bindings just like colour and size.
 
 Shaped bars also accept `glowColor`; blank defaults to their fill colour.
+
+An unresolved bound bar fill is transparent, so absent weather or temperature data cannot
+turn a conditional full-screen overlay opaque. Literal fill defaults are unchanged.
