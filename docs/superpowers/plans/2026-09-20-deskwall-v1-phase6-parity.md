@@ -236,7 +236,17 @@ Lane `lane/p6-docs` complete.
   **Prepared, not merged:** the last commit on `spike/parity-gate` is exactly this, labelled
   "Retire the PowerShell POC (merge only after the JOES-PC parity runbook passes)". Fill in the
   date when merging (runbook R7).
-- [ ] Opus whole-branch review of Phases 2 to 6 changes (one agent), ONE fix wave, re-review.
+- [x] Opus whole-branch review of Phases 2 to 6 changes (one agent), ONE fix wave, re-review.
+  *Evidence (scope: this branch's phase 6 work, d212413..0d93bc9; phases 2 to 5 were reviewed in
+  their own phases):* the review found no code bugs and four problems, all in this plan's runbook
+  or exposed by it. First, nothing re-placed the icons after an Explorer restart. Second, R0 could
+  delete `poc\` under the running POC task. Third, R4's log grep had no time bound. Fourth, the
+  `dw` helper's exit line leaked into the `--json` output. The one fix wave, a7bc8c4, adds the
+  forced, delayed `ExplorerRestarted` wake (new TickPlan test, a live scratch-daemon tick) and
+  fixes the runbook. The re-review of a7bc8c4 found the code sound. It raised two runbook points:
+  R0's `~1` would miss a7bc8c4, and it mixed relative paths. Both are fixed in the next commit:
+  R0 now finds the Retire commit by its subject, checks it has a7bc8c4, and uses absolute paths.
+  No further wave.
 - [ ] Tag `v1.0.0-rc1` on `v1`. Merging `v1` into a `main` branch is Joe's call (finishing-a-development-branch).
   **Not done:** there is no `v1` branch any more (`main` is the integration branch), and the
   gate is not closed. Tag `main` after the merge, if Joe wants it.
@@ -281,15 +291,20 @@ function dw { $o = "$env:TEMP\dw-o.txt"; $e = "$env:TEMP\dw-e.txt"
 **R0. Get the branch without disturbing the POC.** The `DeskWall Tick` task runs `poc\` from
 the owner's main checkout, and the branch's last commit deletes `poc\`, so never switch that
 checkout to the branch before R6. On JOES-XPS-17, push it once:
-`git push -u origin spike/parity-gate`. Then on JOES-PC, in a separate worktree at the commit
-before the POC deletion:
+`git push -u origin spike/parity-gate`. Then on JOES-PC, in a separate worktree at the parent
+of the POC-retire commit (found by subject, so later commits cannot shift it):
 
 ```powershell
 (Get-ScheduledTask 'DeskWall Tick').Actions      # note which checkout the POC runs from (<POC checkout> in R2)
-git -C <main checkout> fetch origin
-git -C <main checkout> worktree add ..\DeskWall-parity origin/spike/parity-gate~1
-cd ..\DeskWall-parity
-git log -1 --format=%s                           # must NOT be "Retire the PowerShell POC ..."
+$main = '<main checkout>'                        # e.g. D:\Source\Personal\DeskWall
+$wt   = Join-Path (Split-Path $main) 'DeskWall-parity'
+git -C $main fetch origin
+$retire = git -C $main log origin/spike/parity-gate --format=%H -1 --grep '^Retire the PowerShell POC'
+if (-not $retire) { throw 'no Retire commit on origin/spike/parity-gate: stop and ask' }
+git -C $main worktree add $wt "$retire~1"
+cd $wt
+Test-Path poc                                    # must be True
+git merge-base --is-ancestor a7bc8c4 HEAD; $LASTEXITCODE   # must be 0 (has the Explorer-restart fix)
 dotnet build            # expect 0 warnings
 dotnet test             # expect all green (2026-09-30 on the XPS: 522 Core, 595 Designer)
 ```
@@ -377,7 +392,7 @@ dw install
 **R7. Merge.** Tick the four master-plan boxes and this plan's Task 7 items with the evidence
 above, put the date into the POC commit's subject ("v1 reached parity on <date>"), merge
 `spike/parity-gate` into `main`, and only then update the main checkout (its `poc\` goes away,
-which is fine now the task is unregistered). `git worktree remove ..\DeskWall-parity`.
+which is fine now the task is unregistered), then `git -C $main worktree remove $wt`.
 
 ## Self-review notes
 
