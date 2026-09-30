@@ -69,8 +69,9 @@ public static class Snap
         if (Model.Resize.MovesTop(handle)) top = Edge(top, ys, threshold, out gy);
         if (Model.Resize.MovesBottom(handle)) bottom = Edge(bottom, ys, threshold, out gy);
 
-        var w = Math.Max(Model.Resize.MinSize, right - left);
-        var h = Math.Max(Model.Resize.MinSize, bottom - top);
+        // As in Resize.Box: only a moved axis is floored, or a 6 px bar's end grip thickens it.
+        var w = Model.Resize.MovesLeft(handle) || Model.Resize.MovesRight(handle) ? Math.Max(Model.Resize.MinSize, right - left) : box.W;
+        var h = Model.Resize.MovesTop(handle) || Model.Resize.MovesBottom(handle) ? Math.Max(Model.Resize.MinSize, bottom - top) : box.H;
         if (Model.Resize.IsCorner(handle) && start.W > 0 && start.H > 0 && (gx is not null || gy is not null))
         {
             var ratio = start.W / (double)start.H;

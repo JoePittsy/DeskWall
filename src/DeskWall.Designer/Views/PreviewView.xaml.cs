@@ -482,15 +482,18 @@ public partial class PreviewView : UserControl
 
     /// <summary>Which grips are worth showing at this zoom. All eight round a widget shrunk to
     /// forty screen pixels would be a row of touching squares with no box left between them, so
-    /// the edge grips appear only when their side is long enough to hold one clear of the corners,
-    /// and below about twice a grip the box gets none at all and has to be zoomed in on to scale.
-    /// The corners are the ones that matter, so they are the ones that survive longest.</summary>
+    /// the edge grips appear only when their side is long enough to hold one clear of the corners.
+    /// A box thinner than about twice a grip (a bar, a few pixels tall at any zoom that shows the
+    /// layout) has no corners, but keeps the grips at its two ends, so its length still scales on
+    /// the canvas; its thickness is the properties panel's, since a grip across it would sit on the
+    /// bar and take the move. A box small both ways gets none and has to be zoomed in on.</summary>
     private static IEnumerable<Handle> VisibleHandles(Rect box)
     {
-        if (box.Width < HandleSize * 2 || box.Height < HandleSize * 2) yield break;
-        foreach (var corner in Corners) yield return corner;
-        if (box.Width >= HandleSize * 5) { yield return Handle.Top; yield return Handle.Bottom; }
-        if (box.Height >= HandleSize * 5) { yield return Handle.Left; yield return Handle.Right; }
+        var wide = box.Width >= HandleSize * 2;
+        var tall = box.Height >= HandleSize * 2;
+        if (wide && tall) foreach (var corner in Corners) yield return corner;
+        if (tall && (box.Width >= HandleSize * 5 || !wide)) { yield return Handle.Top; yield return Handle.Bottom; }
+        if (wide && (box.Height >= HandleSize * 5 || !tall)) { yield return Handle.Left; yield return Handle.Right; }
     }
 
     private static Point HandleCentre(Rect box, Handle handle) => handle switch

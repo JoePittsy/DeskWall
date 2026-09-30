@@ -90,8 +90,9 @@ public static class Resize
             if (MovesBottom(handle)) bottom = Placement.Snap(bottom, spacing);
         }
 
-        var w = Math.Max(MinSize, right - left);
-        var h = Math.Max(MinSize, bottom - top);
+        // Only the axis the handle moves is floored: a 6 px bar's end grip must not thicken it to 8.
+        var w = MovesLeft(handle) || MovesRight(handle) ? Math.Max(MinSize, right - left) : start.W;
+        var h = MovesTop(handle) || MovesBottom(handle) ? Math.Max(MinSize, bottom - top) : start.H;
 
         if (IsCorner(handle) && start.W > 0 && start.H > 0)
         {

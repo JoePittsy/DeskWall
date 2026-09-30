@@ -23,6 +23,16 @@ public class ResizeTests
         Assert.Equal(new Rect(100, 100, 200, 130), Resize.Box(Start, Handle.Bottom, 50, 30, null));
     }
 
+    /// <summary>A bar is thinner than the minimum size; lengthening it by its end grip must leave its
+    /// thickness alone rather than floor it.</summary>
+    [Fact]
+    public void An_Edge_Grip_Does_Not_Floor_The_Axis_It_Does_Not_Move()
+    {
+        var bar = new Rect(100, 100, 120, 6);
+        Assert.Equal(new Rect(100, 100, 244, 6), Resize.Box(bar, Handle.Right, 120, 0, 8));   // 340 snaps to 344
+        Assert.Equal(new Rect(100, 100, 6, 204), Resize.Box(new Rect(100, 100, 6, 120), Handle.Bottom, 0, 80, 8));   // 300 snaps to 304
+    }
+
     [Fact]
     public void An_Edge_Grip_Does_Not_Hold_The_Ratio()
     {
