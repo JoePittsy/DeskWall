@@ -75,10 +75,23 @@ public static class Verifier
 }
 ```
 
-- [ ] **Step 1: Failing tests** (`CheckSlot` on synthetic 200x300 surfaces: arrow at exact pad -> Ok, LeftPad 5, BottomPad 5; arrow 1 px off -> not Ok with pads 6/5; no diff -> Ok false with Note "NO ICON FOUND"; JPEG-noise blip below threshold ignored).
-- [ ] **Step 2: Implement.** `Run` resolves the layout via `LayoutStore.Default().Resolve(primary.Signature)`, resolves components with the current source values (`TickRunner`'s registry is not available: build a fresh `SourceRegistry`, refresh every source once with a 5 s timeout), takes `LastShortcuts`-equivalent from the resolved list, computes `wanted` via `ShortcutPlan.IconPosition` with `Calibration.Load()`, reads `got` via `DesktopView.GetPosition`, uses `MinimizeAll`/`UndoMinimizeALL` as `Calibrator` does, `Screenshot.Capture(primary.Bounds)`, `Surface.LoadRaw(frame.raw)`.
+- [x] **Step 1: Failing tests** (`CheckSlot` on synthetic 200x300 surfaces: arrow at exact pad -> Ok, LeftPad 5, BottomPad 5; arrow 1 px off -> not Ok with pads 6/5; no diff -> Ok false with Note "NO ICON FOUND"; JPEG-noise blip below threshold ignored).
+  *Evidence:* `tests/DeskWall.Core.Tests/Verify/VerifierTests.cs` (2fde8d1; box-size check a034712;
+  `FindClock` cases d212413). 2026-09-30: `dotnet test --filter FullyQualifiedName~VerifierTests`
+  19 passed.
+- [x] **Step 2: Implement.** `Run` resolves the layout via `LayoutStore.Default().Resolve(primary.Signature)`, resolves components with the current source values (`TickRunner`'s registry is not available: build a fresh `SourceRegistry`, refresh every source once with a 5 s timeout), takes `LastShortcuts`-equivalent from the resolved list, computes `wanted` via `ShortcutPlan.IconPosition` with `Calibration.Load()`, reads `got` via `DesktopView.GetPosition`, uses `MinimizeAll`/`UndoMinimizeALL` as `Calibrator` does, `Screenshot.Capture(primary.Bounds)`, `Surface.LoadRaw(frame.raw)`.
+  *Evidence:* 2fde8d1; 413938b (MinimizeAll never ran: fixed); d212413 finished it on
+  2026-09-30. Two gaps closed there: the clock crop was never written for v2 layouts (the clock
+  is `clock-1.clock`, verify looked for exactly `clock`), and hidden desktop icons read as
+  "NO ICON FOUND" on every slot instead of saying why. Exit codes as shipped: 0 OK, 4 any slot
+  failed or no shortcut components (no false green), 1 cannot run (no `frame.raw`, frame not the
+  monitor's size, icons hidden). Live on JOES-XPS-17, scratch home, 3440x1440: `clock-now.png`,
+  `verify-desktop.png` and `verify-log.txt` written; `clock-disks.json` (no shortcuts) exit 4;
+  a scratch layout with one shortcut exit 1 "desktop icons are hidden" (this machine's folder
+  view reports unavailable).
 - [ ] **Step 3: Live run** on JOES-PC (console session, 3440x1440) with `layouts/steam-recent.json` active and the daemon running: expected `left pad 5, bottom pad 5` on every slot, `RESULT: OK`. Paste the text report into the lane report; keep `verify-desktop.png` and `clock-now.png` in the runtime dir.
-- [ ] **Step 4: Commit** `git commit -m "verify: screenshot vs composed frame, arrow padding per slot, clock crop"`
+  **TO RUN ON JOES-PC:** runbook R2 below.
+- [x] **Step 4: Commit** (2fde8d1, same message; follow-ups a034712, 413938b, d212413, 13d4293) `git commit -m "verify: screenshot vs composed frame, arrow padding per slot, clock crop"`
 
 ---
 
@@ -104,9 +117,17 @@ Log the actual numbers with `ITestOutputHelper` and write them to
 `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` under `## Phase 6 budget results`
 (the harness prints a markdown row; the lane pastes it).
 
-- [ ] **Step 1:** runsettings excludes the trait; `dotnet test` count unchanged; `dotnet test --filter Category=Budget` runs five tests (skipped without the exe).
-- [ ] **Step 2:** run on JOES-PC after `dotnet publish -c Release -r win-x64`; paste results. Any failing line is a finding for the controller, not something to loosen.
-- [ ] **Step 3: Commit** `git commit -m "Budget tests: AOT daemon footprint and tick cost against spec 1.2"`
+- [x] **Step 1:** runsettings excludes the trait; `dotnet test` count unchanged; `dotnet test --filter Category=Budget` runs five tests (skipped without the exe).
+  *Evidence:* f275cba. 2026-09-30: plain `dotnet test` ran 518 Core + 591 Designer, no budget
+  test among them; `--filter Category=Budget` ran exactly five.
+- [x] **Step 2:** run on JOES-PC after `dotnet publish -c Release -r win-x64`; paste results. Any failing line is a finding for the controller, not something to loosen.
+  *Evidence:* JOES-PC 2026-09-21 (826453c, d71d787) and JOES-XPS-17 2026-09-30 (c2be4c8), both
+  in `2026-09-20-phase1-spike-results.md` "Phase 6 budget results". Three rows OK on both
+  machines; `Idle_Handles_And_Threads` and `ClockOnly_Tick_Wall_And_Cpu` OVER on both. The
+  2026-09-30 pass attributes them to the resident graphics stack and the Windows thread pool
+  (not tunable by swapping pools: measured) and hands them to the owner as an architecture
+  decision. See "Parity gate status" below.
+- [x] **Step 3: Commit** (f275cba, same message) `git commit -m "Budget tests: AOT daemon footprint and tick cost against spec 1.2"`
 
 Lane `lane/p6-verify` complete.
 
@@ -130,9 +151,15 @@ and on failure writes `<name>.actual.png` and `<name>.diff.png` next to the gold
 `GOLDENS_UPDATE=1` in the environment rewrites the goldens instead of comparing (documented in the
 test file header; never set in CI).
 
-- [ ] **Step 1:** write the four layouts and `Compare`; generate goldens with `GOLDENS_UPDATE=1`; commit them with the message stating the renderer commit they were made from.
-- [ ] **Step 2:** deliberately change a colour in a layout, see the test fail and the diff PNG appear, revert.
-- [ ] **Step 3: Commit** `git commit -m "Golden-image tests for text, bars, images and repeaters"`
+- [x] **Step 1:** write the four layouts and `Compare`; generate goldens with `GOLDENS_UPDATE=1`; commit them with the message stating the renderer commit they were made from.
+  *Evidence:* 0d477df (four goldens), 136c217 (a fifth, `dial`).
+- [x] **Step 2:** deliberately change a colour in a layout, see the test fail and the diff PNG appear, revert.
+  *Evidence (re-proven 2026-09-30):* `"fill": "#FFFF0000"` on the half bar in
+  `Goldens/layouts/bar-states.json` -> `GoldenTests.Bar_States` failed with "11700 of 309600
+  pixels differ ... bounds X=40,Y=110,W=390,H=30" and wrote `bar-states.actual.png` and
+  `bar-states.diff.png` beside the golden in the test output folder. Reverted; all 5 golden
+  tests pass; tree clean.
+- [x] **Step 3: Commit** (0d477df, same message) `git commit -m "Golden-image tests for text, bars, images and repeaters"`
 
 ---
 
@@ -145,7 +172,10 @@ only real-desktop coverage) but give each a `[Trait("Category", "Desktop")]` and
 without a desktop session reports skipped, not failed. Also add the missing corrupt-`.lnk` test
 for `ShortcutFiles.Read` (Phase 3 deferred minor).
 
-- [ ] Commit `git commit -m "Tests: desktop-bound tests skip without a desktop; corrupt .lnk read test"`
+- [x] Commit `git commit -m "Tests: desktop-bound tests skip without a desktop; corrupt .lnk read test"`
+  *Evidence:* 7103543, same message. `[Trait("Category", "Desktop")]` on the WallpaperSetter,
+  DisplaySignature and Disks tests (and later desktop-bound ones);
+  `ShortcutFilesTests.Read_Corrupt_Lnk_Returns_Null`.
 
 Lane `lane/p6-tests` complete.
 
@@ -162,7 +192,11 @@ Rules: no marketing adjectives; every number comes from a measurement file; ever
 was run. The layout-format doc is generated by hand from `ComponentDef.cs`, `PropertySchema.cs`
 and the JSON tests, and each property's default is the one in the code.
 
-- [ ] Commit `git commit -m "Docs: README for v1, layout format, sources, architecture; CLAUDE.md restructured"`
+- [x] Commit `git commit -m "Docs: README for v1, layout format, sources, architecture; CLAUDE.md restructured"`
+  *Evidence:* 276d16f, same message; kept current since (989b316 for layout format v2). The
+  verify text was still the plan's, not the shipped command's; 13d4293 rewrote README "Verify",
+  the architecture paragraph and runtime-file rows, and the two "in progress" notes in CLAUDE.md
+  from the code and the 2026-09-30 runs. Budget numbers: c2be4c8.
 
 ---
 
@@ -173,7 +207,16 @@ Reconcile `layouts/` with what Phase 5 shipped: `starter-column.json`, `starter-
 and rendering with `deskwall tick --layout <file> --force --no-apply` on the ultrawide signature.
 `layouts/README.md` lists them all with one sentence each and the secrets section.
 
-- [ ] Commit `git commit -m "layouts: starters reconciled with the designer; README"`
+- [x] Commit `git commit -m "layouts: starters reconciled with the designer; README"`
+  *Evidence:* the `starter-*.json` names were superseded before this task ran: Phase 5 and the
+  v2 format shipped `clock-disks`, `steam-recent` and `column-system` as generated starters
+  (`StarterGeneratorTests` pins them), plus the hand-authored `alpine-vision`. 58c6c89 adds
+  `RepoLayoutsTests` (every `layouts/*.json` opens as a `DesignerModel` on the 3440x1440 canvas
+  and previews with no expansion problems: 4 passed) and lists `alpine-vision.json` in
+  `layouts/README.md`. Rendered 2026-09-30 with the AOT exe, `tick --layout <file> --force
+  --measure --no-apply --no-shortcuts`, scratch home, DELA243 3440x1440, all exit 0:
+  alpine-vision 696 ms / 438 ms CPU (31 components), clock-disks 328 / 219 (7), column-system
+  313 / 141 (22), steam-recent 122 / 125 (7; no Steam secrets in the scratch home).
 
 Lane `lane/p6-docs` complete.
 
@@ -185,11 +228,195 @@ Lane `lane/p6-docs` complete.
   starter column reproduces the POC column and `deskwall verify` reports 5/5 on every cover;
   budget table passes under AOT; the spec section 9 manual acceptance list walked; the daemon has
   run 24 hours with zero tick failures in `deskwall.log`.
+  **Status 2026-09-30:** not closable from JOES-XPS-17. Per box, see "Parity gate status" below.
 - [ ] `Disable-ScheduledTask 'DeskWall Tick'` then `Unregister-ScheduledTask`; `deskwall install`.
+  **TO RUN ON JOES-PC:** runbook R6, only after R1-R5 pass.
 - [ ] `git rm -r poc/` and remove the POC sections from `CLAUDE.md` and `README.md` (one commit:
   "Retire the PowerShell POC: v1 reached parity on <date>").
-- [ ] Opus whole-branch review of Phases 2 to 6 changes (one agent), ONE fix wave, re-review.
+  **Prepared, not merged:** the last commit on `spike/parity-gate` is exactly this, labelled
+  "Retire the PowerShell POC (merge only after the JOES-PC parity runbook passes)". Fill in the
+  date when merging (runbook R7).
+- [x] Opus whole-branch review of Phases 2 to 6 changes (one agent), ONE fix wave, re-review.
+  *Evidence (scope: this branch's phase 6 work, d212413..0d93bc9; phases 2 to 5 were reviewed in
+  their own phases):* the review found no code bugs and four problems, all in this plan's runbook
+  or exposed by it. First, nothing re-placed the icons after an Explorer restart. Second, R0 could
+  delete `poc\` under the running POC task. Third, R4's log grep had no time bound. Fourth, the
+  `dw` helper's exit line leaked into the `--json` output. The one fix wave, a7bc8c4, adds the
+  forced, delayed `ExplorerRestarted` wake (new TickPlan test, a live scratch-daemon tick) and
+  fixes the runbook. The re-review of a7bc8c4 found the code sound. It raised two runbook points:
+  R0's `~1` would miss a7bc8c4, and it mixed relative paths. Both are fixed in the next commit:
+  R0 now finds the Retire commit by its subject, checks it has a7bc8c4, and uses absolute paths.
+  No further wave.
 - [ ] Tag `v1.0.0-rc1` on `v1`. Merging `v1` into a `main` branch is Joe's call (finishing-a-development-branch).
+  **Not done:** there is no `v1` branch any more (`main` is the integration branch), and the
+  gate is not closed. Tag `main` after the merge, if Joe wants it.
+
+## Parity gate status (2026-09-30, JOES-XPS-17)
+
+| Master plan box | Status | Evidence / what is left |
+|---|---|---|
+| Starter reproduces the right-hand column; `verify` 5/5 on every cover | Open: needs JOES-PC | `verify` is finished and tested (Task 1). This machine's desktop folder view reports unavailable, so no shortcut can be measured here. R2. |
+| Every line of the budget table passes | **Open: owner decision** | 3 of 5 rows pass on both machines. Handles/threads and the clock-only tick are over on both, and the 2026-09-30 attribution shows why: the resident D3D/D2D/DWrite/WIC stack and the OS thread pool, not a leak or a tunable. Either change spec 3.1's process model (render out of process) or restate the two rows as measured. Spike results, "Parity-gate pass". |
+| Spec 9 manual acceptance walked | 2 of 6 walked here; 4 need JOES-PC | See the table below. R3. |
+| 24 h with zero logged tick failures | Open: needs JOES-PC | R4. |
+
+Spec 9 manual acceptance:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Apollo resolution change repairs itself | Wallpaper half seen here; icons need JOES-PC | Unplanned on 2026-09-30 at 20:25:04: the ultrawide went away mid-run and two scratch daemons logged `scaled layout ... to ...SHP1517... 1920x1200` then `tick DisplayChange (1920x1200): redrawn 7 total 206 ms`. Icon re-placement: R3a. |
+| Explorer restart keeps icons | Fix made here; icons need JOES-PC | The review found nothing re-placed icons after an Explorer restart: `TaskbarCreated` only re-added the tray icon, and an unforced tick skips shortcuts whose fingerprint is unchanged. The host window now raises a forced, 2 s-delayed `ExplorerRestarted` wake (tray or not). Live on a scratch daemon (`TaskbarCreated` posted to its own window only): `tick ExplorerRestarted (taskbar): redrawn 7 total 57 ms`. Whether Explorer then keeps the positions: R3b. |
+| Sleep and wake resumes on schedule | Needs JOES-PC | Sleeping this laptop would end the agent session. R3c. |
+| Dead `http` endpoint leaves the old value | **PASS** (scratch home, AOT exe) | A local `http` source (`every` 15 s) bound to a 96 px text; `python -m http.server` served `{"v":"ALPHA"}`, then was killed. 40 s later the text's pixels in `deskwall.jpg` hashed identical and the daemon had not repainted (Timer ticks `skipped`). Control: serving `{"v":"BRAVO"}` changed the hash. As designed (`docs/sources.md`), the value is dropped once the source has missed 3 of its own refreshes: `[WARN] source 'probe' is stale (missed 3 refreshes)`, 43 s after the kill at `every` 15, so a 900 s weather source holds its last value ~45 minutes. |
+| Malformed layout keeps the old wallpaper | **PASS** (same run) | Truncated the registered layout mid-array. Daemon logged `[ERROR] layout ...accept.json cannot be read: JsonException: '2' is an invalid end of a number...` and `[WARN] no layout for ...; waiting`, stayed alive, retried once a minute, and did not touch `deskwall.jpg` (mtime unchanged over 75 s, crop hash unchanged). |
+| Uninstall leaves the desktop as found | Needs JOES-PC | R5. |
+
+Observed along the way, not a gate item: while the endpoint was down, Timer ticks that had
+nothing to redraw still took ~2 s of wall (0 ms CPU). The `http` refresh awaits its fetch up to
+its `timeout` on the tick, and Windows retries a refused connect to a closed local port for
+about 2 s. CPU budget unaffected; noted in case the owner wants refreshes fully off the tick.
+
+## JOES-PC runbook (to close the gate)
+
+Run in a normal PowerShell 7 terminal on JOES-PC at the console (not RDP: the signature changes
+and screenshots of the console are impossible). `deskwall.exe` is a WinExe, so use this helper
+to wait for it and see its output:
+
+```powershell
+function dw { $o = "$env:TEMP\dw-o.txt"; $e = "$env:TEMP\dw-e.txt"
+  $p = Start-Process "$env:LOCALAPPDATA\Programs\DeskWall\deskwall.exe" -ArgumentList $args -Wait -NoNewWindow -PassThru -RedirectStandardOutput $o -RedirectStandardError $e
+  Get-Content $o, $e; Write-Host "exit $($p.ExitCode)" }
+```
+
+**R0. Get the branch without disturbing the POC.** The `DeskWall Tick` task runs `poc\` from
+the owner's main checkout, and the branch's last commit deletes `poc\`, so never switch that
+checkout to the branch before R6. On JOES-XPS-17, push it once:
+`git push -u origin spike/parity-gate`. Then on JOES-PC, in a separate worktree at the parent
+of the POC-retire commit (found by subject, so later commits cannot shift it):
+
+```powershell
+(Get-ScheduledTask 'DeskWall Tick').Actions      # note which checkout the POC runs from (<POC checkout> in R2)
+$main = '<main checkout>'                        # e.g. D:\Source\Personal\DeskWall
+$wt   = Join-Path (Split-Path $main) 'DeskWall-parity'
+git -C $main fetch origin
+$retire = git -C $main log origin/spike/parity-gate --format=%H -1 --grep '^Retire the PowerShell POC'
+if (-not $retire) { throw 'no Retire commit on origin/spike/parity-gate: stop and ask' }
+git -C $main worktree add $wt "$retire~1"
+cd $wt
+Test-Path poc                                    # must be True
+git merge-base --is-ancestor a7bc8c4 HEAD; $LASTEXITCODE   # must be 0 (has the Explorer-restart fix)
+dotnet build            # expect 0 warnings
+dotnet test             # expect all green (2026-09-30 on the XPS: 522 Core, 595 Designer)
+```
+
+**R1. Budget suite (reference numbers).** Close the ultrawide's other apps; the suite repaints
+the wallpaper with a scratch layout for ~5 minutes.
+
+```powershell
+$env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"   # harness only; harmless in a terminal
+dotnet publish src/DeskWall.Daemon -c Release -r win-x64
+Disable-ScheduledTask -TaskName "DeskWall Tick"
+try { dotnet test tests/DeskWall.Core.Tests --filter Category=Budget --logger "console;verbosity=detailed" }
+finally { Enable-ScheduledTask -TaskName "DeskWall Tick" }
+```
+
+Paste the five `| ... |` rows under "Phase 6 budget results". Expect the same two OVER rows;
+then make the budget decision above.
+
+**R2. Starter column vs the POC column, and verify 5/5.** Needs the Steam secrets from
+`layouts/README.md` in `%LOCALAPPDATA%\DeskWall\secrets.json`, and this branch installed.
+
+```powershell
+powershell -NoProfile -File <POC checkout>\poc\verify.ps1   # the POC's column, for comparison
+Copy-Item "$env:LOCALAPPDATA\DeskWall\verify-desktop.png" "$env:LOCALAPPDATA\DeskWall\verify-desktop-poc.png"
+Disable-ScheduledTask -TaskName "DeskWall Tick"     # the POC stops painting and placing slots 0..3
+scripts\publish.ps1 -Aot                            # from the worktree: installs this branch and restarts the daemon
+dw layouts set layouts\steam-recent.json
+dw calibrate
+Start-Sleep 70                                      # one tick places the four cover shortcuts
+dw shortcuts                                        # planned vs reported, every row should match
+dw verify                                           # expect 4 x "left pad 5, bottom pad 5 ... OK", "RESULT: OK", exit 0
+dw verify --json; Copy-Item "$env:TEMP\dw-o.txt" "$env:LOCALAPPDATA\DeskWall\verify-report.json"
+```
+
+Compare `verify-desktop.png` with `verify-desktop-poc.png` side by side (same clock position,
+same four covers in the same order, same drive rows) and look at `clock-now.png`. Leave the POC
+task disabled from here; if anything fails, `Enable-ScheduledTask -TaskName "DeskWall Tick"`
+puts the POC back while it is fixed.
+
+**R3. Spec 9 manual acceptance.** After each, `dw verify` must still say `RESULT: OK`.
+
+- a. Apollo: start a stream at a different resolution, end it. `deskwall.log` shows
+  `tick DisplayChange (...)` for each change and `shortcuts: placed 4` after the last.
+- b. Explorer: `Stop-Process -Id (Get-Process explorer).Id -Force; Start-Process explorer`.
+  About 2 s after the taskbar comes back the log shows `tick ExplorerRestarted (taskbar)`
+  followed by `shortcuts: placed 4`; then `dw verify` is `RESULT: OK`. If Explorer moves the
+  icons again after that tick (it lays the desktop out from its own saved positions), that is a
+  finding: record it rather than re-running until it passes.
+- c. Sleep: Start > Power > Sleep for at least 3 minutes, wake. Log shows
+  `tick SessionUnlock (resume)` within seconds of waking, and the clock is right within a minute.
+- d/e. Dead endpoint and malformed layout: passed on the XPS (above). To repeat here, point a
+  scratch copy of the layout's weather source at `http://127.0.0.1:9/` and watch the value hold
+  until `is stale`; truncate a scratch layout and watch `cannot be read` with the wallpaper kept.
+
+**R4. 24 hours.** R3 deliberately provokes errors (a malformed layout logs `[ERROR]`), and the
+log keeps up to 2 MB of history, so count only lines written after the window starts. Leave the
+daemon running a full day with the POC task disabled:
+
+```powershell
+$start = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')        # when the 24 h begin
+# ... 24 hours later:
+Get-Content "$env:LOCALAPPDATA\DeskWall\deskwall.1.log", "$env:LOCALAPPDATA\DeskWall\deskwall.log" -ErrorAction SilentlyContinue |
+  Where-Object { $_.Length -ge 19 -and $_.Substring(0, 19) -ge $start -and $_ -match '\[ERROR\]|tick .* failed' }   # expect nothing
+```
+
+**R5. Uninstall leaves the desktop as found.** First check what uninstall will restore. v1
+records the wallpaper that was current when it was first installed, and that was probably the
+POC's own `deskwall.jpg`, since the POC was painting at the time. That is v1's output path too,
+so restoring it would leave the last composed frame on screen:
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\DeskWall\restore.json"   # monitor id -> path
+# If a path is "$env:LOCALAPPDATA\DeskWall\deskwall.jpg", point it at the real pre-DeskWall
+# wallpaper instead: the path in restore.txt (written by hand at POC install), or the Spotlight
+# asset every layout uses as its baseImage. Edit the JSON, keep the monitor ids.
+```
+
+Then:
+
+```powershell
+$before = Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Force | Select-Object -ExpandProperty Name
+dw uninstall
+$after = Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Force | Select-Object -ExpandProperty Name
+Compare-Object $before $after       # expect only the four non-breaking-space slot shortcuts v1 owns
+(Get-ItemProperty 'HKCU:\Control Panel\Desktop').WallPaper   # the pre-DeskWall wallpaper (restore.json)
+dw install                          # back on
+```
+
+**R6. Retire the POC task** (plan Task 7 item 2). The POC's four slot shortcuts (names of 1 to
+4 non-breaking spaces, targeting Playnite) outlive the task and would sit invisibly over the
+covers, so remove them too. v1 never deletes them: it deletes only what `shortcuts-owned.json`
+lists.
+
+```powershell
+Disable-ScheduledTask -TaskName "DeskWall Tick"
+Unregister-ScheduledTask -TaskName "DeskWall Tick" -Confirm:$false
+$desk = [Environment]::GetFolderPath('Desktop'); $wsh = New-Object -ComObject WScript.Shell
+1..4 | ForEach-Object { Join-Path $desk ([string]::new([char]0xA0, $_) + '.lnk') } |
+  Where-Object { (Test-Path -LiteralPath $_) -and $wsh.CreateShortcut($_).TargetPath -like '*Playnite.DesktopApp.exe' } |
+  ForEach-Object { Remove-Item -LiteralPath $_; "removed POC slot $_" }
+dw install
+dw verify                           # still RESULT: OK
+```
+
+The POC-only runtime files (`state.json`, `base.png/.key`, `tiles\`, `restore.txt`,
+`playnite-config.backup.json`) can stay: nothing reads them any more. Keep
+`playnite-config.backup.json` at least until the Playnite import question in CLAUDE.md is settled.
+
+**R7. Merge.** Tick the four master-plan boxes and this plan's Task 7 items with the evidence
+above, put the date into the POC commit's subject ("v1 reached parity on <date>"), merge
+`spike/parity-gate` into `main`, and only then update the main checkout (its `poc\` goes away,
+which is fine now the task is unregistered), then `git -C $main worktree remove $wt`.
 
 ## Self-review notes
 

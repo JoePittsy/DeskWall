@@ -138,3 +138,6 @@ All true on JOES-PC before `poc/` is deleted and the `DeskWall Tick` task remove
 - [ ] Every line of the budget table passes via the budget tests.
 - [ ] Manual acceptance list in spec section 9 walked and ticked in the P6 plan.
 - [ ] Daemon has run for 24 hours with zero logged tick failures.
+
+Status 2026-09-30: all four open. Where each stands, and the JOES-PC runbook that closes them,
+is in the phase 6 plan (`2026-09-20-deskwall-v1-phase6-parity.md`, "Parity gate status").

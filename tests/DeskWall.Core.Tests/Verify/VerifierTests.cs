@@ -282,4 +282,28 @@ public class VerifierTests
         Assert.Equal(System.Text.Json.JsonValueKind.Null, slot.GetProperty("arrowBox").ValueKind);
         Assert.Equal("NO ICON FOUND", slot.GetProperty("note").GetString());
     }
+
+    private static ResolvedText Text(string id) => new(id, new Rect(0, 0, 10, 10), 0, "14:32", TextStyle.Default);
+
+    [Fact]
+    public void The_Clock_Of_A_Linked_Copy_Is_Found_By_Its_Part_Name()
+    {
+        // What every shipped starter resolves to since layouts became copies of the clock widget.
+        Resolved[] resolved = [Text("drives-1.drives[0].free"), Text("clock-1.clock")];
+        Assert.Equal("clock-1.clock", Verifier.FindClock(resolved)?.Id);
+    }
+
+    [Fact]
+    public void An_Exact_Clock_Id_Beats_A_Part_Match()
+    {
+        Resolved[] resolved = [Text("clock-1.clock"), Text("clock")];
+        Assert.Equal("clock", Verifier.FindClock(resolved)?.Id);
+    }
+
+    [Fact]
+    public void No_Clock_Means_No_Crop_Not_The_First_Text()
+    {
+        Resolved[] resolved = [Text("date-1.date"), Text("clockwork"), Text("clock-1.clocks")];
+        Assert.Null(Verifier.FindClock(resolved));
+    }
 }

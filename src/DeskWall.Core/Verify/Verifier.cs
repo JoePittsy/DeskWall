@@ -102,22 +102,33 @@ public static class Verifier
         if (!File.Exists(framePath))
             throw new InvalidOperationException($"{framePath} is missing: run a tick before verifying");
 
-        var calibration = Calibration.Load();
-        var iconSize = DesktopView.IconSize();
-        var scale = monitor.Signature.ScalePercent;
-        var arrowRect = calibration.Get(iconSize, scale);
-        if (arrowRect is null)
-        {
-            arrowRect = calibration.Get(48, 100)!;
-            say($"no calibration for {Calibration.Key(iconSize, scale)}; using {Calibration.Key(48, 100)}. Run 'deskwall calibrate'.");
-        }
+        // Hidden desktop icons (or no folder view at all) would otherwise come out as one
+        // "NO ICON FOUND" per slot, which reads as a placement bug rather than a precondition.
+        if (shortcuts.Count > 0 && !DesktopView.IsAvailable())
+            throw new InvalidOperationException(
+                "the desktop folder view is unavailable or desktop icons are hidden " +
+                "(right-click the desktop > View > Show desktop icons); verify needs the icons on screen");
 
-        // Read the shell's own idea of each position BEFORE minimising: GetPosition re-acquires the
-        // folder view, and doing that while the desktop is coming forward is a needless race.
-        var desktop = ShortcutFiles.DesktopDir();
+        var arrowRect = Calibration.Seed().Get(48, 100)!;
         var reported = new Dictionary<int, (int X, int Y)?>();
-        foreach (var s in shortcuts)
-            reported[s.Slot] = DesktopView.GetPosition(Path.Combine(desktop, ShortcutPlan.SlotFileName(s.Slot)));
+        if (shortcuts.Count > 0)
+        {
+            var calibration = Calibration.Load();
+            var iconSize = DesktopView.IconSize();
+            var scale = monitor.Signature.ScalePercent;
+            if (calibration.Get(iconSize, scale) is { } measured) arrowRect = measured;
+            else
+            {
+                arrowRect = calibration.Get(48, 100)!;
+                say($"no calibration for {Calibration.Key(iconSize, scale)}; using {Calibration.Key(48, 100)}. Run 'deskwall calibrate'.");
+            }
+
+            // Read the shell's own idea of each position BEFORE minimising: GetPosition re-acquires the
+            // folder view, and doing that while the desktop is coming forward is a needless race.
+            var desktop = ShortcutFiles.DesktopDir();
+            foreach (var s in shortcuts)
+                reported[s.Slot] = DesktopView.GetPosition(Path.Combine(desktop, ShortcutPlan.SlotFileName(s.Slot)));
+        }
 
         using var composed = Surface.LoadRaw(framePath);
         if (composed.Width != monitor.Bounds.W || composed.Height != monitor.Bounds.H)
@@ -189,13 +200,23 @@ public static class Verifier
         return path;
     }
 
-    /// <summary>An 8x nearest-neighbour crop of the component whose id is "clock", so thin light text
+    /// <summary>The text component the clock crop is taken from: one whose id is "clock", or, since
+    /// layouts became linked copies of widgets, whose last id segment is (the clock widget's part
+    /// expands to "clock-1.clock"). An exact id wins over a part match; null when neither exists.</summary>
+    public static ResolvedText? FindClock(IEnumerable<Resolved> resolved)
+    {
+        ArgumentNullException.ThrowIfNull(resolved);
+        var texts = resolved.OfType<ResolvedText>().ToList();
+        return texts.FirstOrDefault(t => t.Id.Equals("clock", StringComparison.OrdinalIgnoreCase))
+            ?? texts.FirstOrDefault(t => t.Id.EndsWith(".clock", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>An 8x nearest-neighbour crop of the clock (<see cref="FindClock"/>), so thin light text
     /// over the photo can be judged. Nearest, not linear: the question is what the renderer produced,
     /// and a resampler that invents intermediate pixels answers a different one.</summary>
     private static string SaveClockCrop(Surface shot, IReadOnlyList<Resolved> resolved)
     {
-        var clock = resolved.OfType<ResolvedText>()
-            .FirstOrDefault(t => t.Id.Equals("clock", StringComparison.OrdinalIgnoreCase));
+        var clock = FindClock(resolved);
         if (clock is null) return "";
         var r = Intersect(clock.PaintBounds, new Rect(0, 0, shot.Width, shot.Height));
         if (r.W <= 0 || r.H <= 0) return "";

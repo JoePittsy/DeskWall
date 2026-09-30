@@ -29,7 +29,12 @@ public static class TickPlan
         // skip gate would otherwise return Skipped without ever reaching WallpaperSetter.Set. It is
         // rare and costs one redraw. It does not reactivate: the display has not changed.
         var unlock = reasons.Any(r => r.Kind == WakeKind.SessionUnlock);
-        return new Decision(Tick: true, Force: display || layout || manual || unlock, DelayForExplorer: display,
-            Reactivate: display || layout, Shutdown: false);
+        // Spec 9 "Explorer restart keeps icons": a new Explorer lays the desktop out from whatever
+        // it last saved, and the shortcut fingerprint cannot see that, so only a forced tick
+        // re-places the icons. Delayed like a display change, because the desktop is being
+        // re-populated; not reactivated, because the display is the same.
+        var explorer = reasons.Any(r => r.Kind == WakeKind.ExplorerRestarted);
+        return new Decision(Tick: true, Force: display || layout || manual || unlock || explorer,
+            DelayForExplorer: display || explorer, Reactivate: display || layout, Shutdown: false);
     }
 }

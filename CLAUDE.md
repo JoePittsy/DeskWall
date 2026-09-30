@@ -21,7 +21,7 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   polling, wakes on a timer or a system event, and goes back to sleep. Measure any change to tick
   cost (`deskwall tick --measure` prints wall/CPU per stage) -- do not assert it.
 - **Measured, not eyeballed.** Icon placement, padding, legibility: verify with a pixel diff of
-  the live desktop against the composed image (`deskwall verify`, in progress -- see below; the
+  the live desktop against the composed image (`deskwall verify`, see "Verifying a v1 change"; the
   POC's `verify.ps1` did the same job). The owner rejected his own hand-placed icons in favour of
   a derived constant.
 - **Design doctrine gates apply** (`design-doctrine` skill), to every rendered layout and to the
@@ -157,13 +157,16 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
 ```powershell
 dotnet build                                      # AOT analyzer warnings are real even under JIT
 deskwall tick --layout layouts\clock-disks.json --force --measure --no-apply --no-shortcuts
-deskwall verify                                   # in progress (phase 6 Task 1); prints per-slot arrow padding, exits non-zero on mismatch
+deskwall verify                                   # per-slot arrow padding + clock crop; exit 0 OK, 4 mismatch, 1 cannot run
 ```
 
 `--no-apply --no-shortcuts` keeps a scratch tick from touching the live wallpaper or desktop
 icons; drop them (and use a scratch `--home`) only when actually exercising the real thing.
-`deskwall verify` prints `left pad N, bottom pad N` per shortcut slot (wants 5/5) and saves a
-screenshot and a clock crop to the runtime dir, the same job the POC's `verify.ps1` did.
+`deskwall verify` prints `left pad N, bottom pad N` and the diff box size per shortcut slot (wants
+5/5 and an arrow-sized box) and saves `verify-desktop.png`, `clock-now.png` and `verify-log.txt`
+to the runtime dir, the same job the POC's `verify.ps1` did. It needs desktop icons visible and a
+real shortcut on screen, so on a machine where the folder view is unavailable or icons are hidden
+it exits 1 with that reason rather than reporting every slot missing.
 
 ## POC (retired soon)
 

@@ -51,14 +51,17 @@ path the resident daemon uses, useful for scripting and for this documentation's
 3. **Sleep.** The waitable timer is set to the earliest due time across every active source
    (`Scheduler.NextWake`, clamped to `[now + 250 ms, now + 15 min]`); the wait also wakes on any
    window message.
-4. **Wake on:** the timer, a display change, a session unlock, a layout-store or layout-file
+4. **Wake on:** the timer, a display change, a session unlock, an Explorer restart (the
+   `TaskbarCreated` broadcast), a layout-store or layout-file
    change (`LayoutWatcher`, debounced), a widget file change (watched folder), a tray command, or
    a source finishing a fetch that overran into the next tick. `TickPlan.From(reasons)` turns the
    batch of reasons the pump collected into `{ Tick, Force, Reactivate, DelayForExplorer,
-   Shutdown }`. A display change adds a two-second `Thread.Sleep` before the tick runs, because
-   Explorer is still re-laying the desktop and hands back stale metrics until it finishes (spec
-   3.1); this blocks the pump, including a tray Exit, for those two seconds. A widget file change
-   triggers a Reactivate.
+   Shutdown }`. A display change or an Explorer restart adds a two-second `Thread.Sleep` before
+   the tick runs, because Explorer is still re-laying the desktop and hands back stale metrics
+   until it finishes (spec 3.1); this blocks the pump, including a tray Exit, for those two
+   seconds. The Explorer restart's tick is forced because a forced tick is the only one that
+   re-places shortcuts whose planned positions have not changed (spec 9 "Explorer restart keeps
+   icons"). A widget file change triggers a Reactivate.
 5. **After every tick:** log the outcome, update the tray tooltip, compute the next wake,
    `Footprint.Trim()` (`SetProcessWorkingSetSize`, giving freed pages back so Task Manager shows
    the idle number rather than the render peak).
@@ -157,6 +160,7 @@ directory.
 | `blank.ico` | `BlankIcon.Ensure` | A fully transparent 256 px icon-in-ICO, generated once, used for every shortcut slot. |
 | `deskwall.log` (+ `.1.log`) | `RollingLog` | Append-only, rolled at 1 MB; `RollingLog.LastError` is what puts "ERROR see log" in the tray tooltip. |
 | `calibrate-log.txt` | `deskwall calibrate` | A plain-text tee of that command's console output, since `MinimizeAll` takes the console with it. |
+| `verify-desktop.png`, `clock-now.png`, `verify-log.txt` | `deskwall verify` | The right-hand 400 px column of the screenshot, the clock at 8x, and a tee of the report (same reason as `calibrate-log.txt`). |
 
 ## The cost budget and how it is enforced
 
@@ -207,6 +211,15 @@ What the first run found, and what the fix wave did about it:
   handles / 17 threads two seconds after start, before any tick; 261 / 10 after several ticks.
   The Direct2D, DirectWrite and WIC factories are process-lifetime singletons (`Surface`) and the
   render target is per frame. Nothing in the fix wave touched this and the numbers did not move.
+  Attributed on 2026-09-30 (JOES-XPS-17, AOT, `clock-disks.json`, 10 minutes resident; spike
+  results "Parity-gate pass"): of ~305 handles, ~120 are of a type that cannot be duplicated
+  out of the process (consistent with the ETW registrations of the d3d11/dxgi/WARP/d2d1/DWrite
+  stack) and 81 are events; of 7-13 threads, only 3 run DeskWall code (main, finalizer, the
+  event-pipe server), one is COM's, and the rest are idle Windows thread-pool workers. Switching
+  to .NET's portable thread pool (`DOTNET_ThreadPool_UseWindowsThreadPool=0`) measured the same.
+  Meeting either row means not holding the graphics stack in the resident process (render in a
+  short-lived child, or unload it between ticks), which is a change to spec 3.1's process model
+  and so the owner's decision, not a tuning pass.
 
 **The `column-system.json` layout, resident on JOES-PC, 2026-09-21** (AOT, `hardware` source
 sampling every 10 s, weather and Tailscale recipes, four dials; sampled from outside every minute
@@ -238,7 +251,8 @@ handles, 15 threads resident; 67-90 ms clock-only tick) are in
 reference in spec 1.2 (about 370 ms wall / 190 ms CPU per tick, ~5 s cold start) every row is
 already a large improvement; against the spec's own table, three rows are open findings.
 
-`deskwall verify` (in progress in another lane at the time of writing -- see the phase 6 plan's
-Task 1) is the pixel-diff half of "measured, not eyeballed": it minimises windows, screenshots
-the primary monitor, diffs against the composed frame, and reports per-shortcut arrow padding and
-a clock crop, independent of the timing numbers above.
+`deskwall verify` (README "Verify") is the pixel-diff half of "measured, not eyeballed": it
+minimises windows, screenshots the primary monitor, diffs against the composed frame, and reports
+per-shortcut arrow padding and a clock crop, independent of the timing numbers above. It is a
+command, never on the tick path, and writes only `verify-desktop.png`, `clock-now.png` and
+`verify-log.txt` into the runtime dir.
