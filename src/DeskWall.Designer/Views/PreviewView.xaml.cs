@@ -92,6 +92,64 @@ public partial class PreviewView : UserControl
     private static readonly Handle[] Corners =
         [Handle.TopLeft, Handle.TopRight, Handle.BottomRight, Handle.BottomLeft];
 
+    private readonly List<Point> _penPoints = [];
+    private bool _tracing;
+    private void DrawingMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model?.Depth.Kind != DepthKind.Layout)
+        {
+            PenToggle.IsChecked = TraceToggle.IsChecked = false;
+            DrawingHint.Text = "Return to the layout to draw an outline.";
+            DrawingHint.Visibility = Visibility.Visible; return;
+        }
+        if (sender == PenToggle) TraceToggle.IsChecked = false; else PenToggle.IsChecked = false;
+        _penPoints.Clear(); _surface.PenPoints = []; _surface.BandRect = null;
+        DrawingHint.Text = PenToggle.IsChecked == true ? "Click points. Enter: outline. Double-click: fill. Escape: cancel."
+            : "Drag a band around the skyline. Escape cancels.";
+        DrawingHint.Visibility = PenToggle.IsChecked == true || TraceToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        Focus(); Redraw();
+    }
+    private void FinishPen(bool closed)
+    {
+        if (_penPoints.Count < (closed ? 3 : 2)) return;
+        AddOutline(DeskWall.Core.Render.SkylineTrace.FromPoints(_penPoints.Select(p => (p.X, p.Y)).ToArray(), closed));
+        CancelDrawing();
+    }
+    private void AddOutline(BarDef part)
+    {
+        if (_model is null || _model.Depth.Kind != DepthKind.Layout) return;
+        _model.Edit("Draw outline", layout =>
+        {
+            var id = "outline";
+            for (var n = 2; layout.Components.Any(c => c.Id == id); n++) id = "outline-" + n;
+            part.Id = id; part.Z = layout.Components.Select(c => c.Z).DefaultIfEmpty(0).Max() + 1;
+            layout.Components.Add(part);
+        });
+    }
+    private void CancelDrawing()
+    {
+        _tracing = false; _penPoints.Clear(); _surface.PenPoints = []; _surface.BandRect = null;
+        PenToggle.IsChecked = TraceToggle.IsChecked = false; DrawingHint.Visibility = Visibility.Collapsed;
+        ReleaseMouseCapture(); Redraw();
+    }
+    private void FinishTrace(Point end)
+    {
+        if (_model is null) return;
+        var band = CanvasRect(_downScreen, end);
+        try
+        {
+            using var photo = DeskWall.Core.Render.Surface.Load(_model.Layout.BaseImage);
+            using var canvas = DeskWall.Core.Render.Surface.Create(_model.Signature.Width, _model.Signature.Height);
+            canvas.DrawSurface(photo, CanvasRect(), _model.Layout.BaseFit);
+            AddOutline(DeskWall.Core.Render.SkylineTrace.Trace(canvas, band));
+            CancelDrawing();
+        }
+        catch (Exception ex)
+        {
+            CancelDrawing(); DrawingHint.Text = "Trace could not finish: " + ex.Message; DrawingHint.Visibility = Visibility.Visible;
+        }
+    }
+
     private readonly Surface _surface = new();
     private readonly AlignBar _alignBar = new();
 
@@ -547,6 +605,13 @@ public partial class PreviewView : UserControl
         if (_model is null || e.ChangedButton != MouseButton.Left) return;
         _downScreen = e.GetPosition(_surface);
         e.Handled = true;
+        if (PenToggle.IsChecked == true)
+        {
+            _penPoints.Add(_surface.ToCanvas(_downScreen)); _surface.PenPoints = _penPoints.ToArray();
+            if (e.ClickCount == 2) FinishPen(true); else Redraw();
+            return;
+        }
+        if (TraceToggle.IsChecked == true) { _tracing = true; CaptureMouse(); return; }
         if (e.ClickCount == 2)
         {
             Reset();
@@ -645,6 +710,7 @@ public partial class PreviewView : UserControl
         base.OnMouseMove(e);
         if (_model is null) return;
         var p = e.GetPosition(_surface);
+        if (_tracing) { _surface.BandRect = CanvasRect(_downScreen, p); Redraw(); return; }
 
         if (e.LeftButton != MouseButtonState.Pressed || (!_moving && !_banding && _resizing is null))
         {
@@ -694,6 +760,7 @@ public partial class PreviewView : UserControl
     {
         base.OnMouseUp(e);
         if (e.ChangedButton != MouseButton.Left) return;
+        if (_tracing) { FinishTrace(e.GetPosition(_surface)); e.Handled = true; return; }
         EndGesture(e.GetPosition(_surface));
     }
 
@@ -1163,6 +1230,9 @@ public partial class PreviewView : UserControl
         base.OnKeyDown(e);
         // The text box laid over the canvas keeps its own arrow keys.
         if (e.Handled || _model is null || e.OriginalSource is TextBox) return;
+        if (PenToggle.IsChecked == true && e.Key == Key.Enter) { FinishPen(false); e.Handled = true; return; }
+        if ((PenToggle.IsChecked == true || TraceToggle.IsChecked == true) && e.Key == Key.Escape)
+        { CancelDrawing(); e.Handled = true; return; }
         var mods = Keyboard.Modifiers;
         var ctrl = (mods & ModifierKeys.Control) != 0;
         var step = (mods & CoarseNudgeModifier) != 0 ? CoarseNudge : 1;
@@ -1345,6 +1415,7 @@ public partial class PreviewView : UserControl
         /// <summary>Grid spacing in canvas pixels, or 0 for no grid.</summary>
         public int Grid { get; set; }
 
+        public IReadOnlyList<Point> PenPoints { get; set; } = [];
         public IReadOnlyList<CRect> Selected { get; set; } = [];
         public CRect? SelectionBox { get; set; }
         public CRect? Hover { get; set; }
@@ -1370,6 +1441,18 @@ public partial class PreviewView : UserControl
         public bool Dimmed { get; set; }
         public IReadOnlyList<(CRect Box, string Text)> Broken { get; set; } = [];
 
+        private void DrawPen(DrawingContext dc)
+        {
+            var pen = new Pen(Brushes.LightSkyBlue, 1.5);
+            Point Screen(Point p) => new(Origin.X + p.X * Zoom, Origin.Y + p.Y * Zoom);
+            for (var i = 0; i < PenPoints.Count; i++)
+            {
+                var p = Screen(PenPoints[i]);
+                if (i > 0) dc.DrawLine(pen, Screen(PenPoints[i - 1]), p);
+                dc.DrawEllipse(Brushes.White, pen, p, 3, 3);
+            }
+        }
+
         public Point ToCanvas(Point screen) => new((screen.X - Origin.X) / Zoom, (screen.Y - Origin.Y) / Zoom);
 
         public Rect ToScreen(CRect r) => new(Origin.X + r.X * Zoom, Origin.Y + r.Y * Zoom, r.W * Zoom, r.H * Zoom);
@@ -1378,6 +1461,7 @@ public partial class PreviewView : UserControl
 
         protected override void OnRender(DrawingContext dc)
         {
+
             base.OnRender(dc);
             if (CanvasW <= 0 || CanvasH <= 0) return;
 
@@ -1454,6 +1538,7 @@ public partial class PreviewView : UserControl
                 dc.DrawRectangle(null, new Pen(accent, 1.25), box);
             }
 
+            DrawPen(dc);
             DrawHandles(dc);
 
             if (Focused)

@@ -620,3 +620,21 @@ Shaped bars also accept `glowColor`; blank defaults to their fill colour.
 
 An unresolved bound bar fill is transparent, so absent weather or temperature data cannot
 turn a conditional full-screen overlay opaque. Literal fill defaults are unchanged.
+
+## Drawing outlines
+
+At layout depth choose **Pen**, click points, then Enter for a stroked outline or double-click
+for a closed filled shape. Escape cancels. **Trace** takes a dragged band around the skyline
+and adds a shaped bar using a luminance-gradient walk with a continuity penalty. Both create
+one undoable part. The photograph is fitted to the canvas before tracing.
+
+The same Core algorithm is available without the designer:
+
+```powershell
+deskwall trace photo.jpg 0 300 3440 600 traced-layout.json
+```
+
+Coordinates are physical image pixels for the CLI. Output is a layout containing the traced bar.
+The trace is a starting outline for editing; clouds and low-contrast rock can affect the result.
+Rules colour rows have swatch pickers and 150 ms coalesced transient preview. Done commits one
+undo entry; Escape restores the previous value.

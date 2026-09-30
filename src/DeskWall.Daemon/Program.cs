@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using DeskWall.Core;
 using DeskWall.Core.Diagnostics;
 using DeskWall.Core.Display;
@@ -47,6 +47,8 @@ internal static class Program
                     return Stop();
                 case "layouts":
                     return Layouts(opts);
+                case "trace":
+                    return Trace(opts);
                 case "migrate":
                     return Migrate(opts);
                 case "paths":
@@ -78,6 +80,18 @@ internal static class Program
         }
     }
 
+    private static int Trace(List<string> opts)
+    {
+        if (opts.Count < 5) throw new ArgumentException("trace <image> <x> <y> <width> <height> [output.json]");
+        using var image = Surface.Load(opts[0]);
+        var band = new Rect(int.Parse(opts[1], CultureInfo.InvariantCulture), int.Parse(opts[2], CultureInfo.InvariantCulture),
+            int.Parse(opts[3], CultureInfo.InvariantCulture), int.Parse(opts[4], CultureInfo.InvariantCulture));
+        var part = SkylineTrace.Trace(image, band);
+        var json = new LayoutFile { BaseImage = Path.GetFullPath(opts[0]), Components = [part] }.ToJson();
+        if (opts.Count > 5) File.WriteAllText(opts[5], json); else Console.WriteLine(json);
+        return 0;
+    }
+
     private static void Usage(TextWriter w)
     {
         w.WriteLine("deskwall [--home <dir>] <command>");
@@ -91,6 +105,7 @@ internal static class Program
         w.WriteLine("  layouts set <path>         register a layout for this display");
         w.WriteLine("  migrate [--check] [<path>] convert v1 layouts (default: every file in layouts.json) to v2");
         w.WriteLine("                             linked copies; --check prints the result and writes nothing");
+        w.WriteLine("  trace <image> <x> <y> <width> <height> [output.json]  trace a skyline band");
         w.WriteLine("  paths                      the runtime directory");
         w.WriteLine("  calibrate                  measure the shell's shortcut-arrow overlay");
         w.WriteLine("  shortcuts [--layout <path>]  planned vs actual icon positions (read-only)");
