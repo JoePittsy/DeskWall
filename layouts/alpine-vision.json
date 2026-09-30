@@ -48,6 +48,18 @@
         "parse": "json",
         "timeout": "15"
       }
+    },
+    {
+      "name": "valley",
+      "type": "command",
+      "every": 300,
+      "settings": {
+        "command": "powershell.exe",
+        "args": "-NoProfile -ExecutionPolicy Bypass -File tailscale-lights.ps1",
+        "workingDir": "runtime:scripts",
+        "parse": "json",
+        "timeout": "10"
+      }
     }
   ],
   "components": [
@@ -535,6 +547,61 @@
           }
         }
       ]
+    },
+    {
+      "type": "repeater",
+      "id": "valley-peers",
+      "rect": [
+        2670,
+        1310,
+        360,
+        8
+      ],
+      "z": 2,
+      "items": {
+        "bind": "valley.json.peers"
+      },
+      "axis": "horizontal",
+      "gap": 14,
+      "cellHeight": 6,
+      "template": [
+        {
+          "type": "bar",
+          "id": "light",
+          "rect": [
+            0,
+            0,
+            6,
+            6
+          ],
+          "z": 2,
+          "fraction": 1,
+          "threshold": 2,
+          "track": "#00000000",
+          "fill": "#88FFE3B5",
+          "shape": "M0,0 h0.01",
+          "thickness": 2,
+          "glow": 1
+        }
+      ]
+    },
+    {
+      "type": "bar",
+      "id": "uptime-piste",
+      "rect": [
+        1142,
+        912,
+        123,
+        243
+      ],
+      "z": -3,
+      "fraction": 1,
+      "threshold": 2,
+      "track": "#00000000",
+      "fill": {
+        "bind": "system.uptime | \"~0=#66DDEFFF,604800=#08DDEFFF\""
+      },
+      "shape": "M1142,912 H1148 V915 H1142 Z M1163,912 H1184 V915 H1163 Z M1142,915 H1163 V918 H1142 Z M1166,915 H1181 V918 H1166 Z M1184,915 H1196 V918 H1184 Z M1145,918 H1148 V921 H1145 Z M1151,918 H1154 V921 H1151 Z M1160,918 H1163 V921 H1160 Z M1175,918 H1184 V921 H1175 Z M1187,918 H1205 V921 H1187 Z M1145,921 H1148 V924 H1145 Z M1181,921 H1220 V924 H1181 Z M1181,924 H1220 V927 H1181 Z M1184,927 H1217 V930 H1184 Z M1184,930 H1217 V933 H1184 Z M1184,933 H1217 V936 H1184 Z M1184,936 H1208 V939 H1184 Z M1211,936 H1214 V939 H1211 Z M1184,939 H1208 V942 H1184 Z M1187,942 H1217 V945 H1187 Z M1193,945 H1223 V948 H1193 Z M1193,948 H1220 V951 H1193 Z M1196,951 H1223 V954 H1196 Z M1199,954 H1223 V957 H1199 Z M1199,957 H1223 V960 H1199 Z M1199,960 H1226 V963 H1199 Z M1199,963 H1226 V966 H1199 Z M1199,966 H1232 V969 H1199 Z M1199,969 H1232 V972 H1199 Z M1199,972 H1232 V975 H1199 Z M1205,975 H1238 V978 H1205 Z M1205,978 H1241 V981 H1205 Z M1205,981 H1238 V984 H1205 Z M1214,984 H1241 V987 H1214 Z M1211,987 H1214 V990 H1211 Z M1217,987 H1241 V990 H1217 Z M1220,990 H1235 V993 H1220 Z M1220,993 H1232 V996 H1220 Z M1217,996 H1232 V999 H1217 Z M1214,999 H1232 V1002 H1214 Z M1202,1002 H1232 V1005 H1202 Z M1205,1005 H1223 V1008 H1205 Z M1205,1008 H1226 V1011 H1205 Z M1205,1011 H1235 V1014 H1205 Z M1208,1014 H1232 V1017 H1208 Z M1235,1014 H1238 V1017 H1235 Z M1211,1017 H1244 V1020 H1211 Z M1211,1020 H1244 V1023 H1211 Z M1220,1023 H1235 V1026 H1220 Z M1241,1023 H1244 V1026 H1241 Z M1220,1026 H1247 V1029 H1220 Z M1217,1029 H1247 V1032 H1217 Z M1217,1032 H1244 V1035 H1217 Z M1217,1035 H1241 V1038 H1217 Z M1217,1038 H1241 V1041 H1217 Z M1217,1041 H1238 V1044 H1217 Z M1217,1044 H1238 V1047 H1217 Z M1214,1047 H1238 V1050 H1214 Z M1217,1050 H1238 V1053 H1217 Z M1217,1053 H1238 V1056 H1217 Z M1217,1056 H1235 V1059 H1217 Z M1220,1059 H1235 V1062 H1220 Z M1226,1062 H1238 V1065 H1226 Z M1232,1065 H1238 V1068 H1232 Z M1235,1068 H1238 V1071 H1235 Z M1235,1071 H1244 V1074 H1235 Z M1238,1074 H1247 V1077 H1238 Z M1235,1077 H1247 V1080 H1235 Z M1238,1080 H1244 V1083 H1238 Z M1238,1083 H1247 V1086 H1238 Z M1241,1086 H1253 V1089 H1241 Z M1241,1089 H1256 V1092 H1241 Z M1241,1092 H1253 V1095 H1241 Z M1244,1098 H1262 V1101 H1244 Z M1247,1101 H1262 V1104 H1247 Z M1250,1104 H1259 V1107 H1250 Z M1253,1113 H1265 V1116 H1253 Z M1250,1116 H1265 V1119 H1250 Z M1250,1119 H1262 V1122 H1250 Z M1253,1122 H1259 V1125 H1253 Z M1247,1125 H1259 V1128 H1247 Z M1244,1128 H1256 V1131 H1244 Z M1241,1131 H1253 V1134 H1241 Z M1238,1137 H1253 V1140 H1238 Z M1241,1140 H1250 V1143 H1241 Z M1244,1146 H1250 V1149 H1244 Z M1244,1149 H1256 V1152 H1244 Z M1247,1152 H1250 V1155 H1247 Z"
     }
   ],
   "copies": [
@@ -585,21 +652,6 @@
         "components.temp.effectRadius": "auto",
         "components.temp.rect": "0,0,178,85",
         "components.sky.rect": "191,0,92,92"
-      }
-    },
-    {
-      "id": "vpn-1",
-      "widget": "vpn",
-      "x": 3206,
-      "y": 133,
-      "z": 0,
-      "knobs": {},
-      "overrides": {
-        "components.vpn.text": {
-          "bind": "tailscale.json.BackendState | \"Tailscale {0}\""
-        },
-        "components.vpn.effect": "None",
-        "components.vpn.effectRadius": "auto"
       }
     }
   ]

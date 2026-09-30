@@ -549,3 +549,7 @@ Each record has id, name, ISO last activity, absolute cover path and quoted exec
 A locked copy uses the last successful runtime cache. No installation/cache emits empty lists
 and status `unavailable`, with diagnostics on stderr. It never closes Playnite. Portable installs
 can pass `-InstallDir` and `-LibraryDir`. Cache writes honour DESKWALL_HOME.
+
+The alpine layout uses `scripts/tailscale-lights.ps1` as a five-minute command recipe. It emits
+`peers` containing one record per online peer while the backend is Running, otherwise an empty
+list, plus `status`. The layout draws up to 18 valley lights from that list.
