@@ -527,7 +527,9 @@ an `http` source already has, and it is the layout author's choice, but make it 
 
 ## `battery`
 
-Windows GetSystemPowerStatus, every 60 seconds by default. Publishes `percent` (0..100),
+Windows GetSystemPowerStatus, every 60 seconds by default, on whole multiples of `every` since
+midnight (like `hardware`) so it shares the clock's wake instead of adding one at whatever second
+the daemon started. Publishes `percent` (0..100),
 `fraction` (0..1), `charging`, `onBattery`, and `minutesLeft` (-1 when unknown).
 No battery or unknown charge omits percent/fraction. `opacity` is 0.2 when on mains
 and at least 95% charged, otherwise 1; absent for unknown charge.

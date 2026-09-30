@@ -5,6 +5,11 @@ namespace DeskWall.Core.Sources;
 /// <summary>Windows power status; unknown charge and absent batteries publish no percentage.</summary>
 public sealed class BatterySource(string name, TimeSpan every) : PeriodicSource(name, every)
 {
+    /// <summary>On the whole multiple of `every`, like hardware: lastRefresh + every put a daemon
+    /// started at :30 on a second wake every minute beside the clock's :00.</summary>
+    public override DateTimeOffset NextDue(DateTimeOffset? lastRefresh, DateTimeOffset now)
+        => lastRefresh is null ? now : NextBoundary(lastRefresh.Value, Every);
+
     public override ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
         if (!PInvoke.GetSystemPowerStatus(out var s)) throw new System.ComponentModel.Win32Exception();

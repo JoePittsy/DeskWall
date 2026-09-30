@@ -65,4 +65,17 @@ public abstract class PeriodicSource(string name, TimeSpan every) : ISource
     public virtual TimeSpan Interval(DateTimeOffset now) => every;
 
     public abstract ValueTask<RecordValue> RefreshAsync(CancellationToken ct);
+
+    /// <summary>The next whole multiple of <paramref name="every"/> since local midnight after
+    /// <paramref name="last"/>. A source on this schedule shares the clock's wake instead of adding
+    /// its own at whatever second it first happened to run (see HardwareSource.NextDue). A zero or
+    /// negative `every` ("every": 0 in a layout) is the daemon's one minute, not a divide by zero
+    /// out of the scheduler on every tick.</summary>
+    protected static DateTimeOffset NextBoundary(DateTimeOffset last, TimeSpan every)
+    {
+        if (every <= TimeSpan.Zero) every = TimeSpan.FromMinutes(1);
+        var dayStart = new DateTimeOffset(last.Year, last.Month, last.Day, 0, 0, 0, last.Offset);
+        var sinceMidnight = (last - dayStart).Ticks;
+        return dayStart.AddTicks(sinceMidnight - sinceMidnight % every.Ticks) + every;
+    }
 }
