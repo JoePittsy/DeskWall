@@ -58,8 +58,15 @@ public static class LayoutScaler
         switch (c)
         {
             case LineDef line:
-                line.Thickness = ScaleNumber(line.Thickness, sm);
-                line.Glow = ScaleNumber(line.Glow, sm);
+                // Min, like a dial: the path is inset from Rect by thickness / 2 + glow on both
+                // axes, so the stroke must shrink with the smaller factor to fit the rect it was
+                // authored to fit. Fractions are kept; a 1 px line at 0.4 is 0.4, not 0.
+                line.Thickness = ScaleNumber(line.Thickness, Math.Min(sx, sy), 2);
+                line.Glow = ScaleNumber(line.Glow, Math.Min(sx, sy), 2);
+                break;
+            case BarDef bar:
+                bar.Thickness = ScaleNumber(bar.Thickness, Math.Min(sx, sy), 2);
+                bar.Glow = ScaleNumber(bar.Glow, Math.Min(sx, sy), 2);
                 break;
             case TextDef t:
                 ScaleLiteral(t, nameof(TextDef.Size), sm);
@@ -95,9 +102,9 @@ public static class LayoutScaler
         }
     }
 
-    private static PropertyValue ScaleNumber(PropertyValue p, double factor)
+    private static PropertyValue ScaleNumber(PropertyValue p, double factor, int decimals = 0)
     {
         if (p.IsBound || !double.TryParse(p.LiteralText, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return p;
-        return PropertyValue.Literal(Math.Round(v * factor));
+        return PropertyValue.Literal(Math.Round(v * factor, decimals));
     }
 }
