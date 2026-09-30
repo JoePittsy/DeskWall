@@ -39,9 +39,11 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
     private void MediaChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args) => Signal();
     private void PlaybackChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args) => Signal();
 
-    // (end time, position, when the position was stamped) as of the last refresh.
-    private (TimeSpan End, TimeSpan Position, DateTimeOffset At) _timeline;
-    private bool _timelinePlaying;
+    /// <summary>What the last refresh saw of the timeline. One immutable object swapped whole: it is
+    /// written by the refresh and read by <see cref="TimelineChanged"/> on a WinRT thread, and the
+    /// tuple and flag it replaces (two fields, 33 bytes) could be read half old and half new.</summary>
+    internal sealed record TimelineStamp(TimeSpan End, TimeSpan Position, DateTimeOffset At, bool Playing);
+    private volatile TimelineStamp? _timeline;
 
     /// <summary>Some apps raise this every second while playing. Only a change the last refresh could
     /// not have predicted -- a seek, a new duration -- is worth a tick; ordinary forward progress
@@ -52,11 +54,18 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
         {
             var t = sender.GetTimelineProperties();
             if (t is null) return;
-            var (end, position, at) = _timeline;
-            var expected = position + (_timelinePlaying ? t.LastUpdatedTime - at : TimeSpan.Zero);
-            if (t.EndTime != end || Math.Abs((t.Position - expected).TotalSeconds) > 3) Signal();
+            if (Surprising(_timeline, t.EndTime, t.Position, t.LastUpdatedTime)) Signal();
         }
         catch (Exception) { }
+    }
+
+    /// <summary>True when a timeline update is not what <paramref name="last"/> predicts: a changed
+    /// end time, or a position more than 3 s from where it should be by now.</summary>
+    internal static bool Surprising(TimelineStamp? last, TimeSpan end, TimeSpan position, DateTimeOffset updated)
+    {
+        if (last is null) return true;
+        var expected = last.Position + (last.Playing ? updated - last.At : TimeSpan.Zero);
+        return end != last.End || Math.Abs((position - expected).TotalSeconds) > 3;
     }
     private void Detach()
     {
@@ -197,8 +206,7 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
         {
             var t = session.GetTimelineProperties();
             if (t is null) return (0, 0);
-            _timeline = (t.EndTime, t.Position, t.LastUpdatedTime);
-            _timelinePlaying = playing;
+            _timeline = new TimelineStamp(t.EndTime, t.Position, t.LastUpdatedTime, playing);
             if (!playing) return (0, 0);
             var duration = (t.EndTime - t.StartTime).TotalSeconds;
             if (duration <= 0) return (0, 0);

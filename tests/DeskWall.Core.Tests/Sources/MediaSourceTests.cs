@@ -118,4 +118,25 @@ public class MediaSourceTests
         await refresh;
         Assert.False(s.HoldsSubscriptions);
     }
+
+    private static readonly DateTimeOffset At = new(2026, 9, 30, 21, 0, 0, TimeSpan.FromHours(1));
+    private static MediaSource.TimelineStamp Stamp(bool playing) => new(TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(60), At, playing);
+
+    /// <summary>Harden review finding 5: the stamp is now one object, so a timeline event on a WinRT
+    /// thread can no longer read an end time from one refresh and a position from another.</summary>
+    [Fact]
+    public void Ordinary_Progress_Is_Not_A_Surprise_But_A_Seek_Or_A_New_Length_Is()
+    {
+        Assert.True(MediaSource.Surprising(null, TimeSpan.FromMinutes(4), TimeSpan.Zero, At));   // nothing seen yet
+
+        var playing = Stamp(playing: true);
+        Assert.False(MediaSource.Surprising(playing, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(70), At.AddSeconds(10)));
+        Assert.False(MediaSource.Surprising(playing, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(72), At.AddSeconds(10)));
+        Assert.True(MediaSource.Surprising(playing, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(120), At.AddSeconds(10)));
+        Assert.True(MediaSource.Surprising(playing, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(70), At.AddSeconds(10)));
+
+        var paused = Stamp(playing: false);
+        Assert.False(MediaSource.Surprising(paused, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(60), At.AddSeconds(30)));
+        Assert.True(MediaSource.Surprising(paused, TimeSpan.FromMinutes(4), TimeSpan.FromSeconds(90), At.AddSeconds(30)));
+    }
 }
