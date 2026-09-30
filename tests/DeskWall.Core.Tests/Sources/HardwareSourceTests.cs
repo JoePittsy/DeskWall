@@ -82,13 +82,14 @@ public class HardwareSourceTests
     }
 
     [Fact]
-    public async Task Zero_Samples_Publishes_Only_Samples_And_Window()
+    public async Task Zero_Samples_Publishes_Only_Samples_Window_And_Empty_Histories()
     {
         var s = Make(new FakeReader());
         var rec = await s.RefreshAsync(default);
         Assert.Equal(0, N(rec, "samples"));
         Assert.Equal(300, N(rec, "window"));
-        Assert.Equal(2, rec.Fields.Count);
+        Assert.Equal(["cpuHistory", "gpuHistory", "ramHistory", "samples", "window"], rec.Fields.Keys.Order());
+        foreach (var h in new[] { "cpuHistory", "ramHistory", "gpuHistory" }) Assert.Empty(((ListValue)rec.Fields[h]).Items);
     }
 
     [Fact]

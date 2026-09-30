@@ -17,6 +17,7 @@ public class PropertyRowsTests
         new ImageDef { Id = "i", Rect = R, Source = PropertyValue.Literal("a.png") },
         new BarDef { Id = "b", Rect = R, Fraction = PropertyValue.Literal(0.5) },
         new DialDef { Id = "d", Rect = R, Fraction = PropertyValue.Literal(0.5) },
+        new LineDef { Id = "l", Rect = R, Values = PropertyValue.Literal("") },
         new ShortcutDef { Id = "s", Rect = R, Target = PropertyValue.Literal("a.exe") },
         new RepeaterDef { Id = "r", Rect = R, Items = PropertyValue.Literal(""), Template = new List<ComponentDef>() },
     ];
