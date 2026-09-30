@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -442,7 +442,7 @@ public sealed unsafe class Surface : IDisposable
     /// the two stay aligned), and <paramref name="glow"/> draws that halo: four wider low-alpha
     /// strokes under the line, the same stacked-copies approximation as a text shadow (a true
     /// Gaussian needs ID2D1DeviceContext; Phase 1 ledger ruling).</summary>
-    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null, float pad = 0, float glow = 0) => Draw(rt =>
+    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null, float pad = 0, float glow = 0, Color? glowColor = null) => Draw(rt =>
     {
         var (x0, y0, x1, y1) = path.Bounds;
         var inset = thickness / 2f + pad;
@@ -488,7 +488,8 @@ public sealed unsafe class Surface : IDisposable
             }
             if (glow > 0)
             {
-                var soft = Brush(rt, c with { A = (byte)Math.Max(4, c.A * 0.12) });
+                var halo = glowColor ?? c;
+                var soft = Brush(rt, halo with { A = (byte)(halo.A * 0.12) });
                 try
                 {
                     for (var k = 4; k >= 1; k--)

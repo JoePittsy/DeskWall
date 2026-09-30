@@ -15,6 +15,15 @@ public abstract class ComponentDef
     public required string Id { get; set; }
     [JsonConverter(typeof(RectConverter))] public required Rect Rect { get; set; }
     public int Z { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PropertyValue? X { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PropertyValue? Y { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PropertyValue? W { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PropertyValue? H { get; set; }
+    [JsonIgnore] public double GeometryScaleX { get; set; } = 1;
+    [JsonIgnore] public double GeometryScaleY { get; set; } = 1;
+    [JsonIgnore] public int GeometryOffsetX { get; set; }
+    [JsonIgnore] public int GeometryOffsetY { get; set; }
+
     /// <summary>The widget instance id that owns this component ("&lt;templateKey&gt;-&lt;n&gt;"),
     /// or null for a component placed by hand. Ignored by resolve and render; the designer's
     /// widget model uses it to find, move and remove a widget's components as a unit
@@ -60,6 +69,7 @@ public sealed class BarDef : ComponentDef
     public PropertyValue Direction { get; set; } = PropertyValue.Literal("horizontal");
     /// <summary>SVG path data (M L H V C Z) drawn instead of the box, its bounds stretched to Rect;
     /// empty is the plain box. The fill is the same path clipped to the fraction.</summary>
+    public PropertyValue GlowColor { get; set; } = PropertyValue.Literal("");
     public PropertyValue Shape { get; set; } = PropertyValue.Literal("");
     /// <summary>For a shape: 0 fills it, more strokes it this wide.</summary>
     public PropertyValue Thickness { get; set; } = PropertyValue.Literal(0);

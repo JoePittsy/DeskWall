@@ -15,6 +15,7 @@ public static class LayoutScaler
         var sm = Math.Sqrt(sx * sy);
         // Deep copy through JSON so the source is untouched; the source generator makes this AOT-safe.
         var copy = LayoutFile.Parse(source.ToJson());
+        CarryGeometry(source.Components, copy.Components);
         foreach (var c in copy.Components) ScaleComponent(c, sx, sy, sm);
         return copy;
     }
@@ -28,17 +29,32 @@ public static class LayoutScaler
     {
         ArgumentNullException.ThrowIfNull(source);
         var copy = LayoutFile.Parse(source.ToJson());
+        CarryGeometry(source.Components, copy.Components);
         foreach (var c in copy.Components)
         {
             ScaleComponent(c, scale, scale, scale);
             c.Rect = c.Rect.Offset(dx, dy);
+            c.GeometryOffsetX += dx; c.GeometryOffsetY += dy;
         }
         return copy;
+    }
+
+    private static void CarryGeometry(List<ComponentDef> from, List<ComponentDef> to)
+    {
+        for (var n = 0; n < from.Count; n++)
+        {
+            to[n].GeometryScaleX = from[n].GeometryScaleX; to[n].GeometryScaleY = from[n].GeometryScaleY;
+            to[n].GeometryOffsetX = from[n].GeometryOffsetX; to[n].GeometryOffsetY = from[n].GeometryOffsetY;
+            if (from[n] is RepeaterDef a && to[n] is RepeaterDef b) CarryGeometry(a.Template, b.Template);
+        }
     }
 
     private static void ScaleComponent(ComponentDef c, double sx, double sy, double sm)
     {
         c.Rect = c.Rect.Scale(sx, sy);
+        c.GeometryScaleX *= sx; c.GeometryScaleY *= sy;
+        c.GeometryOffsetX = (int)Math.Round(c.GeometryOffsetX * sx);
+        c.GeometryOffsetY = (int)Math.Round(c.GeometryOffsetY * sy);
         switch (c)
         {
             case LineDef line:

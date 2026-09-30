@@ -63,11 +63,11 @@ public sealed record ResolvedImage(string Id, Rect Rect, int Z, string Path, Fit
 /// <param name="Shape">Parsed path data, or null for the plain box (none given, or unreadable).</param>
 /// <param name="ShapeText">The path data as written, for the content key.</param>
 public sealed record ResolvedBar(string Id, Rect Rect, int Z, double Fraction, Color Track, Color Fill, Axis Direction,
-    PathData? Shape = null, string ShapeText = "", float Thickness = 0, float Glow = 0) : Resolved(Id, Rect, Z)
+    PathData? Shape = null, string ShapeText = "", float Thickness = 0, float Glow = 0, Color? GlowColor = null) : Resolved(Id, Rect, Z)
 {
     // Fraction is keyed at 0.1 percent: a 172 px bar cannot show finer, and disk free space wobbles below that between reads.
     public override IEnumerable<string> KeyParts() =>
-        [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString(), Shape is null ? "" : ShapeText, Thickness.ToString("R"), Glow.ToString("R")];
+        [Math.Round(Fraction, 3).ToString("R"), Track.ToHex(), Fill.ToHex(), Direction.ToString(), Shape is null ? "" : ShapeText, Thickness.ToString("R"), Glow.ToString("R"), GlowColor?.ToHex() ?? ""];
 }
 
 /// <summary>A thin arc: Track over the full Sweep, Fill over Sweep * Fraction, both Thickness px

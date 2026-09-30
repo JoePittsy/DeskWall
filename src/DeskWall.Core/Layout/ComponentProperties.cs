@@ -13,8 +13,16 @@ public static class ComponentProperties
     public sealed record Prop(string Name, Func<ComponentDef, PropertyValue> Get, Action<ComponentDef, PropertyValue> Set);
 
     public const string Hidden = "hidden";
+    private static readonly Prop[] GeometryProps =
+    [
+        new("X", c => c.X ?? PropertyValue.Literal(c.Rect.X), (c, v) => c.X = v),
+        new("Y", c => c.Y ?? PropertyValue.Literal(c.Rect.Y), (c, v) => c.Y = v),
+        new("W", c => c.W ?? PropertyValue.Literal(c.Rect.W), (c, v) => c.W = v),
+        new("H", c => c.H ?? PropertyValue.Literal(c.Rect.H), (c, v) => c.H = v),
+    ];
 
-    public static IReadOnlyList<Prop> For(ComponentDef def) => def switch
+    public static IReadOnlyList<Prop> For(ComponentDef def) => [.. Specific(def), .. GeometryProps];
+    private static IReadOnlyList<Prop> Specific(ComponentDef def) => def switch
     {
         TextDef => TextProps,
         ImageDef => ImageProps,
@@ -109,6 +117,7 @@ public static class ComponentProperties
         new("Threshold", c => ((BarDef)c).Threshold, (c, v) => ((BarDef)c).Threshold = v),
         new("ThresholdFill", c => ((BarDef)c).ThresholdFill, (c, v) => ((BarDef)c).ThresholdFill = v),
         new("Direction", c => ((BarDef)c).Direction, (c, v) => ((BarDef)c).Direction = v),
+        new("GlowColor", c => ((BarDef)c).GlowColor, (c, v) => ((BarDef)c).GlowColor = v),
         new("Shape", c => ((BarDef)c).Shape, (c, v) => ((BarDef)c).Shape = v),
         new("Thickness", c => ((BarDef)c).Thickness, (c, v) => ((BarDef)c).Thickness = v),
         new("Glow", c => ((BarDef)c).Glow, (c, v) => ((BarDef)c).Glow = v),

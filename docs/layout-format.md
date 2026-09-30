@@ -606,3 +606,14 @@ Non-finite or absent samples are omitted; fewer than two samples draws nothing.
 `stroke` is an ARGB colour, `thickness` defaults to 2 px, `glow` to 0.
 `baseline: true` fills beneath the line at 12% of the stroke alpha.
 The content key includes normalised samples rounded to three decimals and all styling.
+
+## Bindable geometry
+
+Every component accepts optional `x`, `y`, `w`, `h` PropertyValues. Missing, unreadable, or
+non-finite values fall back to the respective literal `rect` coordinate. Dimensions clamp at
+zero. Repeater children resolve in item scope before cell clipping. Resolved geometry is
+included in content keys; old and new paint bounds are restored when something moves.
+Display scaling and designer zoom apply after binding resolution through retained transforms.
+The designer geometry rows accept bindings just like colour and size.
+
+Shaped bars also accept `glowColor`; blank defaults to their fill colour.

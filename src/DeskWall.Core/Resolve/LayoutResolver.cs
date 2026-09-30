@@ -18,7 +18,7 @@ public static class LayoutResolver
     public static IReadOnlyList<Resolved> Resolve(LayoutFile layout, RecordValue tree, Func<string, string?>? remote = null)
     {
         var result = new List<Resolved>();
-        foreach (var def in layout.Components) Emit(def, tree, def.Rect, def.Id, 0, result, remote);
+        foreach (var def in layout.Components) Emit(def, tree, Geometry(def, tree), def.Id, 0, result, remote);
 
         // Finding 6: a duplicate id must fail here, before any drawing or state is touched -
         // TickRunner later builds a Dictionary<string, ...> keyed by Id and must never reach it
@@ -93,7 +93,7 @@ public static class LayoutResolver
                     PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF"), fill,
                     PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal,
                     shape, shapeText, (float)Math.Max(0, PropertyReader.Number(b.Thickness, scope) ?? 0),
-                    (float)Math.Max(0, PropertyReader.Number(b.Glow, scope) ?? 0)));
+                    (float)Math.Max(0, PropertyReader.Number(b.Glow, scope) ?? 0), PropertyReader.Color(b.GlowColor, scope)));
                 break;
 
             case DialDef dl:
@@ -129,7 +129,7 @@ public static class LayoutResolver
                     var origin = vertical ? rect.Offset(0, cursor) : rect.Offset(cursor, 0);
                     foreach (var child in r.Template)
                     {
-                        var childRect = child.Rect.Offset(origin.X, origin.Y);
+                        var childRect = Geometry(child, item).Offset(origin.X, origin.Y);
                         if (child is ImageDef && IsAuto(r.CellHeight)) childRect = vertical ? childRect with { H = imageExtent } : childRect with { W = imageExtent };
                         Emit(child, item, ClampToCell(childRect, origin, cell, rect, vertical), $"{id}[{idx}].{child.Id}", slotOffset + idx, result, remote);
                     }
@@ -137,6 +137,18 @@ public static class LayoutResolver
                 }
                 break;
         }
+    }
+
+    private static Rect Geometry(ComponentDef def, RecordValue scope)
+    {
+        int Read(PropertyValue? p, int fallback, double scale, int offset = 0)
+        {
+            var number = p is null ? null : PropertyReader.Number(p, scope);
+            return number is { } n && double.IsFinite(n) ? (int)Math.Clamp(Math.Round(n * scale + offset), -1000000, 1000000) : fallback;
+        }
+        return new Rect(Read(def.X, def.Rect.X, def.GeometryScaleX, def.GeometryOffsetX),
+            Read(def.Y, def.Rect.Y, def.GeometryScaleY, def.GeometryOffsetY),
+            Math.Max(0, Read(def.W, def.Rect.W, def.GeometryScaleX)), Math.Max(0, Read(def.H, def.Rect.H, def.GeometryScaleY)));
     }
 
     private static bool IsAuto(PropertyValue p) => !p.IsBound && string.Equals(p.LiteralText, "auto", StringComparison.OrdinalIgnoreCase);
@@ -154,7 +166,7 @@ public static class LayoutResolver
         var vertical = r.Axis == Axis.Vertical;
         imageExtent = AutoImageExtent(r, item, vertical, remote);
         var declared = IsAuto(r.CellHeight) ? imageExtent : (int)Math.Round(PropertyReader.Number(r.CellHeight, item) ?? 0);
-        var children = r.Template.Count == 0 ? 0 : r.Template.Max(c => vertical ? c.Rect.Bottom : c.Rect.Right);
+        var children = r.Template.Count == 0 ? 0 : r.Template.Max(c => vertical ? Geometry(c, item).Bottom : Geometry(c, item).Right);
         return Math.Max(Math.Max(declared, children), 0);
     }
 

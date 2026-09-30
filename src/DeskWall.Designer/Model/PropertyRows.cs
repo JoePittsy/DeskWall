@@ -58,6 +58,10 @@ public static class PropertyRows
         ["Min"] = (Group.Geometry, "Minimum", false),
         ["Max"] = (Group.Geometry, "Maximum", false),
         ["Baseline"] = (Group.Geometry, "Fill beneath", false),
+        ["X"] = (Group.Geometry, "X", false),
+        ["Y"] = (Group.Geometry, "Y", false),
+        ["W"] = (Group.Geometry, "Width", false),
+        ["H"] = (Group.Geometry, "Height", false),
         ["Text"] = (Group.Content, "Text", false),
         ["Source"] = (Group.Content, "Image", false),
         ["Fraction"] = (Group.Content, "Value", true),
@@ -82,6 +86,7 @@ public static class PropertyRows
         ["Opacity"] = (Group.Colour, "Opacity", true),
 
         ["Thickness"] = (Group.Arc, "Stroke width", false),
+        ["GlowColor"] = (Group.Colour, "Glow colour", false),
         ["Glow"] = (Group.Arc, "Glow", false),
         ["StartAngle"] = (Group.Arc, "Start angle", false),
         ["Sweep"] = (Group.Arc, "Sweep", false),

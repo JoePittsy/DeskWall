@@ -630,24 +630,8 @@ public partial class PropertiesPanel : UserControl
 
     private IEnumerable<FrameworkElement> GeometryRows(ComponentDef def, RowContext ctx)
     {
-        var rect = ctx.KeyPrefix is null ? null : ctx.KeyPrefix + "rect";
         var z = ctx.KeyPrefix is null ? null : ctx.KeyPrefix + ComponentProperties.ZProp.Name.ToLowerInvariant();
         var geometry = PropertySchema.Geometry.ToDictionary(g => g.Name);
-        FrameworkElement Pair(string a, string b)
-        {
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            var first = GeometryBox(def, geometry[a]);
-            var second = GeometryBox(def, geometry[b]);
-            Grid.SetColumn(second, 2);
-            grid.Children.Add(first);
-            grid.Children.Add(second);
-            return grid;
-        }
-        yield return GeometryShell(def, "Position", Pair("X", "Y"), rect, ctx);
-        yield return GeometryShell(def, "Size", Pair("W", "H"), rect, ctx);
         yield return GeometryShell(def, PropertyRows.Label("Z"), GeometryBox(def, geometry["Z"]), z, ctx);
     }
 

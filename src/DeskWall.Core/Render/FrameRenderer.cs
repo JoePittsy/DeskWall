@@ -66,9 +66,31 @@ public sealed class FrameRenderer(int width, int height)
         foreach (var (id, rect) in previousRects) if (!liveIds.Contains(id)) dirty.Add(rect);
         if (dirty.Count == 0) return previous;
 
+        // Drawing a translucent layer over unrestored pixels compounds its alpha. Expand to the
+        // complete overlap chain before restoring any base pixels, including moved old bounds.
+        if (all.Any(c => c is ResolvedBar && c.Rect.W >= width && c.Rect.H >= height))
+        {
+            using var clean = Surface.LoadRaw(baseRawPath);
+            previous.CopyRect(clean, new Rect(0, 0, width, height));
+            foreach (var component in all.OrderBy(c => c.Z))
+                if (component is not ResolvedShortcut) { Draw(previous, component); drawn++; }
+            return previous;
+        }
+        var included = new HashSet<string>();
+        bool expanded;
+        do
+        {
+            expanded = false;
+            foreach (var component in all)
+                if (component is not ResolvedShortcut && !included.Contains(component.Id)
+                    && dirty.Any(d => d.Intersects(component.PaintBounds)))
+                {
+                    included.Add(component.Id); dirty.Add(component.PaintBounds); expanded = true;
+                }
+        } while (expanded);
         var frame = previous;
         using (var baseSurf = Surface.LoadRaw(baseRawPath))
-            foreach (var d in dirty) frame.CopyRect(baseSurf, d);
+            foreach (var d in dirty.Distinct()) frame.CopyRect(baseSurf, d);
         foreach (var c in all.OrderBy(c => c.Z))
             if (c is not ResolvedShortcut && dirty.Any(d => d.Intersects(c.PaintBounds))) { Draw(frame, c); drawn++; }
         return frame;
@@ -99,7 +121,7 @@ public sealed class FrameRenderer(int width, int height)
                 if (b.Shape is { } shape)
                 {
                     frame.DrawPath(b.Rect, shape, b.Thickness, b.Track, pad: b.Glow);
-                    if (fill.W > 0 && fill.H > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow);
+                    if (fill.W > 0 && fill.H > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow, b.GlowColor);
                     break;
                 }
                 frame.FillRect(b.Rect, b.Track);
