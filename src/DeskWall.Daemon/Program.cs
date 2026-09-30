@@ -378,6 +378,7 @@ internal static class Program
                 if (run > 0) await Task.Delay(TimeSpan.FromSeconds(12)); // lets history and async recipes populate
                 if (repeats > 1) Console.WriteLine($"run {run + 1}/{repeats}");
                 var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
+                if (t.Warning is { } warning) Console.Error.WriteLine($"warning: {warning}");
                 // "load" is not a row of the tick's own table, and must not start with "total", which
                 // is what the budget test's ^total regex reads.
                 if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick){t.LayerTable()}");

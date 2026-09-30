@@ -267,7 +267,8 @@ public partial class SettingsPage : Window
         if (!has) return;
 
         _loading = true;
-        BaseImagePathText.Text = _model!.Layout.BaseImage;
+        // A bound base (one photo per phase) shows its binding; Browse replaces it with a literal.
+        BaseImagePathText.Text = _model!.Layout.BaseImage.IsBound ? $"bound: {_model.Layout.BaseImage.Binding}" : _model.Layout.BaseImage.LiteralText ?? "";
         FitCombo.SelectedIndex = _model.Layout.BaseFit switch { Fit.Cover => 0, Fit.Contain => 1, _ => 2 };
         EncodeCombo.SelectedIndex = string.Equals(_model.Layout.Encode, "png", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         QualitySlider.Value = _model.Layout.JpegQuality;

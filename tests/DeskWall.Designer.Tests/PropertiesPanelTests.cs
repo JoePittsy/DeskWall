@@ -261,6 +261,56 @@ public class PropertiesPanelTests
         });
     }
 
+    /// <summary>The layout's photo is a PropertyValue since the photo-per-phase lane, so its row
+    /// binds like any other: Bind in the menu opens the chip, a pick binds the layout's baseImage
+    /// (bringing the source along), and Unbind puts back a literal.</summary>
+    [Fact]
+    [Trait("Category", "Desktop")]
+    public void The_Layout_Photo_Row_Binds_And_Unbinds_Like_Any_Property()
+    {
+        OnStaThread(() =>
+        {
+            var tree = new RecordValue(new Dictionary<string, Value>
+            {
+                ["time"] = new RecordValue(new Dictionary<string, Value> { ["phase"] = new TextValue("dusk") }),
+            });
+            var entries = ValueCatalog.From(tree, [new SourceDef { Name = "time", Type = "time" }]);
+            var m = new DesignerModel(LayoutFile.Parse("""
+                { "version": 2, "baseImage": "x.jpg", "sources": [], "components": [] }
+                """), new DisplaySignature("T", 1000, 800, 100), null);
+            var panel = Panel(m);
+
+            var change = (Control)ById(panel, "layout:photo");
+            Assert.Equal(["Bind to a live value..."], Menu(change));
+            Click(change, "Bind to a live value...");
+            var chip = (BindingChip)ById(panel, "layout:photo-row");
+            Assert.True(chip.IsEditing);
+            chip.Show(null, entries, tree);
+            chip.Search.Text = "phase of day";
+            chip.Pick();
+
+            Assert.True(m.Layout.BaseImage.IsBound);
+            Assert.Equal("time.phase", m.Layout.BaseImage.Binding!.ToString());
+            Assert.Equal("time", Assert.Single(m.Layout.Sources).Name);
+            Assert.Equal("Bind photo", m.LastEditLabel);
+
+            // Bound, the row is the chip, and its menu offers Unbind.
+            chip = (BindingChip)ById(panel, "layout:photo-row");
+            Assert.False(chip.IsEditing);
+            var withMenu = Descendants(chip).OfType<Control>().First(c => c.ContextMenu is not null);
+            Assert.Contains("Unbind", Menu(withMenu));
+            Click(withMenu, "Unbind");
+            Assert.False(m.Layout.BaseImage.IsBound);
+            Assert.Equal("Unbind photo", m.LastEditLabel);
+
+            m.Undo();
+            Assert.True(m.Layout.BaseImage.IsBound);
+            m.Undo();
+            Assert.Equal("x.jpg", m.Layout.BaseImage.LiteralText);
+            Assert.Empty(m.Layout.Sources);
+        });
+    }
+
     [Fact]
     [Trait("Category", "Desktop")]
     public void Expose_As_Knob_At_Widget_Depth_Adds_A_Knob_To_The_Widget_And_Undoes()

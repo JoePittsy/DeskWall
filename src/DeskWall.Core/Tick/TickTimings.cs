@@ -6,6 +6,9 @@ public sealed class TickTimings
     public double CpuMs;
     public bool Skipped;
     public int Redrawn;
+    /// <summary>Something the tick worked around and the caller should log once, e.g. a bound base
+    /// image that resolved to a missing file. Null on an ordinary tick.</summary>
+    public string? Warning;
     /// <summary>Draw milliseconds per component id, filled only when <see cref="TickRunner.MeasureLayers"/> is set.</summary>
     public Dictionary<string, double>? LayerMs;
 

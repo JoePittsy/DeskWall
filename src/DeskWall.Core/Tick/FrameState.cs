@@ -23,6 +23,12 @@ public sealed class FrameState
     /// <summary>BaseCache.KeyFor of the base image at the last render. Finding 12: a mismatch here
     /// means the base image was replaced in place, so the skip gate must not skip.</summary>
     public string BaseKey { get; set; } = "";
+    /// <summary>The resolved base image path of the last render: what a bound <c>baseImage</c> falls
+    /// back to when it resolves to a file that is not there.</summary>
+    public string BasePath { get; set; } = "";
+    /// <summary>The missing base path already warned about, so a fallback logs once rather than every
+    /// tick. Cleared when the binding resolves to a file that exists again.</summary>
+    public string BaseMissing { get; set; } = "";
 
     public static FrameState Load(string path)
     {
