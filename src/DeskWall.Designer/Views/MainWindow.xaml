@@ -36,21 +36,26 @@
                    Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                    ToolTip="Enter goes down a depth, Esc comes back up. Ctrl+Alt+K edits the selected widget, or makes one from loose parts." />
 
+        <!-- Icon buttons carry the icon font on the glyph, never on the button: a string tooltip
+             inherits the button's font and renders as boxes. -->
         <Button x:Name="SettingsButton" DockPanel.Dock="Right" Click="Settings_Click"
-                Content="&#xE713;" ToolTip="Settings" AutomationProperties.Name="Settings"
-                FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
-                Width="36" Height="32" Padding="0" Margin="16,0,0,0" VerticalAlignment="Center" />
+                ToolTip="Settings" AutomationProperties.Name="Settings"
+                Width="36" Height="32" Padding="0" Margin="16,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" />
+        </Button>
         <Button x:Name="ApplyButton" DockPanel.Dock="Right" Content="Apply" Click="Apply_Click"
                 Style="{DynamicResource AccentButtonStyle}" ToolTip="Apply (Ctrl+S)"
                 MinWidth="96" Height="32" Margin="16,0,0,0" VerticalAlignment="Center" />
         <Button x:Name="RedoButton" DockPanel.Dock="Right" Click="Redo_Click"
-                Content="&#xE7A6;" ToolTip="Redo (Ctrl+Y)" AutomationProperties.Name="Redo"
-                FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
-                Width="36" Height="32" Padding="0" Margin="4,0,0,0" VerticalAlignment="Center" />
+                ToolTip="Redo (Ctrl+Y)" AutomationProperties.Name="Redo"
+                Width="36" Height="32" Padding="0" Margin="4,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="&#xE7A6;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" />
+        </Button>
         <Button x:Name="UndoButton" DockPanel.Dock="Right" Click="Undo_Click"
-                Content="&#xE7A7;" ToolTip="Undo (Ctrl+Z)" AutomationProperties.Name="Undo"
-                FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
-                Width="36" Height="32" Padding="0" VerticalAlignment="Center" />
+                ToolTip="Undo (Ctrl+Z)" AutomationProperties.Name="Undo"
+                Width="36" Height="32" Padding="0" VerticalAlignment="Center">
+          <TextBlock Text="&#xE7A7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" />
+        </Button>
       </DockPanel>
     </Border>
 
@@ -107,10 +112,11 @@
                   BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
             <DockPanel>
               <DockPanel DockPanel.Dock="Top" Margin="0,0,8,8">
-                <Button DockPanel.Dock="Right" Content="&#xE711;" Click="CloseShortcuts_Click"
-                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
+                <Button DockPanel.Dock="Right" Click="CloseShortcuts_Click"
                         Width="28" Height="28" Padding="0" ToolTip="Close (F1 or Esc)"
-                        AutomationProperties.Name="Close keyboard shortcuts" />
+                        AutomationProperties.Name="Close keyboard shortcuts">
+                  <TextBlock Text="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12" />
+                </Button>
                 <TextBlock Text="Keyboard shortcuts" Style="{DynamicResource SectionHeader}" VerticalAlignment="Center" />
               </DockPanel>
               <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="560" Padding="0,0,8,0">

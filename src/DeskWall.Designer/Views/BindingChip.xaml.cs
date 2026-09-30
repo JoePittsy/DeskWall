@@ -53,7 +53,9 @@ public partial class BindingChip : UserControl
         Binding = binding;
         _entries = entries;
         _tree = tree;
-        Chip.Visibility = binding is null ? Visibility.Collapsed : Visibility.Visible;
+        // Hidden, not collapsed: the editor spans the row's label column, and the empty pill's line
+        // is what keeps it clear of the label.
+        Chip.Visibility = binding is null ? Visibility.Hidden : Visibility.Visible;
         UnbindButton.Visibility = binding is null || Editor == PropertySchema.Editor.Binding ? Visibility.Collapsed : Visibility.Visible;
         FormatRow.Visibility = Editor == PropertySchema.Editor.Text ? Visibility.Visible : Visibility.Collapsed;
         AutomationProperties.SetName(Search, $"Search values for {PropertyLabel}");
@@ -146,6 +148,19 @@ public partial class BindingChip : UserControl
 
     // ---- the editor ---------------------------------------------------------------------------
 
+    /// <summary>A match: its label, and its sample value right-aligned and secondary, each trimmed
+    /// on its own so a long sample (command output) never hides which value it is.</summary>
+    private static DockPanel Row(ValueEntry e)
+    {
+        var sample = new TextBlock { Text = Sample(e), Margin = new Thickness(12, 0, 0, 0), MaxWidth = 110, TextTrimming = TextTrimming.CharacterEllipsis };
+        sample.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
+        DockPanel.SetDock(sample, Dock.Right);
+        var row = new DockPanel { LastChildFill = true };
+        row.Children.Add(sample);
+        row.Children.Add(new TextBlock { Text = e.Label, TextTrimming = TextTrimming.CharacterEllipsis });
+        return row;
+    }
+
     private void Filter()
     {
         SearchHint.Visibility = Search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -157,7 +172,7 @@ public partial class BindingChip : UserControl
             foreach (var e in matches)
             {
                 var text = $"{e.Label} · {Sample(e)}";
-                var item = new ListBoxItem { Content = text, Tag = e };
+                var item = new ListBoxItem { Content = Row(e), Tag = e, Padding = new Thickness(8, 4, 8, 4), ToolTip = text };
                 AutomationProperties.SetName(item, text);
                 Matches.Items.Add(item);
             }

@@ -977,8 +977,14 @@ public partial class PropertiesPanel : UserControl
         grid.Children.Add(text);
 
         Grid.SetColumn(editor, 2);
-        // A chip takes the Bind column too: a bound row has no Bind icon, and its search needs the room.
-        if (editor is BindingChip) Grid.SetColumnSpan(editor, 2);
+        // A chip takes the whole row: the pill is indented to the value column, and its search opens
+        // under the label too, because the value column alone truncates every row of it.
+        if (editor is BindingChip chip)
+        {
+            Grid.SetColumn(chip, 1);
+            Grid.SetColumnSpan(chip, 4);
+            chip.Chip.Margin = new Thickness(grid.ColumnDefinitions[1].Width.Value, 0, 0, 0);
+        }
         grid.Children.Add(editor);
         if (editor is not BindingChip && Primary(editor) is { } primary)
         {
@@ -1046,7 +1052,9 @@ public partial class PropertiesPanel : UserControl
 
     private static Button IconButton(string glyph, string name, string tip)
     {
-        var b = new Button { Content = glyph, ToolTip = tip, IsTabStop = false, FontFamily = new FontFamily(Glyphs) };
+        // The icon font goes on the glyph, not the button: a string tooltip inherits the button's font
+        // and renders as boxes in an icon font.
+        var b = new Button { Content = new TextBlock { Text = glyph, FontFamily = new FontFamily(Glyphs), FontSize = 14 }, ToolTip = tip, IsTabStop = false };
         b.SetResourceReference(StyleProperty, "RowIconButton");
         AutomationProperties.SetName(b, name);
         return b;
