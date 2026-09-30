@@ -99,8 +99,10 @@ Recolour-Prop (Get-Comp 'disk-warning-sky') 'fill' 'BF616A' '4D' 'disk-warning-s
 foreach ($id in 'gpu-snowfield','cpu-snowfield') { Recolour-Prop (Get-Comp $id) 'fill' 'BF616A' '' $id; Recolour-Prop (Get-Comp $id) 'glowColor' 'BF616A' '' $id }
 
 # 4. Sun and moon: smaller, no halos.
-$sun = Get-Comp 'sun'; if ($sun) { $sun.rect[2] = 140; $sun.rect[3] = 140 }
-$moon = Get-Comp 'moon'; if ($moon) { $moon.rect[2] = 120; $moon.rect[3] = 120 }
+# Rice: small discs on the photo. Vapor: the sun is the hero, sized to sit behind the peaks.
+$sunSize = $Theme -eq 'vapor' ? 420 : 140; $moonSize = $Theme -eq 'vapor' ? 200 : 120
+$sun = Get-Comp 'sun'; if ($sun) { $sun.rect[2] = $sunSize; $sun.rect[3] = $sunSize }
+$moon = Get-Comp 'moon'; if ($moon) { $moon.rect[2] = $moonSize; $moon.rect[3] = $moonSize }
 
 # 5. The ridge and the foothills: thin, one accent each.
 $r = Get-Comp 'ridge'
