@@ -70,9 +70,10 @@ public sealed class BarDef : ComponentDef
     public PropertyValue Threshold { get; set; } = PropertyValue.Literal(1);
     public PropertyValue ThresholdFill { get; set; } = PropertyValue.Literal("#D13438");
     public PropertyValue Direction { get; set; } = PropertyValue.Literal("horizontal");
+    /// <summary>The halo's colour; empty is the fill's.</summary>
+    public PropertyValue GlowColor { get; set; } = PropertyValue.Literal("");
     /// <summary>SVG path data (M L H V C Z) drawn instead of the box, its bounds stretched to Rect;
     /// empty is the plain box. The fill is the same path clipped to the fraction.</summary>
-    public PropertyValue GlowColor { get; set; } = PropertyValue.Literal("");
     public PropertyValue Shape { get; set; } = PropertyValue.Literal("");
     /// <summary>For a shape: 0 fills it, more strokes it this wide.</summary>
     public PropertyValue Thickness { get; set; } = PropertyValue.Literal(0);

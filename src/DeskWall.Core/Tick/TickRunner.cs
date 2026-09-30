@@ -179,6 +179,10 @@ public sealed class TickRunner(
         return t;
     }
 
+    /// <summary>A source's refresh as a task that faults rather than throws, so one that throws
+    /// before its first await cannot stop the others being started.</summary>
+    private static async Task<RecordValue> Refresh(ISource s, CancellationToken ct) => await s.RefreshAsync(ct).ConfigureAwait(false);
+
     /// <summary>
     /// True when this component's paint bounds are not the ones persisted for it last tick, which
     /// makes it dirty however unchanged its content key is.
@@ -196,10 +200,6 @@ public sealed class TickRunner(
     /// <para>Cheap: for everything but text PaintBounds is just Rect, and for text it is a lookup in
     /// the measurement cache.</para>
     /// </summary>
-    /// <summary>A source's refresh as a task that faults rather than throws, so one that throws
-    /// before its first await cannot stop the others being started.</summary>
-    private static async Task<RecordValue> Refresh(ISource s, CancellationToken ct) => await s.RefreshAsync(ct).ConfigureAwait(false);
-
     private static bool PaintBoundsMoved(FrameState state, Resolved c)
     {
         if (!state.RectsById.TryGetValue(c.Id, out var r)) return false;   // never drawn: the key test already has it
