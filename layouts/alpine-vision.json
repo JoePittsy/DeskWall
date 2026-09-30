@@ -325,15 +325,6 @@
         "components.vpn.effect": "None",
         "components.vpn.effectRadius": "auto"
       }
-    },
-    {
-      "id": "day-month-year-1",
-      "widget": "day-month-year",
-      "x": 1606,
-      "y": 15,
-      "z": 0,
-      "knobs": {},
-      "overrides": {}
     }
   ]
 }
