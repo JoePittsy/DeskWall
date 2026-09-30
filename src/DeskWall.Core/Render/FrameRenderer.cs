@@ -83,6 +83,7 @@ public sealed class FrameRenderer(int width, int height)
                 frame.DrawText(t.Text, t.Style, t.Rect);
                 break;
             case ResolvedImage i:
+                if (i.Opacity <= 0 || string.IsNullOrWhiteSpace(i.Path)) break;
                 if (!File.Exists(i.Path)) { frame.FillRect(i.Rect, new Color(140, 0, 0, 0), i.Radius); break; }
                 using (var img = Surface.Load(i.Path)) frame.DrawSurface(img, i.Rect, i.Fit, i.Opacity, i.Radius);
                 break;

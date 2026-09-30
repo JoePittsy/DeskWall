@@ -12,6 +12,7 @@ public static class SourceFactory
         return def.Type.ToLowerInvariant() switch
         {
             "time" => new TimeSource(def.Name, clock),
+            "media" => new MediaSource(def.Name),
             "battery" => new BatterySource(def.Name, every),
             "disks" => new DisksSource(def.Name, every),
             "system" => SystemSource.FromDef(def, clock),

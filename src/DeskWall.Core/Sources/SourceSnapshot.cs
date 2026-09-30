@@ -124,7 +124,9 @@ public sealed class SourceRegistry
     private bool IsStale(ISource s, SourceSnapshot snap, DateTimeOffset now)
     {
         if (snap.LastRefresh is not { } last) return false;
-        var every = s.NextDue(last, now) - last;
+        var due = s.NextDue(last, now);
+        if (due == DateTimeOffset.MaxValue) return false; // event-only source, no missed schedule
+        var every = due - last;
         if (every <= TimeSpan.Zero) return false;   // always-due source: it can never fall behind
         return last + StaleAfter * every < now;
     }

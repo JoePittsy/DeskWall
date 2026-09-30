@@ -28,6 +28,10 @@
     {
       "name": "hardware",
       "type": "hardware"
+    },
+    {
+      "name": "media",
+      "type": "media"
     }
   ],
   "components": [
@@ -208,6 +212,53 @@
       "thickness": 2,
       "glow": 4,
       "baseline": true
+    },
+    {
+      "type": "text",
+      "id": "now-title",
+      "rect": [
+        158,
+        855,
+        650,
+        34
+      ],
+      "text": {
+        "bind": "media.title"
+      },
+      "size": 22,
+      "color": "#B3FFFFFF"
+    },
+    {
+      "type": "text",
+      "id": "now-artist",
+      "rect": [
+        158,
+        890,
+        650,
+        34
+      ],
+      "text": {
+        "bind": "media.artist"
+      },
+      "size": 17,
+      "color": "#B3FFFFFF"
+    },
+    {
+      "type": "image",
+      "id": "now-art",
+      "rect": [
+        42,
+        850,
+        96,
+        96
+      ],
+      "source": {
+        "bind": "media.art"
+      },
+      "radius": 8,
+      "opacity": {
+        "bind": "media.playing | \"?true=0.8,false=0\""
+      }
     }
   ],
   "copies": [

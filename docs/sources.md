@@ -529,3 +529,11 @@ and at least 95% charged, otherwise 1; absent for unknown charge.
 
 Hardware also publishes `cpuHistory`, `ramHistory`, and `gpuHistory` when a GPU reader exists:
 oldest-first lists of `{ "v": fraction }`, rounded to three decimals. Empty until sampled.
+
+## `media`
+
+Windows global media session, event-driven (`ISignalSource`), no polling. Publishes `title`,
+`artist`, `album`, `playing`, `app`, and `art` (`ImageValue`). Paused or absent playback has
+empty display fields. Thumbnail bytes are hashed; only changed art is decoded to PNG under
+`runtime/media/art.png`. Thumbnails above 8 MB are omitted. Subscriptions are removed on disposal.
+Windows SDK projections compiled successfully under native AOT in the spike.
