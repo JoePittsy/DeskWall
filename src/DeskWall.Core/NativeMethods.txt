@@ -155,3 +155,5 @@ PKEY_Device_FriendlyName
 CLSCTX
 FindWindow
 GetWindowThreadProcessId
+
+GetSystemPowerStatus

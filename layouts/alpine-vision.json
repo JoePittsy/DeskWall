@@ -20,6 +20,14 @@
     {
       "name": "system",
       "type": "system"
+    },
+    {
+      "name": "battery",
+      "type": "battery"
+    },
+    {
+      "name": "hardware",
+      "type": "hardware"
     }
   ],
   "components": [
@@ -111,6 +119,76 @@
       "color": "#B3FFFFFF",
       "text": {
         "bind": "system.daysSinceCrash | \"?<0=,0=0 days since crash,1=1 day since crash,2=2 days since crash,3=3 days since crash,4=4 days since crash,5=5 days since crash,6=6 days since crash,*=\""
+      }
+    },
+    {
+      "type": "dial",
+      "id": "hardware-cpu",
+      "rect": [
+        1600,
+        14,
+        76,
+        76
+      ],
+      "fraction": {
+        "bind": "hardware.cpu"
+      },
+      "thickness": 4,
+      "threshold": 2,
+      "track": "#22FFFFFF",
+      "fill": "#99FFFFFF"
+    },
+    {
+      "type": "dial",
+      "id": "hardware-ram",
+      "rect": [
+        1718,
+        14,
+        76,
+        76
+      ],
+      "fraction": {
+        "bind": "hardware.ram"
+      },
+      "thickness": 4,
+      "threshold": 2,
+      "track": "#22FFFFFF",
+      "fill": "#99FFFFFF"
+    },
+    {
+      "type": "dial",
+      "id": "hardware-gpu",
+      "rect": [
+        1836,
+        14,
+        76,
+        76
+      ],
+      "fraction": {
+        "bind": "hardware.gpu"
+      },
+      "thickness": 4,
+      "threshold": 2,
+      "track": "#22FFFFFF",
+      "fill": "#99FFFFFF"
+    },
+    {
+      "type": "dial",
+      "id": "battery-fraction",
+      "rect": [
+        1954,
+        14,
+        76,
+        76
+      ],
+      "fraction": {
+        "bind": "battery.fraction"
+      },
+      "thickness": 4,
+      "threshold": 2,
+      "track": "#22FFFFFF",
+      "fill": {
+        "bind": "battery.fraction | \"?<0.2=#E6D13438,<0.5=#CCEDB55D,*=#44FFFFFF\""
       }
     }
   ],

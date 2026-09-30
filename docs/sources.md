@@ -519,3 +519,10 @@ and not an administrator, is granted access by omission. The threat left is a pr
 running as you, and event values are used exactly like any other source value -- which means a
 layout that binds a `shortcut` target to one will launch whatever it says. That is the same trust
 an `http` source already has, and it is the layout author's choice, but make it deliberately.
+
+## `battery`
+
+Windows GetSystemPowerStatus, every 60 seconds by default. Publishes `percent` (0..100),
+`fraction` (0..1), `charging`, `onBattery`, and `minutesLeft` (-1 when unknown).
+No battery or unknown charge omits percent/fraction. `opacity` is 0.2 when on mains
+and at least 95% charged, otherwise 1; absent for unknown charge.

@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model.Widgets;
@@ -21,6 +21,7 @@ public static class Insert
         new() { Name = "disks", Type = "disks", EverySeconds = 300 },
         new() { Name = "system", Type = "system" },
         new() { Name = "audio", Type = "audio" },
+        new() { Name = "battery", Type = "battery" },
     ];
 
     /// <summary>The sources the Data panel runs: at widget depth the widget's own first, then the

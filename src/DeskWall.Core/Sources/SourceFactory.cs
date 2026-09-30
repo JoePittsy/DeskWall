@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 
 namespace DeskWall.Core.Sources;
 
@@ -12,6 +12,7 @@ public static class SourceFactory
         return def.Type.ToLowerInvariant() switch
         {
             "time" => new TimeSource(def.Name, clock),
+            "battery" => new BatterySource(def.Name, every),
             "disks" => new DisksSource(def.Name, every),
             "system" => SystemSource.FromDef(def, clock),
             "file" => FileSource.FromDef(def, clock),
@@ -50,6 +51,7 @@ public static class SourceFactory
         "disks" => 300,
         "system" => 900,
         "hardware" => 60,
+        "battery" => 60,
         _ => 600,
     };
 }

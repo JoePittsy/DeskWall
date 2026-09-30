@@ -180,6 +180,12 @@ public static partial class ValueCatalog
         ["hardware.samples"] = ("Hardware samples", false),
         ["hardware.window"] = ("Hardware window (seconds)", false),
 
+        ["battery.percent"] = ("Battery %", false),
+["battery.fraction"] = ("Battery charge", true),
+["battery.charging"] = ("Charging", false),
+["battery.onBattery"] = ("On battery", false),
+["battery.minutesLeft"] = ("Battery minutes left", false),
+["battery.opacity"] = ("Battery visibility", false),
         ["audio.volume"] = ("Volume", true),
         ["audio.volumePct"] = ("Volume %", false),
         ["audio.muted"] = ("Muted", false),
