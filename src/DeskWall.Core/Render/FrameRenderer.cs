@@ -114,14 +114,15 @@ public sealed class FrameRenderer(int width, int height)
                 if (l.Stroke.A > 0) frame.DrawPath(l.Rect, l.Path, l.Thickness, l.Stroke, pad: l.Glow, glow: l.Glow);
                 break;
             case ResolvedBar b:
+                if (b.Track.A == 0 && b.Fill.A == 0 && (b.GlowColor?.A ?? 0) == 0) break;
                 var f = Math.Clamp(b.Fraction, 0, 1);
                 var fill = b.Direction == Axis.Horizontal
                     ? new Rect(b.Rect.X, b.Rect.Y, (int)Math.Round(b.Rect.W * f), b.Rect.H)
                     : new Rect(b.Rect.X, b.Rect.Bottom - (int)Math.Round(b.Rect.H * f), b.Rect.W, (int)Math.Round(b.Rect.H * f));
                 if (b.Shape is { } shape)
                 {
-                    frame.DrawPath(b.Rect, shape, b.Thickness, b.Track, pad: b.Glow);
-                    if (fill.W > 0 && fill.H > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow, b.GlowColor);
+                    if (b.Track.A > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Track, pad: b.Glow);
+                    if (fill.W > 0 && fill.H > 0 && (b.Fill.A > 0 || (b.GlowColor?.A ?? 0) > 0)) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow, b.GlowColor);
                     break;
                 }
                 frame.FillRect(b.Rect, b.Track);

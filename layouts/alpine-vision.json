@@ -224,6 +224,9 @@
       "track": "#22FFFFFF",
       "fill": {
         "bind": "battery.fraction | \"?<0.2=#E6D13438,<0.5=#CCEDB55D,*=#44FFFFFF\""
+      },
+      "opacity": {
+        "bind": "battery.opacity"
       }
     },
     {

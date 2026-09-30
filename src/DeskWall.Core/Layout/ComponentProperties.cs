@@ -125,6 +125,7 @@ public static class ComponentProperties
 
     private static readonly Prop[] DialProps =
     [
+        new("Opacity", c => ((DialDef)c).Opacity, (c, v) => ((DialDef)c).Opacity = v),
         new("Fraction", c => ((DialDef)c).Fraction, (c, v) => ((DialDef)c).Fraction = v),
         new("Track", c => ((DialDef)c).Track, (c, v) => ((DialDef)c).Track = v),
         new("Fill", c => ((DialDef)c).Fill, (c, v) => ((DialDef)c).Fill = v),

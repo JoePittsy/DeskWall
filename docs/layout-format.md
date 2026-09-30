@@ -638,3 +638,6 @@ Coordinates are physical image pixels for the CLI. Output is a layout containing
 The trace is a starting outline for editing; clouds and low-contrast rock can affect the result.
 Rules colour rows have swatch pickers and 150 ms coalesced transient preview. Done commits one
 undo entry; Escape restores the previous value.
+
+Dials accept `opacity` (0..1, default 1), applied to both track and fill. An unresolved bound
+opacity hides the dial. The battery dial uses this to fade on mains at full charge.

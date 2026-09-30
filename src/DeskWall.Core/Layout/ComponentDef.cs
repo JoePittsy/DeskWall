@@ -82,6 +82,7 @@ public sealed class BarDef : ComponentDef
 /// geometry is an arc centred in Rect instead of a filled box.</summary>
 public sealed class DialDef : ComponentDef
 {
+    public PropertyValue Opacity { get; set; } = PropertyValue.Literal(1);
     public required PropertyValue Fraction { get; set; }
     public PropertyValue Track { get; set; } = PropertyValue.Literal("#46FFFFFF");
     public PropertyValue Fill { get; set; } = PropertyValue.Literal("#EBFFFFFF");

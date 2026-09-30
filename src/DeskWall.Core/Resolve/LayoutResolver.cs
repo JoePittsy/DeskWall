@@ -102,8 +102,10 @@ public static class LayoutResolver
                 var dfill = dfrac >= dthr
                     ? PropertyReader.Color(dl.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
                     : PropertyReader.Color(dl.Fill, scope) ?? Color.Parse("#EBFFFFFF");
+                var opacity = Math.Clamp(PropertyReader.Number(dl.Opacity, scope) ?? (dl.Opacity.IsBound ? 0 : 1), 0, 1);
+                var dtrack = PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF");
                 result.Add(new ResolvedDial(id, rect, def.Z, dfrac,
-                    PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF"), dfill,
+                    dtrack with { A = (byte)(dtrack.A * opacity) }, dfill with { A = (byte)(dfill.A * opacity) },
                     (float)(PropertyReader.Number(dl.Thickness, scope) ?? 6),
                     (float)(PropertyReader.Number(dl.StartAngle, scope) ?? 225),
                     (float)(PropertyReader.Number(dl.Sweep, scope) ?? 270)));
