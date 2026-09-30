@@ -135,3 +135,17 @@ desktop icons alone (both are safe against a scratch `--home`; without them a ti
 
 All starters point at the Windows Spotlight asset the POC used. Set `baseImage` to any JPEG or PNG
 you like; `baseFit` is `cover` (crop to fill), `contain` (letterbox) or `stretch`.
+
+`baseImage` can also be bound, so the photo follows a value (`docs/layout-format.md` "The base
+image"). `alpine-vision-photos.json` is `alpine-vision.json` with its photo bound to `time.phase`,
+choosing between four grades of the same ridge photo, and its three sky-grade layers at half
+alpha because the photo now carries the mood. The four photos are not in the repo; make them from
+the dusk original, into the runtime dir the layout will run under, with
+
+```powershell
+.\scripts\phase-photos.ps1 -Home $env:TEMP\dw-scratch          # refuses the live dir without -AllowLive
+.\scripts\phase-photos.ps1 -Home $env:TEMP\dw-scratch -Check   # also half-size PNGs with the ridge trace in red
+```
+
+It writes `assets\alpine\ridge-{night,dawn,day,dusk}.jpg` under that home; copy the repo's
+`assets\alpine` beside them for the sun, moon and sky layers.

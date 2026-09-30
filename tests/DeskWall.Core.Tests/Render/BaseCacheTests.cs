@@ -35,4 +35,43 @@ public class BaseCacheTests
         Assert.True(File.Exists(path));
         Assert.True(File.Exists(stale));   // still there: the delete failed and was swallowed
     }
+
+    /// <summary>A bound base swaps between one photo per phase: four of them must stay decoded so a
+    /// swap is a raw read, the least recently used goes first, and another canvas size (the designer's
+    /// preview shares the runtime dir) is not counted against this one.</summary>
+    [Fact]
+    public void Ensure_Keeps_The_Four_Most_Recently_Used_Bases_Per_Canvas_Size()
+    {
+        var dir = Path.Combine(TempDir(), "basecache-lru-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        string Photo(string name, byte shade)
+        {
+            var p = Path.Combine(dir, name + ".png");
+            using var b = Surface.Create(13, 7);
+            b.Clear(new Color(255, shade, shade, shade));
+            b.SavePng(p);
+            return p;
+        }
+        var photos = new[] { Photo("a", 10), Photo("b", 20), Photo("c", 30), Photo("d", 40), Photo("e", 50) };
+
+        var other = BaseCache.Ensure(photos[0], 12, 7, Fit.Cover);   // another size: never evicted by this one's churn
+        var raws = new List<string>();
+        for (var i = 0; i < 4; i++)
+        {
+            raws.Add(BaseCache.Ensure(photos[i], 13, 7, Fit.Cover));
+            File.SetLastWriteTimeUtc(raws[i], DateTime.UtcNow.AddSeconds(-10 + i));   // a, b, c, d: oldest first
+        }
+        Assert.All(raws, r => Assert.True(File.Exists(r)));
+
+        Assert.Equal(raws[0], BaseCache.Ensure(photos[0], 13, 7, Fit.Cover));   // a hit makes a the newest
+        var e = BaseCache.Ensure(photos[4], 13, 7, Fit.Cover);                  // the fifth evicts b, now the oldest
+
+        Assert.True(File.Exists(e));
+        Assert.True(File.Exists(raws[0]));
+        Assert.False(File.Exists(raws[1]));
+        Assert.True(File.Exists(raws[2]));
+        Assert.True(File.Exists(raws[3]));
+        Assert.True(File.Exists(other));
+        Assert.Equal(BaseCache.Capacity, Directory.EnumerateFiles(Path.GetDirectoryName(e)!, "13x7-*.raw").Count());
+    }
 }

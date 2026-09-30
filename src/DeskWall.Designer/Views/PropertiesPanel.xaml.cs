@@ -121,7 +121,9 @@ public partial class PropertiesPanel : UserControl
 
     private void OnLiveUpdated() => Dispatcher.BeginInvoke(new Action(() =>
     {
-        if (_layoutShown) { if (SourcesKey() != _sourcesKey) Render(); return; }
+        // The layout panel rebuilds when a source starts or fails; otherwise, like a part's rows,
+        // only its chips (the photo's) follow the new values.
+        if (_layoutShown && SourcesKey() != _sourcesKey) { Render(); return; }
         var tree = PickerRoot();
         foreach (var chip in _chips) chip.Refresh(tree);
     }));
@@ -727,6 +729,39 @@ public partial class PropertiesPanel : UserControl
         return chip;
     }
 
+    /// <summary>The layout's photo row as a binding chip: the same chip as a part's property, but its
+    /// edits go to the layout itself rather than through the depth to a component. Path-shaped, so
+    /// a hand-written map ("?night=runtime:...,day=...") survives a re-pick as a custom format.</summary>
+    private BindingChip PhotoChip(DesignerModel model, Binding? bound, string rowId)
+    {
+        var chip = new BindingChip { Editor = PropertySchema.Editor.Path, PropertyLabel = "Photo" };
+        var tree = PickerRoot();
+        chip.Show(bound, Catalog(tree), tree);
+        static void Apply(LayoutFile l, PropertyValue value, SourceDef? source)
+        {
+            l.BaseImage = value;
+            if (source is not null && !l.Sources.Exists(s => string.Equals(s.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
+                l.Sources.Add(LayoutFile.Parse(new LayoutFile { BaseImage = "", Sources = [source] }.ToJson()).Sources[0]);
+        }
+        chip.Preview += (value, entry) => model.Transient(() => model.Edit("Preview photo", l => Apply(l, value, entry.Source)));
+        chip.Chosen += (value, entry) =>
+        {
+            model.EndTransient();
+            _openChip = null;
+            if (Overrides.Same(model.Layout.BaseImage, value)) { Render(); return; }
+            model.Edit("Bind photo", l => Apply(l, value, entry.Source));
+        };
+        chip.Unbound += () => { _openChip = null; model.Edit("Unbind photo", l => l.BaseImage = ShownPhoto(l)); };
+        chip.Closed += () => { model.EndTransient(); if (_openChip == rowId) { _openChip = null; Render(); } };
+        if (_openChip == rowId) chip.BeginEdit();
+        AutomationProperties.SetAutomationId(chip, rowId);
+        _chips.Add(chip);
+        return chip;
+    }
+
+    /// <summary>The photo a layout shows against the live values now, as a literal path.</summary>
+    private string ShownPhoto(LayoutFile layout) => DeskWall.Core.Resolve.LayoutResolver.BaseImagePath(layout, _live?.Tree() ?? ValueTree.Empty);
+
     /// <summary>The values a binding here can name, from the running sources. Inside a repeater's
     /// template that is its first item, so the paths are the item's own.</summary>
     private IReadOnlyList<ValueEntry> Catalog(RecordValue tree)
@@ -1121,29 +1156,43 @@ public partial class PropertiesPanel : UserControl
         _sourcesKey = SourcesKey();
         Add(Header("Wallpaper"));
 
-        var photoName = model.Layout.BaseImage.Length == 0 ? "(none)" : IOPath.GetFileName(model.Layout.BaseImage);
-        var browse = ActionButton("Change...", "layout:photo");
-        AutomationProperties.SetName(browse, $"Change photo, now {photoName}");
-        // Under the name, not beside it: beside it left the name about 50 px ("imag...").
-        browse.Margin = new Thickness(0, 4, 0, 0);
-        browse.HorizontalAlignment = HorizontalAlignment.Left;
-        browse.Click += (_, _) =>
+        const string photoRow = "layout:photo-row";
+        var baseImage = model.Layout.BaseImage;
+        FrameworkElement photoEditor;
+        if (baseImage.IsBound || _openChip == photoRow) photoEditor = PhotoChip(model, baseImage.Binding, photoRow);
+        else
         {
-            var dir = IOPath.GetDirectoryName(model.Layout.BaseImage);
-            var dlg = new Microsoft.Win32.OpenFileDialog
+            var literal = baseImage.LiteralText ?? "";
+            var photoName = literal.Length == 0 ? "(none)" : IOPath.GetFileName(literal);
+            var browse = ActionButton("Change...", "layout:photo");
+            AutomationProperties.SetName(browse, $"Change photo, now {photoName}");
+            // Under the name, not beside it: beside it left the name about 50 px ("imag...").
+            browse.Margin = new Thickness(0, 4, 0, 0);
+            browse.HorizontalAlignment = HorizontalAlignment.Left;
+            browse.Click += (_, _) =>
             {
-                Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|All files|*.*",
-                InitialDirectory = !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? dir : null,
+                var dir = IOPath.GetDirectoryName(DeskWall.Core.Paths.ExpandPath(literal));
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp|All files|*.*",
+                    InitialDirectory = !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? dir : null,
+                };
+                if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
+                model.Edit("Set photo", l => l.BaseImage = dlg.FileName);
             };
-            if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
-            model.Edit("Set photo", l => l.BaseImage = dlg.FileName);
-        };
-        var name = new TextBlock { Text = photoName, Margin = new Thickness(0, 7, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = model.Layout.BaseImage };
-        name.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorPrimaryBrush");
-        var photo = new StackPanel();
-        photo.Children.Add(name);
-        photo.Children.Add(browse);
-        Add(Shell("layout:photo-row", "Photo", photo, false, null, null, null));
+            var name = new TextBlock { Text = photoName, Margin = new Thickness(0, 7, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = literal };
+            name.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorPrimaryBrush");
+            var photo = new StackPanel();
+            photo.Children.Add(name);
+            photo.Children.Add(browse);
+            photoEditor = photo;
+        }
+        // Like any other property's row: a Bind icon while it is a literal, Unbind in the menu while
+        // it is bound (one photo per time.phase, docs/layout-format.md). Unbinding keeps the photo
+        // on screen now as the literal, so nothing jumps.
+        Action? bindPhoto = !baseImage.IsBound && _openChip != photoRow ? () => { _openChip = photoRow; Render(); } : null;
+        Action? unbindPhoto = baseImage.IsBound ? () => model.Edit("Unbind photo", l => l.BaseImage = ShownPhoto(l)) : null;
+        Add(Shell(photoRow, "Photo", photoEditor, false, bindPhoto, RowMenu("Photo", bindPhoto, unbindPhoto, null, null, null), null));
 
         var readout = Label(model.Layout.JpegQuality.ToString(CultureInfo.InvariantCulture));
         readout.Width = 32;

@@ -17,6 +17,9 @@ public sealed class PropertyValue
     public static PropertyValue Literal(string s) => new(s, null);
     public static PropertyValue Literal(double d) => new(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture), null);
     public static PropertyValue Bound(Binding b) => new(null, b);
+    /// <summary>A literal, so a plain string still assigns to a property that became bindable
+    /// (<see cref="LayoutFile.BaseImage"/> was a string until the photo-per-phase lane).</summary>
+    public static implicit operator PropertyValue(string s) => Literal(s);
     public bool IsBound => Binding is not null;
     public override string ToString() => IsBound ? $"{{bind {Binding}}}" : LiteralText ?? "";
 }

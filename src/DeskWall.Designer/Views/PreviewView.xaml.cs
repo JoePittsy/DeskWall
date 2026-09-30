@@ -138,7 +138,10 @@ public partial class PreviewView : UserControl
         var band = CanvasRect(_downScreen, end);
         try
         {
-            using var photo = DeskWall.Core.Render.Surface.Load(_model.Layout.BaseImage);
+            // The photo the preview is showing: a bound base follows the live tree, so trace that one.
+            var photoPath = _frame?.BaseImage is { Length: > 0 } shown ? shown
+                : DeskWall.Core.Resolve.LayoutResolver.BaseImagePath(_model.Layout, DeskWall.Core.Values.ValueTree.Empty);
+            using var photo = DeskWall.Core.Render.Surface.Load(photoPath);
             using var canvas = DeskWall.Core.Render.Surface.Create(_model.Signature.Width, _model.Signature.Height);
             canvas.DrawSurface(photo, CanvasRect(), _model.Layout.BaseFit);
             AddOutline(DeskWall.Core.Render.SkylineTrace.Trace(canvas, band));

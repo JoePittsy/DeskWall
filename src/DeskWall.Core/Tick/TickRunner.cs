@@ -35,8 +35,9 @@ public sealed class TickRunner(
     /// <summary>What stage 7 did on the last run, or null when there is no manager or nothing changed.</summary>
     public ShortcutOutcome? LastShortcutOutcome { get; private set; }
 
-    /// <summary>`tick --preview`: values pinned over the refreshed tree before the resolve.</summary>
-    public PreviewOverrides? Preview { get; init; }
+    /// <summary>`tick --preview`: values pinned over the refreshed tree before the resolve. Settable
+    /// between runs so `--repeat` can step through several pinned states.</summary>
+    public PreviewOverrides? Preview { get; set; }
 
     /// <summary>Time every component's draw into <see cref="TickTimings.LayerMs"/> (<c>tick --measure</c>).
     /// Off in the daemon: the stopwatch reads are cheap, the dictionary per tick is not needed.</summary>
@@ -86,10 +87,12 @@ public sealed class TickRunner(
         var changed = resolved.Where(c => force || !state.KeysById.TryGetValue(c.Id, out var k) || k != c.ContentKey || PaintBoundsMoved(state, c)).ToList();
         var liveIds = resolved.Select(c => c.Id).ToHashSet();
         var removed = state.KeysById.Keys.Any(id => !liveIds.Contains(id));
+        var basePath = ResolveBase(tree, state, t, out var baseStateMoved);
         // Finding 12: BaseCache.KeyFor only stats the file (no decode), so this stays cheap enough
         // to sit before the skip gate, which must run before any drawing - a replaced base image
-        // must never be treated as "same signature".
-        var baseKey = BaseCache.KeyFor(layout.BaseImage, canvas.W, canvas.H, layout.BaseFit);
+        // must never be treated as "same signature". A bound base that swapped (a new phase) moves
+        // the key the same way, so the swap tick is a full render onto the other photo.
+        var baseKey = BaseCache.KeyFor(basePath, canvas.W, canvas.H, layout.BaseFit);
         var sameSig = state.SignatureKey == monitor.Signature.Key && state.BaseKey == baseKey && File.Exists(_framePath) && File.Exists(_outPath);
         t.ResolveMs = sw.ElapsedMilliseconds;
 
@@ -105,9 +108,11 @@ public sealed class TickRunner(
                 var r0 = sw.ElapsedMilliseconds;
                 ReconcileShortcuts(state, force: false);
                 t.ShortcutsMs = sw.ElapsedMilliseconds - r0;
-                // Only the two shortcut fields moved; everything else is what Load just read back.
-                state.Save(_statePath);
+                baseStateMoved = true;   // the shortcut fields moved; one save covers both
             }
+            // Only the shortcut or base-warning fields moved; everything else is what Load just read
+            // back. The warning must persist here too or a skipped tick would log it every minute.
+            if (baseStateMoved) state.Save(_statePath);
             t.TotalMs = sw.ElapsedMilliseconds;
             t.CpuMs = (Environment.CpuUsage.TotalTime - cpu0).TotalMilliseconds;
             return t;
@@ -115,7 +120,8 @@ public sealed class TickRunner(
 
         // 3. draw: full render when forced or the display changed, otherwise only the dirty rects
         var d0 = sw.ElapsedMilliseconds;
-        var baseRaw = BaseCache.Ensure(layout.BaseImage, canvas.W, canvas.H, layout.BaseFit);
+        var baseRaw = BaseCache.Ensure(basePath, canvas.W, canvas.H, layout.BaseFit);
+        t.BaseMs = sw.ElapsedMilliseconds - d0;
         var renderer = new FrameRenderer(canvas.W, canvas.H) { LayerMs = MeasureLayers ? (t.LayerMs = []) : null };
         Surface frame;
         if (force || !sameSig)
@@ -172,6 +178,7 @@ public sealed class TickRunner(
         state.SignatureKey = monitor.Signature.Key;
         state.FramePath = _framePath;
         state.BaseKey = baseKey;
+        state.BasePath = basePath;
         state.Save(_statePath);
 
         t.TotalMs = sw.ElapsedMilliseconds;
@@ -182,6 +189,35 @@ public sealed class TickRunner(
     /// <summary>A source's refresh as a task that faults rather than throws, so one that throws
     /// before its first await cannot stop the others being started.</summary>
     private static async Task<RecordValue> Refresh(ISource s, CancellationToken ct) => await s.RefreshAsync(ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// The base image path for this tick. A path that is not on disk - a bound photo not generated
+    /// yet, a typo in a map, a literal whose file was deleted - falls back to the last base that
+    /// rendered, and says so once through <see cref="TickTimings.Warning"/>; the next tick that
+    /// resolves to a real file clears the debt. With no previous base there is nothing to keep, and
+    /// the missing path goes through to fail the tick as it always has.
+    /// </summary>
+    /// <param name="stateMoved">true when the warn-once fields changed and the state needs saving
+    /// even on a skipped tick</param>
+    private string ResolveBase(RecordValue tree, FrameState state, TickTimings t, out bool stateMoved)
+    {
+        stateMoved = false;
+        var path = LayoutResolver.BaseImagePath(layout, tree);
+        if (path.Length > 0 && File.Exists(path))
+        {
+            if (state.BaseMissing.Length > 0) { state.BaseMissing = ""; stateMoved = true; }
+            return path;
+        }
+        if (state.BasePath.Length == 0 || state.BasePath == path || !File.Exists(state.BasePath)) return path;
+        var shown = path.Length > 0 ? path : $"(nothing: {layout.BaseImage})";
+        if (state.BaseMissing != shown)
+        {
+            t.Warning = $"base image {shown} not found; keeping {state.BasePath}";
+            state.BaseMissing = shown;
+            stateMoved = true;
+        }
+        return state.BasePath;
+    }
 
     /// <summary>
     /// True when this component's paint bounds are not the ones persisted for it last tick, which

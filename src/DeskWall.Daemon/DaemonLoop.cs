@@ -209,6 +209,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             SyncProviders(clock.Now);
             _last = _active.Runner.RunAsync(force, apply: true, CancellationToken.None).GetAwaiter().GetResult();
             log.Info($"tick {why}: {(_last.Skipped ? "skipped" : $"redrawn {_last.Redrawn}")} total {_last.TotalMs} ms cpu {_last.CpuMs:N0} ms");
+            if (_last.Warning is { } warning) log.Warn(warning);
             if (_active.Runner.LastShortcutOutcome is { } sc)
             {
                 log.Info($"shortcuts: placed {sc.Positioned} / removed {sc.Removed} (written {sc.Written}) in {_last.ShortcutsMs} ms");

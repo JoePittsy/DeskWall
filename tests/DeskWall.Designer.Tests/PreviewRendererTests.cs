@@ -209,6 +209,41 @@ public class PreviewRendererTests
 
     private readonly Xunit.Abstractions.ITestOutputHelper _output;
 
+    /// <summary>A bound photo (one per time.phase) is resolved against the same live tree as the
+    /// parts, so the preview swaps bases as that tree moves - no edit to the document in between.</summary>
+    [Fact]
+    public void A_Bound_Photo_Follows_The_Live_Tree()
+    {
+        var night = Path.Combine(Paths.RuntimeDir, "preview-phase-night.png");
+        var day = Path.Combine(Paths.RuntimeDir, "preview-phase-day.png");
+        foreach (var (p, c) in new[] { (night, new Color(255, 10, 20, 60)), (day, new Color(255, 150, 190, 230)) })
+        {
+            using var s = Surface.Create(4, 4);
+            s.Clear(c);
+            s.SavePng(p);
+        }
+        var model = Model("");
+        model.Layout.BaseImage = PropertyValue.Bound(DeskWall.Core.Bindings.Binding.Parse(
+            "time.phase | \"?night=runtime:preview-phase-night.png,day=runtime:preview-phase-day.png\""));
+        var phase = "night";
+        RecordValue Tree() => new(new Dictionary<string, Value> { ["time"] = new RecordValue(new Dictionary<string, Value> { ["phase"] = new TextValue(phase) }) });
+        using var r = new PreviewRenderer(Tree);
+        PreviewFrame? frame = null;
+        var done = new AutoResetEvent(false);
+        r.Rendered += f => { frame = f; done.Set(); };
+
+        r.Request(model);
+        Assert.True(done.WaitOne(10_000), "no frame arrived");
+        Assert.Equal(night, frame!.BaseImage);
+        Assert.Equal(60, frame.Bgra[((190 * 320) + 300) * 4 + 0]);   // blue channel of the night photo, away from the parts
+
+        phase = "day";
+        r.Request(model);
+        Assert.True(done.WaitOne(10_000), "no frame arrived");
+        Assert.Equal(day, frame!.BaseImage);
+        Assert.Equal(230, frame.Bgra[((190 * 320) + 300) * 4 + 0]);
+    }
+
     public PreviewRendererTests(Xunit.Abstractions.ITestOutputHelper output) => _output = output;
 
     /// <summary>The render expands before it resolves, as the daemon does: the hit map holds the

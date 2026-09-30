@@ -19,9 +19,11 @@ namespace DeskWall.Designer.Model;
 /// zoom 1 it is the viewport the frame was rendered for: the pixels are that pane, at that zoom
 /// (plan Task 3.1). <paramref name="Resolved"/> is the 1:1 resolve either way;
 /// <paramref name="Drawn"/> is what was painted, which above zoom 1 is the same components
-/// transformed into the viewport.</para></summary>
+/// transformed into the viewport.</para>
+/// <para><paramref name="BaseImage"/> is the base photo this frame resolved to (a bound
+/// <c>baseImage</c> follows the live tree), empty when there was none.</para></summary>
 public sealed record PreviewFrame(int Width, int Height, byte[] Bgra, IReadOnlyList<Resolved> Resolved, TimeSpan RenderTime,
-    IReadOnlyList<ExpandProblem> Problems, Viewport? View = null, IReadOnlyList<Resolved>? Drawn = null);
+    IReadOnlyList<ExpandProblem> Problems, Viewport? View = null, IReadOnlyList<Resolved>? Drawn = null, string BaseImage = "");
 
 /// <summary>Turns the model into pixels on a background thread and hands the frame to the UI.
 /// Coalesces bursts: requests inside 50 ms collapse into one, at most one render is in flight and
@@ -184,24 +186,28 @@ public sealed class PreviewRenderer : IDisposable
             catch (Exception ex) { error = Describe("widgets", ex); }
         }
 
+        var tree = _valueTree();
         if (layout is not null && error is null)
         {
-            try { resolved = LayoutResolver.Resolve(layout, _valueTree()); }
+            try { resolved = LayoutResolver.Resolve(layout, tree); }
             catch (Exception ex) { error = Describe("resolve", ex); }
         }
 
         string? baseRaw = null;
+        // Resolved against the same tree as the components, so a bound base (one photo per
+        // time.phase) swaps in the preview as the live values move, exactly as the tick swaps it.
+        var basePath = layout is null ? "" : LayoutResolver.BaseImagePath(layout, tree);
         // No base image at all is not a fault: a widget document has none on purpose, and it draws
         // on the same flat grey a broken one falls back to. Only a path that was given and did not
         // work is worth a message painted over the canvas, once per render.
-        if (layout is not null && error is null && layout.BaseImage.Length > 0)
+        if (layout is not null && error is null && basePath.Length > 0)
         {
-            try { baseRaw = BaseCache.Ensure(layout.BaseImage, w, h, layout.BaseFit); }
+            try { baseRaw = BaseCache.Ensure(basePath, w, h, layout.BaseFit); }
             catch (Exception ex) { error = Describe("base image", ex); }
         }
 
         if (snap.View is { Zoom: > 1 } view && error is null && layout is not null)
-            return RenderView(snap, view, layout, baseRaw, resolved, problems, sw);
+            return RenderView(snap, view, layout, baseRaw, resolved, problems, sw) with { BaseImage = basePath };
 
         Surface? frame = null;
         try
@@ -217,7 +223,7 @@ public sealed class PreviewRenderer : IDisposable
             if (error is not null) DrawError(frame, error);
             var bgra = new byte[w * 4 * h];
             frame.CopyTo(bgra);
-            return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed, problems, null, resolved);
+            return new PreviewFrame(w, h, bgra, resolved, sw.Elapsed, problems, null, resolved, basePath);
         }
         finally { frame?.Dispose(); }
     }

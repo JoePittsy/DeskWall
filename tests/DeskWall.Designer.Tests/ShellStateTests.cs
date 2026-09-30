@@ -96,7 +96,7 @@ public class ShellStateTests
 
         Assert.Null(target.Path);
         Assert.Equal(Rdp, target.Signature);
-        Assert.Equal(DefaultBase, target.Layout.BaseImage);
+        Assert.Equal(DefaultBase, target.Layout.BaseImage.LiteralText);
         Assert.Empty(target.Layout.Components);
     }
 

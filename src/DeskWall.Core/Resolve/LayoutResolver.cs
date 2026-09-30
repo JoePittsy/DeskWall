@@ -32,6 +32,13 @@ public static class LayoutResolver
         return result;
     }
 
+    /// <summary>The base image for this tree: the literal or bound <see cref="LayoutFile.BaseImage"/>,
+    /// with %ENV% variables and the <c>runtime:</c> prefix expanded. Empty when a binding resolves to
+    /// nothing (a map with no matching key and no <c>*</c>). Whether the file exists is the caller's
+    /// question: the tick keeps its last good base, the designer draws none.</summary>
+    public static string BaseImagePath(LayoutFile layout, RecordValue tree)
+        => Paths.ExpandPath(PropertyReader.Text(layout.BaseImage, tree) ?? "");
+
     /// <param name="scope">record bindings resolve against (the tree, or a repeater item)</param>
     /// <param name="rect">absolute rect for this instance</param>
     private static void Emit(ComponentDef def, RecordValue scope, Rect rect, string id, int slotOffset, List<Resolved> result, Func<string, string?>? remote)

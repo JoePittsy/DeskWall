@@ -6,7 +6,9 @@ namespace DeskWall.Core.Layout;
 public sealed class LayoutFile
 {
     public int Version { get; set; } = 1;
-    public required string BaseImage { get; set; }
+    /// <summary>A literal path or a binding (e.g. <c>time.phase</c> through a map), resolved each
+    /// tick with %ENV% and <c>runtime:</c> expanded: <see cref="Resolve.LayoutResolver.BaseImagePath"/>.</summary>
+    public required PropertyValue BaseImage { get; set; }
     public Fit BaseFit { get; set; } = Fit.Cover;
     /// <summary>"jpeg" or "png".</summary>
     public string Encode { get; set; } = "jpeg";
