@@ -72,7 +72,8 @@ public static class LayoutResolver
                 result.Add(new ResolvedBar(id, rect, def.Z, frac,
                     PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF"), fill,
                     PropertyReader.Enum<Axis>(b.Direction, scope) ?? Axis.Horizontal,
-                    shape, shapeText, (float)Math.Max(0, PropertyReader.Number(b.Thickness, scope) ?? 0)));
+                    shape, shapeText, (float)Math.Max(0, PropertyReader.Number(b.Thickness, scope) ?? 0),
+                    (float)Math.Max(0, PropertyReader.Number(b.Glow, scope) ?? 0)));
                 break;
 
             case DialDef dl:

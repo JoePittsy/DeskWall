@@ -70,6 +70,7 @@ public static class PropertySchema
         ["ThresholdFill"] = (Editor.Color, null),
         ["Direction"] = (Editor.Enum, AxisChoices),
         ["Shape"] = (Editor.Text, null),
+        ["Glow"] = (Editor.Number, null),
         ["Thickness"] = (Editor.Number, null),
         ["StartAngle"] = (Editor.Number, null),
         ["Sweep"] = (Editor.Number, null),

@@ -98,6 +98,7 @@ public static class ComponentProperties
         new("Direction", c => ((BarDef)c).Direction, (c, v) => ((BarDef)c).Direction = v),
         new("Shape", c => ((BarDef)c).Shape, (c, v) => ((BarDef)c).Shape = v),
         new("Thickness", c => ((BarDef)c).Thickness, (c, v) => ((BarDef)c).Thickness = v),
+        new("Glow", c => ((BarDef)c).Glow, (c, v) => ((BarDef)c).Glow = v),
     ];
 
     private static readonly Prop[] DialProps =

@@ -93,8 +93,8 @@ public sealed class FrameRenderer(int width, int height)
                     : new Rect(b.Rect.X, b.Rect.Bottom - (int)Math.Round(b.Rect.H * f), b.Rect.W, (int)Math.Round(b.Rect.H * f));
                 if (b.Shape is { } shape)
                 {
-                    frame.DrawPath(b.Rect, shape, b.Thickness, b.Track);
-                    if (fill.W > 0 && fill.H > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill);
+                    frame.DrawPath(b.Rect, shape, b.Thickness, b.Track, pad: b.Glow);
+                    if (fill.W > 0 && fill.H > 0) frame.DrawPath(b.Rect, shape, b.Thickness, b.Fill, fill, b.Glow, b.Glow);
                     break;
                 }
                 frame.FillRect(b.Rect, b.Track);

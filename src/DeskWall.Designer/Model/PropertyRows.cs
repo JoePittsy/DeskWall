@@ -76,6 +76,7 @@ public static class PropertyRows
         ["Opacity"] = (Group.Colour, "Opacity", true),
 
         ["Thickness"] = (Group.Arc, "Stroke width", false),
+        ["Glow"] = (Group.Arc, "Glow", false),
         ["StartAngle"] = (Group.Arc, "Start angle", false),
         ["Sweep"] = (Group.Arc, "Sweep", false),
 

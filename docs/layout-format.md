@@ -82,6 +82,7 @@ Example:
 | `direction` | `"horizontal"` | `horizontal` \| `vertical`. |
 | `shape` | `""` | SVG path data (`M L H V C Z`, absolute and relative) drawn instead of the box. Its bounds are stretched to `rect`, so any path works and resizing the bar resizes it. The track is the whole path, the fill the same path clipped to the fraction. Unreadable data draws the plain box. |
 | `thickness` | `0` | With a `shape`: 0 fills it, more strokes it this wide (round caps and joins), inset by half so the ink stays inside `rect`. |
+| `glow` | `0` | With a `shape`: a soft halo this many px round the lit part, in the fill colour (stacked low-alpha strokes, like a text shadow). The path is inset by it too, so inflate `rect` by the glow to keep the line where it was. |
 
 A shaped bar traced from the base photo's skyline, lit left to right by the volume, is a ridge line
 over the mountains (the `rect` is the path's bounds inflated by half the stroke, so it lands on the

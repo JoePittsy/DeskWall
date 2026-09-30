@@ -437,13 +437,17 @@ public sealed unsafe class Surface : IDisposable
     /// <summary>Draw <paramref name="path"/> with its bounds stretched to <paramref name="r"/>:
     /// filled when <paramref name="thickness"/> is 0, else stroked that wide (round joins and caps),
     /// inset by half the stroke so the ink stays inside the box the dirty-rect redraw clears. With
-    /// <paramref name="clip"/>, only the part inside it is drawn: a shaped bar's fill.</summary>
-    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null) => Draw(rt =>
+    /// <paramref name="clip"/>, only the part inside it is drawn: a shaped bar's fill.
+    /// <paramref name="pad"/> insets the path further (room for a glow; the track passes the same so
+    /// the two stay aligned), and <paramref name="glow"/> draws that halo: four wider low-alpha
+    /// strokes under the line, the same stacked-copies approximation as a text shadow (a true
+    /// Gaussian needs ID2D1DeviceContext; Phase 1 ledger ruling).</summary>
+    public void DrawPath(Rect r, PathData path, float thickness, Color c, Rect? clip = null, float pad = 0, float glow = 0) => Draw(rt =>
     {
         var (x0, y0, x1, y1) = path.Bounds;
-        var inset = thickness / 2f;
-        var sx = x1 > x0 ? (r.W - thickness) / (x1 - x0) : 0;
-        var sy = y1 > y0 ? (r.H - thickness) / (y1 - y0) : 0;
+        var inset = thickness / 2f + pad;
+        var sx = x1 > x0 ? (r.W - 2 * inset) / (x1 - x0) : 0;
+        var sy = y1 > y0 ? (r.H - 2 * inset) / (y1 - y0) : 0;
         D2D_POINT_2F P(float x, float y) => new() { x = r.X + inset + (x - x0) * sx, y = r.Y + inset + (y - y0) * sy };
         var brush = Brush(rt, c);
         ID2D1PathGeometry* geo = null; ID2D1GeometrySink* sink = null; ID2D1StrokeStyle* style = null;
@@ -473,8 +477,7 @@ public sealed unsafe class Surface : IDisposable
                 rt->PushAxisAlignedClip(&rf, D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 clipped = true;
             }
-            if (thickness <= 0) rt->FillGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, null);
-            else
+            if (thickness > 0 || glow > 0)
             {
                 var props = new D2D1_STROKE_STYLE_PROPERTIES
                 {
@@ -482,8 +485,19 @@ public sealed unsafe class Surface : IDisposable
                     dashCap = D2D1_CAP_STYLE.D2D1_CAP_STYLE_ROUND, lineJoin = D2D1_LINE_JOIN.D2D1_LINE_JOIN_ROUND,
                 };
                 s_d2d->CreateStrokeStyle(&props, null, 0, &style);
-                rt->DrawGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, thickness, style);
             }
+            if (glow > 0)
+            {
+                var soft = Brush(rt, c with { A = (byte)Math.Max(4, c.A * 0.12) });
+                try
+                {
+                    for (var k = 4; k >= 1; k--)
+                        rt->DrawGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)soft, thickness + 2 * glow * k / 4f, style);
+                }
+                finally { soft->Release(); }
+            }
+            if (thickness <= 0) rt->FillGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, null);
+            else rt->DrawGeometry((ID2D1Geometry*)geo, (ID2D1Brush*)brush, thickness, style);
         }
         finally
         {

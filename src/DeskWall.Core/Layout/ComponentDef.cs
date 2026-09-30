@@ -62,6 +62,9 @@ public sealed class BarDef : ComponentDef
     public PropertyValue Shape { get; set; } = PropertyValue.Literal("");
     /// <summary>For a shape: 0 fills it, more strokes it this wide.</summary>
     public PropertyValue Thickness { get; set; } = PropertyValue.Literal(0);
+    /// <summary>For a shape: a halo this many px round the lit part, in the fill colour. The path is
+    /// inset by it so the halo stays inside Rect.</summary>
+    public PropertyValue Glow { get; set; } = PropertyValue.Literal(0);
 }
 
 /// <summary>A thin arc showing one fraction. Same value semantics as <see cref="BarDef"/>; the
