@@ -38,4 +38,56 @@ public class MediaSourceTests
         Assert.True(await FinishesWithin(refresh, TimeSpan.FromSeconds(10)), "refresh ignored its cancellation token");
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => refresh);
     }
+
+    private static string MediaDir() => Path.Combine(DeskWall.Core.Paths.RuntimeDir, "media");
+
+    private static byte[] PngBytes()
+    {
+        var png = Path.Combine(Path.GetTempPath(), "deskwall-tests", "media-art-source.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(png)!);
+        using (var s = DeskWall.Core.Render.Surface.Create(8, 8)) { s.Clear(DeskWall.Core.Render.Color.White); s.SavePng(png); }
+        return File.ReadAllBytes(png);
+    }
+
+    /// <summary>Harden review finding 3. The cover is decoration; a thumbnail the decoder cannot read
+    /// threw out of RefreshAsync and failed the whole source, so the title and artist went with it
+    /// (and a paused-to-playing change was lost until the next media event).</summary>
+    [Fact]
+    public void Undecodable_Art_Is_No_Art_Not_A_Failed_Source()
+    {
+        using var s = new MediaSource("media");
+        Assert.Equal("", s.SaveArt([0x42, 0x41, 0x44, 0x21]));
+        Assert.Empty(Directory.GetFiles(MediaDir(), "*.tmp"));
+    }
+
+    /// <summary>The daemon and the designer share one runtime dir and each runs its own media source.
+    /// With one fixed "thumbnail.tmp", either one holding it (or deleting it in its finally while the
+    /// other was decoding it) failed the other's refresh.</summary>
+    [Fact]
+    public void Art_Is_Written_Through_Temp_Files_Of_Its_Own()
+    {
+        Directory.CreateDirectory(MediaDir());
+        var other = Path.Combine(MediaDir(), "thumbnail.tmp");
+        using (new FileStream(other, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+        {
+            using var s = new MediaSource("media");
+            var art = s.SaveArt(PngBytes());
+            Assert.Equal(Path.Combine(MediaDir(), "art.png"), art);
+            Assert.True(File.Exists(art));
+            Assert.Equal([other], Directory.GetFiles(MediaDir(), "*.tmp"));   // only the other writer's
+        }
+        File.Delete(other);
+    }
+
+    [Fact]
+    public void The_Same_Art_Twice_Is_Not_Decoded_Again()
+    {
+        using var s = new MediaSource("media");
+        var bytes = PngBytes();
+        var art = s.SaveArt(bytes);
+        var written = File.GetLastWriteTimeUtc(art);
+        Thread.Sleep(20);
+        Assert.Equal(art, s.SaveArt(bytes));
+        Assert.Equal(written, File.GetLastWriteTimeUtc(art));
+    }
 }

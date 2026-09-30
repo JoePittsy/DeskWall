@@ -97,33 +97,7 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             var properties = await Bounded(session.TryGetMediaPropertiesAsync(), ct).ConfigureAwait(false);
             if (_disposed) return Empty();
             var playing = session.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-            var art = "";
-            if (playing && properties.Thumbnail is { } thumbnail)
-            {
-                using var stream = await Bounded(thumbnail.OpenReadAsync(), ct).ConfigureAwait(false);
-                if (stream.Size > 0 && stream.Size <= 8 * 1024 * 1024)
-                {
-                    using var reader = new DataReader(stream);
-                    var length = await Bounded(reader.LoadAsync((uint)stream.Size), ct).ConfigureAwait(false);
-                    var bytes = new byte[length]; reader.ReadBytes(bytes);
-                    var hash = Convert.ToHexString(SHA256.HashData(bytes));
-                    if (_artHash != hash || !File.Exists(_art))
-                    {
-                        var dir = Path.Combine(Paths.RuntimeDir, "media"); Directory.CreateDirectory(dir);
-                        var raw = Path.Combine(dir, "thumbnail.tmp");
-                        var output = Path.Combine(dir, "art.png");
-                        try
-                        {
-                            await File.WriteAllBytesAsync(raw, bytes, ct).ConfigureAwait(false);
-                            using (var image = Surface.Load(raw)) image.SavePng(output + ".tmp");
-                            File.Move(output + ".tmp", output, true);
-                            _artHash = hash; _art = output;
-                        }
-                        finally { File.Delete(raw); }
-                    }
-                    art = _art;
-                }
-            }
+            var art = playing && properties.Thumbnail is { } thumbnail ? await Art(thumbnail, ct).ConfigureAwait(false) : "";
             var (position, duration) = Timeline(session, playing);
             return new RecordValue(new Dictionary<string, Value>
             {
@@ -144,6 +118,54 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             _gate.Release();
         }
     }
+    /// <summary>The cover as a PNG path, or "" when there is none this refresh. Never fails the
+    /// record: the cover is decoration, and a thumbnail that will not open, read or decode must not
+    /// take the title and artist with it. Only the tick's own cancellation gets out.</summary>
+    private async Task<string> Art(IRandomAccessStreamReference thumbnail, CancellationToken ct)
+    {
+        try
+        {
+            using var stream = await Bounded(thumbnail.OpenReadAsync(), ct).ConfigureAwait(false);
+            if (stream.Size == 0 || stream.Size > 8 * 1024 * 1024) return "";
+            using var reader = new DataReader(stream);
+            var length = await Bounded(reader.LoadAsync((uint)stream.Size), ct).ConfigureAwait(false);
+            var bytes = new byte[length]; reader.ReadBytes(bytes);
+            return SaveArt(bytes);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { return ""; }
+    }
+
+    /// <summary>Decode the thumbnail bytes to runtime/media/art.png, unless they are the ones already
+    /// there. Temp files are unique to the call: the designer runs its own media source on the same
+    /// runtime dir, and with one fixed temp name each could delete or lock the other's. A failure is
+    /// "" and is not remembered, so the next refresh tries again.</summary>
+    internal string SaveArt(byte[] bytes)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        if (_artHash == hash && File.Exists(_art)) return _art;
+        var dir = Path.Combine(Paths.RuntimeDir, "media");
+        var output = Path.Combine(dir, "art.png");
+        var unique = Guid.NewGuid().ToString("N");
+        var raw = Path.Combine(dir, $"thumbnail.{unique}.tmp");
+        var png = Path.Combine(dir, $"art.{unique}.tmp");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(raw, bytes);
+            using (var image = Surface.Load(raw)) image.SavePng(png);
+            File.Move(png, output, true);
+            _artHash = hash; _art = output;
+            return output;
+        }
+        catch (Exception) { return ""; }
+        finally { TryDelete(raw); TryDelete(png); }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch (Exception) { }
+    }
+
     /// <summary>One call into the media service, bounded by <see cref="CallTimeout"/> and the token.
     /// The service is out of process and the daemon's tick thread blocks on this refresh, so a call
     /// that never answers must fail the source rather than freeze the wallpaper. WaitAsync, not
