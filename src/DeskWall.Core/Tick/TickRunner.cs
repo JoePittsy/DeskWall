@@ -35,8 +35,9 @@ public sealed class TickRunner(
     /// <summary>What stage 7 did on the last run, or null when there is no manager or nothing changed.</summary>
     public ShortcutOutcome? LastShortcutOutcome { get; private set; }
 
-    /// <summary>`tick --preview`: values pinned over the refreshed tree before the resolve.</summary>
-    public PreviewOverrides? Preview { get; init; }
+    /// <summary>`tick --preview`: values pinned over the refreshed tree before the resolve. Settable
+    /// between runs so `--repeat` can step through several pinned states.</summary>
+    public PreviewOverrides? Preview { get; set; }
 
     /// <summary>Time every component's draw into <see cref="TickTimings.LayerMs"/> (<c>tick --measure</c>).
     /// Off in the daemon: the stopwatch reads are cheap, the dictionary per tick is not needed.</summary>
@@ -120,6 +121,7 @@ public sealed class TickRunner(
         // 3. draw: full render when forced or the display changed, otherwise only the dirty rects
         var d0 = sw.ElapsedMilliseconds;
         var baseRaw = BaseCache.Ensure(basePath, canvas.W, canvas.H, layout.BaseFit);
+        t.BaseMs = sw.ElapsedMilliseconds - d0;
         var renderer = new FrameRenderer(canvas.W, canvas.H) { LayerMs = MeasureLayers ? (t.LayerMs = []) : null };
         Surface frame;
         if (force || !sameSig)

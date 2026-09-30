@@ -3,6 +3,10 @@ namespace DeskWall.Core.Tick;
 public sealed class TickTimings
 {
     public long ResolveMs, DrawMs, EncodeMs, ApplyMs, ShortcutsMs, TotalMs;
+    /// <summary>The part of <see cref="DrawMs"/> spent in <c>BaseCache.Ensure</c>: decoding the photo
+    /// and writing its raw the first time it is seen at this size, a stat after that. Reading the
+    /// raw back is part of the render, not of this.</summary>
+    public long BaseMs;
     public double CpuMs;
     public bool Skipped;
     public int Redrawn;
@@ -16,6 +20,7 @@ public sealed class TickTimings
         "stage      ms\n" +
         $"resolve    {ResolveMs}\n" +
         $"draw       {DrawMs}\n" +
+        $"  base     {BaseMs}   (inside draw: photo decode, 0 when cached)\n" +
         $"encode     {EncodeMs}\n" +
         $"apply      {ApplyMs}\n" +
         $"shortcuts  {ShortcutsMs}\n" +

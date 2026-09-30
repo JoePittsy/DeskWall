@@ -18,8 +18,11 @@ using Windows.Win32.Foundation;
 
 namespace DeskWall.Daemon;
 
-internal static class Program
+internal static partial class Program
 {
+    [System.Text.RegularExpressions.GeneratedRegex(@";(?=\s*[A-Za-z_][A-Za-z0-9_.\-]*=)")]
+    private static partial System.Text.RegularExpressions.Regex PreviewSetSeparator();
+
     private static int Main(string[] argv)
     {
         var args = argv.ToList();
@@ -100,7 +103,7 @@ internal static class Program
         w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply] [--no-shortcuts]");
         w.WriteLine("                             --repeat N (up to 10) measures warm ticks, 12 s apart; requires --no-apply --no-shortcuts");
         w.WriteLine("                             --preview key=value,... pins source values (time.at=HH:mm, hardware.cpu=0.9, ...);");
-        w.WriteLine("                             requires --no-apply --no-shortcuts");
+        w.WriteLine("                             requires --no-apply --no-shortcuts; sets separated by ';' are stepped through, one per --repeat run");
         w.WriteLine("                             --canvas WxH draws at that size instead of the primary display's (e.g. 3440x1440");
         w.WriteLine("                             from an RDP session); requires --no-apply --no-shortcuts");
         w.WriteLine("  install                     start at sign-in, and start now");
@@ -339,7 +342,11 @@ internal static class Program
         if (repeats > 1 && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
             throw new ArgumentException("Repeated measurements require --no-apply --no-shortcuts.");
         var previewText = TakeOption(opts, "--preview");
-        var preview = previewText is null ? null : PreviewOverrides.Parse(previewText);
+        // Several pinned states separated by ';' (only where the next thing is a key=, like the
+        // comma rule) are stepped through one per --repeat run, so one process can measure a
+        // state change such as a phase swap onto another base photo.
+        var previews = previewText is null ? [] : PreviewSetSeparator().Split(previewText).Select(PreviewOverrides.Parse).ToList();
+        var preview = previews.Count == 0 ? null : previews[0];
         if (preview is not null && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
             throw new ArgumentException("--preview draws a state the machine is not in; it requires --no-apply --no-shortcuts.");
         var canvasText = TakeOption(opts, "--canvas");
@@ -377,6 +384,7 @@ internal static class Program
             {
                 if (run > 0) await Task.Delay(TimeSpan.FromSeconds(12)); // lets history and async recipes populate
                 if (repeats > 1) Console.WriteLine($"run {run + 1}/{repeats}");
+                if (previews.Count > 1) runner.Preview = previews[run % previews.Count];
                 var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
                 if (t.Warning is { } warning) Console.Error.WriteLine($"warning: {warning}");
                 // "load" is not a row of the tick's own table, and must not start with "total", which
