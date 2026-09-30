@@ -38,6 +38,10 @@ public sealed class TickRunner(
     /// <summary>`tick --preview`: values pinned over the refreshed tree before the resolve.</summary>
     public PreviewOverrides? Preview { get; init; }
 
+    /// <summary>Time every component's draw into <see cref="TickTimings.LayerMs"/> (<c>tick --measure</c>).
+    /// Off in the daemon: the stopwatch reads are cheap, the dictionary per tick is not needed.</summary>
+    public bool MeasureLayers { get; init; }
+
     public async Task<TickTimings> RunAsync(bool force, bool apply, CancellationToken ct)
     {
         var t = new TickTimings();
@@ -112,7 +116,7 @@ public sealed class TickRunner(
         // 3. draw: full render when forced or the display changed, otherwise only the dirty rects
         var d0 = sw.ElapsedMilliseconds;
         var baseRaw = BaseCache.Ensure(layout.BaseImage, canvas.W, canvas.H, layout.BaseFit);
-        var renderer = new FrameRenderer(canvas.W, canvas.H);
+        var renderer = new FrameRenderer(canvas.W, canvas.H) { LayerMs = MeasureLayers ? (t.LayerMs = []) : null };
         Surface frame;
         if (force || !sameSig)
         {

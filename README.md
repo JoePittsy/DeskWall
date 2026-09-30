@@ -134,7 +134,7 @@ physical pixels, each property either a literal or a binding into a source's pub
 deskwall tick --layout layouts\clock-disks.json --force --measure   # render once, print timings, do not need a registered store entry
 deskwall tick --force --measure --no-apply --no-shortcuts --repeat 4   # four ticks in one process, 12 s apart: runs 2..4 are the warm numbers
 deskwall tick --force --no-apply --no-shortcuts --preview time.at=23:30,weather.json.current.weather_code=65   # pin source values after the refresh: render a scene that is not happening
-scripts\gallery.ps1 -Layout layouts\alpine-vision.json               # ten pinned scenes plus a montage, to docs\superpowers\plans\gallery\
+deskwall tick --layout layouts\alpine-vision.json --force --no-apply --no-shortcuts --canvas 3440x1440   # draw at the authored size whatever the display (RDP reports 1920x1200)scripts\gallery.ps1 -Layout layouts\alpine-vision.json               # ten pinned scenes plus a montage, to docs\superpowers\plans\gallery\
 deskwall layouts list                                                # what is registered, and what this display resolves to
 deskwall shortcuts                                                   # read-only: planned vs actual desktop-icon positions
 deskwall migrate [--check] [<path>...]                               # convert v1 stamped layouts to v2 linked copies (default: all in layouts.json)

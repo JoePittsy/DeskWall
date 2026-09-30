@@ -75,7 +75,9 @@ itself, not a single source.
 ## The tick pipeline
 
 `TickRunner.RunAsync(force, apply, ct)` -- one method, seven numbered stages (spec section 6),
-timed into a `TickTimings` that `deskwall tick --measure` prints as a table. Before the tick proper,
+timed into a `TickTimings` that `deskwall tick --measure` prints as a table, followed by a
+per-layer draw table, dearest first (`TickRunner.MeasureLayers` turns on `FrameRenderer.LayerMs`;
+the resident daemon leaves it off). Before the tick proper,
 `LayoutStore.TryLoad` reads and expands the layout:
 
 - **Load.** Read the layout file from disk, check its version, expand any linked widget copies

@@ -101,7 +101,9 @@ internal static class Program
         w.WriteLine("                             --repeat N (up to 10) measures warm ticks, 12 s apart; requires --no-apply --no-shortcuts");
         w.WriteLine("                             --preview key=value,... pins source values (time.at=HH:mm, hardware.cpu=0.9, ...);");
         w.WriteLine("                             requires --no-apply --no-shortcuts");
-        w.WriteLine("  install                    start at sign-in, and start now");
+        w.WriteLine("                             --canvas WxH draws at that size instead of the primary display's (e.g. 3440x1440");
+        w.WriteLine("                             from an RDP session); requires --no-apply --no-shortcuts");
+        w.WriteLine("  install                     start at sign-in, and start now");
         w.WriteLine("  stop                       stop the running daemon for this runtime dir, and wait for it to exit");
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
         w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
@@ -340,8 +342,24 @@ internal static class Program
         var preview = previewText is null ? null : PreviewOverrides.Parse(previewText);
         if (preview is not null && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
             throw new ArgumentException("--preview draws a state the machine is not in; it requires --no-apply --no-shortcuts.");
+        var canvasText = TakeOption(opts, "--canvas");
+        if (canvasText is not null && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
+            throw new ArgumentException("--canvas draws for a display that is not attached; it requires --no-apply --no-shortcuts.");
         var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
         if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
+        if (canvasText is not null)
+        {
+            // Stands in for the primary monitor's size, so a gallery or measurement renders the
+            // authored canvas even from an RDP session whose display is 1920x1200.
+            var wh = canvasText.Split('x', 'X');
+            if (wh.Length != 2 || !int.TryParse(wh[0], CultureInfo.InvariantCulture, out var cw) || !int.TryParse(wh[1], CultureInfo.InvariantCulture, out var ch) || cw < 1 || ch < 1)
+                throw new ArgumentException($"--canvas wants WIDTHxHEIGHT, e.g. 3440x1440; got '{canvasText}'.");
+            monitor = monitor with
+            {
+                Signature = monitor.Signature with { DevicePath = "canvas", Width = cw, Height = ch },
+                Bounds = new Rect(0, 0, cw, ch),
+            };
+        }
         // Read, expand and scale: what a v2 layout adds to activation, which the daemon pays on a
         // layout edit or display change, never per tick (plan D4).
         var load = System.Diagnostics.Stopwatch.StartNew();
@@ -352,7 +370,7 @@ internal static class Program
         var registry = new SourceRegistry();
         WallpaperSetter.RecordRestorePoint();
         var manager = opts.Contains("--no-shortcuts") ? null : new ShortcutManager(Calibration.Load());
-        var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager) { Preview = preview };
+        var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager) { Preview = preview, MeasureLayers = opts.Contains("--measure") };
         try
         {
             for (var run = 0; run < repeats; run++)
@@ -362,7 +380,7 @@ internal static class Program
                 var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
                 // "load" is not a row of the tick's own table, and must not start with "total", which
                 // is what the budget test's ^total regex reads.
-                if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick)");
+                if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick){t.LayerTable()}");
                 else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
                 if (runner.LastShortcutOutcome is { } o)
                 {

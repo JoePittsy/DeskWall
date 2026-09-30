@@ -7,6 +7,18 @@ public sealed class FrameRenderer(int width, int height)
     public int Width => width;
     public int Height => height;
 
+    /// <summary>When set, every component drawn adds its milliseconds here by id (a component drawn
+    /// twice in one render adds twice). <c>tick --measure</c> prints it as the per-layer table.</summary>
+    public Dictionary<string, double>? LayerMs { get; set; }
+
+    private void Timed(Surface frame, Resolved c)
+    {
+        if (LayerMs is not { } ms) { Draw(frame, c); return; }
+        var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Draw(frame, c);
+        ms[c.Id] = ms.GetValueOrDefault(c.Id) + System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+    }
+
     /// <summary>Full render: base then every component in z-order. Returns the frame.</summary>
     public Surface RenderAll(string baseRawPath, IReadOnlyList<Resolved> components)
     {
@@ -18,7 +30,7 @@ public sealed class FrameRenderer(int width, int height)
         }
         try
         {
-            foreach (var c in components.OrderBy(c => c.Z)) Draw(frame, c);
+            foreach (var c in components.OrderBy(c => c.Z)) Timed(frame, c);
         }
         catch
         {
@@ -73,7 +85,7 @@ public sealed class FrameRenderer(int width, int height)
             using var clean = Surface.LoadRaw(baseRawPath);
             previous.CopyRect(clean, new Rect(0, 0, width, height));
             foreach (var component in all.OrderBy(c => c.Z))
-                if (component is not ResolvedShortcut) { Draw(previous, component); drawn++; }
+                if (component is not ResolvedShortcut) { Timed(previous, component); drawn++; }
             return previous;
         }
         var included = new HashSet<string>();
@@ -92,7 +104,7 @@ public sealed class FrameRenderer(int width, int height)
         using (var baseSurf = Surface.LoadRaw(baseRawPath))
             foreach (var d in dirty.Distinct()) frame.CopyRect(baseSurf, d);
         foreach (var c in all.OrderBy(c => c.Z))
-            if (c is not ResolvedShortcut && dirty.Any(d => d.Intersects(c.PaintBounds))) { Draw(frame, c); drawn++; }
+            if (c is not ResolvedShortcut && dirty.Any(d => d.Intersects(c.PaintBounds))) { Timed(frame, c); drawn++; }
         return frame;
     }
 
@@ -105,7 +117,7 @@ public sealed class FrameRenderer(int width, int height)
                 frame.DrawText(t.Text, t.Style, t.Rect);
                 break;
             case ResolvedImage i:
-                if (i.Opacity <= 0 || string.IsNullOrWhiteSpace(i.Path)) break;
+                if (i.Opacity <= 0 || i.Tint is { A: 0 } || string.IsNullOrWhiteSpace(i.Path)) break;
                 if (!File.Exists(i.Path)) { frame.FillRect(i.Rect, new Color(140, 0, 0, 0), i.Radius); break; }
                 using (var img = Surface.Load(i.Path))
                 {

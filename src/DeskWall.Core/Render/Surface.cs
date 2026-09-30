@@ -567,7 +567,13 @@ public sealed unsafe class Surface : IDisposable
                 };
                 rt->PushLayer(&lp, null);
             }
-            if (_dc is not null && resample == Resample.High)
+            // The high-quality filter exists for downscales (a 4x4 cubic rings there). A large pure
+            // upscale -- an 8x512 sky gradient stretched over the canvas, a 256 px glow drawn at 760 --
+            // gains nothing visible from it and costs tens of milliseconds (measured: sky-top 50 -> 5 ms).
+            // Icon-sized upscales keep the good filter; their edges do show the difference.
+            float dw = dstRect.right - dstRect.left, dh = dstRect.bottom - dstRect.top;
+            var largeUpscale = dw >= srcRect.right - srcRect.left && dh >= srcRect.bottom - srcRect.top && dw * dh >= 250_000f;
+            if (_dc is not null && resample == Resample.High && !largeUpscale)
                 _dc->DrawBitmap(bmp, &dstRect, opacity, D2D1_INTERPOLATION_MODE.D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &srcRect, null);
             else
                 rt->DrawBitmap(bmp, &dstRect, opacity, D2D1_BITMAP_INTERPOLATION_MODE.D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcRect);

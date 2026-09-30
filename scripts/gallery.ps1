@@ -21,7 +21,10 @@ param(
     [string]$Exe = '',
     [string]$Scratch = (Join-Path $env:TEMP 'dw-gallery'),
     [string]$Out = '',
-    [string[]]$Only = @()
+    [string[]]$Only = @(),
+    # The authored canvas, not the attached display: over RDP the primary display is 1920x1200 and
+    # an unscaled --layout would draw off-canvas.
+    [string]$Canvas = '3440x1440'
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -93,7 +96,7 @@ $onlyScenes = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 foreach ($name in $scenes.Keys) {
     if ($onlyScenes.Count -gt 0 -and $onlyScenes -notcontains $name) { continue }
     $pins = $baseline + ',' + $scenes[$name]
-    $argLine = "--home `"$Scratch`" tick --layout `"$layoutCopy`" --force --no-apply --no-shortcuts --measure --preview `"$pins`""
+    $argLine = "--home `"$Scratch`" tick --layout `"$layoutCopy`" --force --no-apply --no-shortcuts --measure --canvas $Canvas --preview `"$pins`""
     if (Test-Path -LiteralPath $frame) { Remove-Item -LiteralPath $frame }
     $p = Start-Process -FilePath $Exe -ArgumentList $argLine -Wait -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
     $draw = (Select-String -LiteralPath $log -Pattern '^draw\s+(\d+)' | Select-Object -First 1)
