@@ -6,6 +6,7 @@ using DeskWall.Core.Resolve;
 using DeskWall.Core.Scheduling;
 using DeskWall.Core.Shortcuts;
 using DeskWall.Core.Sources;
+using DeskWall.Core.Values;
 using DeskWall.Core.Wallpaper;
 
 namespace DeskWall.Core.Tick;
@@ -48,14 +49,21 @@ public sealed class TickRunner(
         var cpu0 = Environment.CpuUsage.TotalTime;
         var now = clock.Now;
 
-        // 1. refresh due sources
+        // 1. refresh due sources. All are started before any is awaited, so two slow recipes (a pair
+        // of powershell.exe cold starts is ~3 s back to back) cost the slower one, not their sum.
+        // Results still land in the registry here, in layout order, on this one continuation.
+        var refreshing = new List<(SourceSnapshot Snap, Task<RecordValue> Work)>();
         foreach (var s in sources)
         {
             var snap = registry.Get(s.Name);
             // Scheduler.IsDue, not NextDue: a failing source is on a backed-off schedule and the wake
             // maths and this gate must agree exactly (finding 1).
             if (!force && !Scheduler.IsDue(s, snap, now)) continue;
-            try { registry.Set(snap.Succeeded(await s.RefreshAsync(ct).ConfigureAwait(false), now)); }
+            refreshing.Add((snap, Refresh(s, ct)));
+        }
+        foreach (var (snap, work) in refreshing)
+        {
+            try { registry.Set(snap.Succeeded(await work.ConfigureAwait(false), now)); }
             catch (Exception ex) { registry.Set(snap.Failed(ex.Message, now)); }
         }
 
@@ -179,6 +187,10 @@ public sealed class TickRunner(
     /// <para>Cheap: for everything but text PaintBounds is just Rect, and for text it is a lookup in
     /// the measurement cache.</para>
     /// </summary>
+    /// <summary>A source's refresh as a task that faults rather than throws, so one that throws
+    /// before its first await cannot stop the others being started.</summary>
+    private static async Task<RecordValue> Refresh(ISource s, CancellationToken ct) => await s.RefreshAsync(ct).ConfigureAwait(false);
+
     private static bool PaintBoundsMoved(FrameState state, Resolved c)
     {
         if (!state.RectsById.TryGetValue(c.Id, out var r)) return false;   // never drawn: the key test already has it
