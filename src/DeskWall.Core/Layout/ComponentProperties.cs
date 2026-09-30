@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace DeskWall.Core.Layout;
 
@@ -19,6 +19,7 @@ public static class ComponentProperties
         TextDef => TextProps,
         ImageDef => ImageProps,
         BarDef => BarProps,
+        LineDef => LineProps,
         DialDef => DialProps,
         ShortcutDef => ShortcutProps,
         RepeaterDef => RepeaterProps,
@@ -86,6 +87,18 @@ public static class ComponentProperties
         new("Fit", c => ((ImageDef)c).Fit, (c, v) => ((ImageDef)c).Fit = v),
         new("Radius", c => ((ImageDef)c).Radius, (c, v) => ((ImageDef)c).Radius = v),
         new("Opacity", c => ((ImageDef)c).Opacity, (c, v) => ((ImageDef)c).Opacity = v),
+    ];
+
+    private static readonly Prop[] LineProps =
+    [
+        new("Values", c => ((LineDef)c).Values, (c, v) => ((LineDef)c).Values = v),
+        new("Field", c => ((LineDef)c).Field, (c, v) => ((LineDef)c).Field = v),
+        new("Stroke", c => ((LineDef)c).Stroke, (c, v) => ((LineDef)c).Stroke = v),
+        new("Thickness", c => ((LineDef)c).Thickness, (c, v) => ((LineDef)c).Thickness = v),
+        new("Glow", c => ((LineDef)c).Glow, (c, v) => ((LineDef)c).Glow = v),
+        new("Min", c => ((LineDef)c).Min, (c, v) => ((LineDef)c).Min = v),
+        new("Max", c => ((LineDef)c).Max, (c, v) => ((LineDef)c).Max = v),
+        new("Baseline", c => ((LineDef)c).Baseline, (c, v) => ((LineDef)c).Baseline = v),
     ];
 
     private static readonly Prop[] BarProps =

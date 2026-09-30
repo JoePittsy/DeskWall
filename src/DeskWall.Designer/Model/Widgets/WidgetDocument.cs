@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using DeskWall.Core;
 using DeskWall.Core.Display;
 using DeskWall.Core.Layout;
@@ -9,7 +9,7 @@ namespace DeskWall.Designer.Model.Widgets;
 /// <summary>The four parts the Insert panel offers. <c>shortcut</c> and <c>repeater</c> are not
 /// here on purpose: a desktop slot and an items binding are layout-level concerns, not a shape you
 /// draw on a 172 px canvas.</summary>
-public enum PartKind { Text, Image, Bar, Dial }
+public enum PartKind { Text, Image, Bar, Dial, Line }
 
 /// <summary>
 /// One widget as an editable draft: its parts and sources as a <see cref="DesignerModel"/> over a
@@ -114,6 +114,7 @@ public sealed class WidgetDocument
             Rect = new Rect(step, step, 120, 6),
             Fraction = PropertyValue.Literal(0.5),
         },
+        PartKind.Line => new LineDef { Id = "line", Rect = new Rect(step, step, 320, 100), Values = PropertyValue.Bound(DeskWall.Core.Bindings.BindingParser.Parse("hardware.cpuHistory")) },
         PartKind.Dial => new DialDef
         {
             Id = "dial",

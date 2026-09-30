@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using DeskWall.Core;
 using DeskWall.Core.Layout;
 
@@ -50,6 +50,12 @@ public static class PropertySchema
     /// Threshold, ThresholdFill) they share an editor too.</summary>
     private static readonly Dictionary<string, (Editor Editor, string[]? Choices)> Editors = new()
     {
+        ["Values"] = (Editor.Binding, null),
+        ["Field"] = (Editor.Text, null),
+        ["Stroke"] = (Editor.Color, null),
+        ["Min"] = (Editor.Number, null),
+        ["Max"] = (Editor.Number, null),
+        ["Baseline"] = (Editor.Enum, ["False", "True"]),
         ["Text"] = (Editor.Text, null),
         ["Font"] = (Editor.Font, null),
         ["Size"] = (Editor.Number, null),

@@ -526,3 +526,6 @@ Windows GetSystemPowerStatus, every 60 seconds by default. Publishes `percent` (
 `fraction` (0..1), `charging`, `onBattery`, and `minutesLeft` (-1 when unknown).
 No battery or unknown charge omits percent/fraction. `opacity` is 0.2 when on mains
 and at least 95% charged, otherwise 1; absent for unknown charge.
+
+Hardware also publishes `cpuHistory`, `ramHistory`, and `gpuHistory` when a GPU reader exists:
+oldest-first lists of `{ "v": fraction }`, rounded to three decimals. Empty until sampled.

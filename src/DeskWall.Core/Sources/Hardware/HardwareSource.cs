@@ -134,6 +134,9 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
                 d["gpuTempC"] = new NumberValue(t);
                 d["gpuTempFraction"] = new NumberValue(Math.Round(t / 100, 3));
             }
+            d["cpuHistory"] = History(_cpu);
+            d["ramHistory"] = History(_ram);
+            if (_reader.HasGpu) d["gpuHistory"] = History(_gpu);
             return new(new RecordValue(d));
         }
     }
@@ -167,6 +170,9 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     /// <summary>Read without _lock on purpose. SampleOnce holds that lock across a blocking native
     /// call (NVML), and this is called from the scheduler thread deciding the next wake; a stale
     /// read of three ints costs at most one extra wake, which is the thing being asked for anyway.</summary>
+    private static ListValue History(RollingWindow window) => new(window.Snapshot()
+        .Select(v => new RecordValue(new Dictionary<string, Value> { ["v"] = new NumberValue(v) })).ToArray(), null);
+
     private bool HasAnyReading() => _cpu.Count > 0 || _ram.Count > 0 || _gpu.Count > 0;
 
     /// <summary>Stops the sampler and lets go of whatever the reader holds (NVML, on this machine).

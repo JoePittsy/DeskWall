@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace DeskWall.Core.Layout;
 
@@ -6,6 +6,7 @@ namespace DeskWall.Core.Layout;
 [JsonDerivedType(typeof(TextDef), "text")]
 [JsonDerivedType(typeof(ImageDef), "image")]
 [JsonDerivedType(typeof(BarDef), "bar")]
+[JsonDerivedType(typeof(LineDef), "line")]
 [JsonDerivedType(typeof(DialDef), "dial")]
 [JsonDerivedType(typeof(ShortcutDef), "shortcut")]
 [JsonDerivedType(typeof(RepeaterDef), "repeater")]
@@ -99,4 +100,16 @@ public sealed class RepeaterDef : ComponentDef
     /// <summary>Pixels, or "auto" to take the height from the first image child's aspect ratio.</summary>
     public PropertyValue CellHeight { get; set; } = PropertyValue.Literal("auto");
     public required List<ComponentDef> Template { get; set; }
+}
+
+public sealed class LineDef : ComponentDef
+{
+    public required PropertyValue Values { get; set; }
+    public PropertyValue Field { get; set; } = PropertyValue.Literal("v");
+    public PropertyValue Stroke { get; set; } = PropertyValue.Literal("#AA9CCBEE");
+    public PropertyValue Thickness { get; set; } = PropertyValue.Literal(2);
+    public PropertyValue Glow { get; set; } = PropertyValue.Literal(0);
+    public PropertyValue Min { get; set; } = PropertyValue.Literal(0);
+    public PropertyValue Max { get; set; } = PropertyValue.Literal(1);
+    public PropertyValue Baseline { get; set; } = PropertyValue.Literal("false");
 }

@@ -597,3 +597,12 @@ it does not resize anything, including a narrower widget like a dial (`80` px) i
 are skipped entirely and keep whatever rect they already have. `column-system.json` and
 `clock-disks.json` are generated this way, not hand-placed, which is why they are not
 pixel-identical to the layouts they replace.
+
+## `line` (history)
+
+`values` binds a list of records; `field` defaults to `v`. Oldest is leftmost.
+`min`/`max` default to 0/1 and fix the vertical scale; out-of-range samples clamp.
+Non-finite or absent samples are omitted; fewer than two samples draws nothing.
+`stroke` is an ARGB colour, `thickness` defaults to 2 px, `glow` to 0.
+`baseline: true` fills beneath the line at 12% of the stroke alpha.
+The content key includes normalised samples rounded to three decimals and all styling.

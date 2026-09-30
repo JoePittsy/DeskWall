@@ -59,6 +59,26 @@ public static class LayoutResolver
                     (float)(PropertyReader.Number(i.Opacity, scope) ?? 1)));
                 break;
 
+            case LineDef line:
+                if (line.Values.Binding is not { } binding || BindingResolver.Resolve(binding, scope) is not ListValue values) break;
+                var field = PropertyReader.Text(line.Field, scope) ?? "v";
+                var lo = PropertyReader.Number(line.Min, scope) ?? 0;
+                var hi = PropertyReader.Number(line.Max, scope) ?? 1;
+                if (!double.IsFinite(lo) || !double.IsFinite(hi) || hi <= lo) break;
+                var samples = values.Items.Select(v => v.Get(field)).OfType<NumberValue>()
+                    .Select(v => v.Number).Where(double.IsFinite).Select(v => Math.Round(Math.Clamp((v - lo) / (hi - lo), 0, 1), 3)).ToArray();
+                if (samples.Length < 2) break;
+                var points = string.Join(" ", samples.Select((v, n) => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"{(n == 0 ? "M" : "L")}{n * 1000.0 / (samples.Length - 1):0.###},{(1-v)*1000:0.###}")));
+                var path = PathData.Parse(points).WithBounds(0, 0, 1000, 1000);
+                var baseline = string.Equals(PropertyReader.Text(line.Baseline, scope), "true", StringComparison.OrdinalIgnoreCase);
+                var area = baseline ? PathData.Parse(points + " L1000,1000 L0,1000 Z").WithBounds(0, 0, 1000, 1000) : null;
+                result.Add(new ResolvedLine(id, rect, def.Z, path, area, points,
+                    PropertyReader.Color(line.Stroke, scope) ?? Color.Parse("#AA9CCBEE"),
+                    (float)Math.Clamp(PropertyReader.Number(line.Thickness, scope) ?? 2, 0.1, 100),
+                    (float)Math.Clamp(PropertyReader.Number(line.Glow, scope) ?? 0, 0, 100)));
+                break;
+
             case BarDef b:
                 var frac = PropertyReader.Number(b.Fraction, scope) ?? 0;
                 var threshold = PropertyReader.Number(b.Threshold, scope) ?? 1;

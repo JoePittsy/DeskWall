@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace DeskWall.Core.Render;
 
@@ -14,7 +14,10 @@ public sealed class PathData
     public sealed record Figure(float X, float Y, IReadOnlyList<Segment> Segments, bool Closed);
 
     public IReadOnlyList<Figure> Figures { get; }
-    public (float MinX, float MinY, float MaxX, float MaxY) Bounds { get; }
+    public (float MinX, float MinY, float MaxX, float MaxY) Bounds { get; private set; }
+
+    public PathData WithBounds(float x0, float y0, float x1, float y1)
+    { Bounds = (x0, y0, x1, y1); return this; }
 
     private PathData(List<Figure> figures)
     {

@@ -52,6 +52,12 @@ public static class PropertyRows
 
     private static readonly Dictionary<string, (Group Group, string Label, bool Percent)> Rows = new()
     {
+        ["Values"] = (Group.Content, "Values", false),
+        ["Field"] = (Group.Content, "Value field", false),
+        ["Stroke"] = (Group.Colour, "Stroke", false),
+        ["Min"] = (Group.Geometry, "Minimum", false),
+        ["Max"] = (Group.Geometry, "Maximum", false),
+        ["Baseline"] = (Group.Geometry, "Fill beneath", false),
         ["Text"] = (Group.Content, "Text", false),
         ["Source"] = (Group.Content, "Image", false),
         ["Fraction"] = (Group.Content, "Value", true),

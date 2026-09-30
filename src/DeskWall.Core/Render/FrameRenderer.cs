@@ -1,4 +1,4 @@
-using DeskWall.Core.Resolve;
+﻿using DeskWall.Core.Resolve;
 
 namespace DeskWall.Core.Render;
 
@@ -85,6 +85,10 @@ public sealed class FrameRenderer(int width, int height)
             case ResolvedImage i:
                 if (!File.Exists(i.Path)) { frame.FillRect(i.Rect, new Color(140, 0, 0, 0), i.Radius); break; }
                 using (var img = Surface.Load(i.Path)) frame.DrawSurface(img, i.Rect, i.Fit, i.Opacity, i.Radius);
+                break;
+            case ResolvedLine l:
+                if (l.Area is { } area) frame.DrawPath(l.Rect, area, 0, l.Stroke with { A = (byte)(l.Stroke.A * 0.12) }, pad: l.Glow + l.Thickness / 2);
+                if (l.Stroke.A > 0) frame.DrawPath(l.Rect, l.Path, l.Thickness, l.Stroke, pad: l.Glow, glow: l.Glow);
                 break;
             case ResolvedBar b:
                 var f = Math.Clamp(b.Fraction, 0, 1);

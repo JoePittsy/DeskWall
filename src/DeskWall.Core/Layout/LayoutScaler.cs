@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using DeskWall.Core.Display;
 
 namespace DeskWall.Core.Layout;
@@ -41,6 +41,10 @@ public static class LayoutScaler
         c.Rect = c.Rect.Scale(sx, sy);
         switch (c)
         {
+            case LineDef line:
+                line.Thickness = ScaleNumber(line.Thickness, sm);
+                line.Glow = ScaleNumber(line.Glow, sm);
+                break;
             case TextDef t:
                 ScaleLiteral(t, nameof(TextDef.Size), sm);
                 ScaleLiteral(t, nameof(TextDef.EffectRadius), sm);

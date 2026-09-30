@@ -1,4 +1,4 @@
-using DeskWall.Core.Render;
+﻿using DeskWall.Core.Render;
 
 namespace DeskWall.Core.Resolve;
 
@@ -83,4 +83,10 @@ public sealed record ResolvedDial(string Id, Rect Rect, int Z, double Fraction, 
 public sealed record ResolvedShortcut(string Id, Rect Rect, int Z, string Target, string Tooltip, int Slot) : Resolved(Id, Rect, Z)
 {
     public override IEnumerable<string> KeyParts() => [Target, Tooltip, Slot.ToString()];
+}
+
+public sealed record ResolvedLine(string Id, Rect Rect, int Z, PathData Path, PathData? Area,
+    string Samples, Color Stroke, float Thickness, float Glow) : Resolved(Id, Rect, Z)
+{
+    public override IEnumerable<string> KeyParts() => [Samples, Stroke.ToHex(), Thickness.ToString("R"), Glow.ToString("R"), (Area is not null).ToString()];
 }

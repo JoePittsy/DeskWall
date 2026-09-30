@@ -190,6 +190,24 @@
       "fill": {
         "bind": "battery.fraction | \"?<0.2=#E6D13438,<0.5=#CCEDB55D,*=#44FFFFFF\""
       }
+    },
+    {
+      "type": "line",
+      "id": "cpu-foothills",
+      "rect": [
+        0,
+        820,
+        3440,
+        180
+      ],
+      "z": -4,
+      "values": {
+        "bind": "hardware.cpuHistory"
+      },
+      "stroke": "#669DC9ED",
+      "thickness": 2,
+      "glow": 4,
+      "baseline": true
     }
   ],
   "copies": [
