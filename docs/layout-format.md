@@ -250,7 +250,9 @@ properties, so the one rule in `Value.ToText` makes all three react to a bool.
 A binding that cannot be resolved (a missing field, an out-of-range index, a key with no match,
 indexing into the wrong shape of value) resolves to `null`; the bound property then falls back to
 its own default (spec 3.2: staleness and missing-value handling are the component's problem, not
-the binding's).
+the binding's). A numeric property treats `NaN` and `Infinity` the same way, whether written
+literally, bound to a text that parses as one, or bound to a source value that is one: the
+property takes its default rather than handing a non-finite width or alpha to Direct2D.
 
 ## Repeater semantics
 

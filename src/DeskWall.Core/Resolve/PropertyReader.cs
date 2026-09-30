@@ -12,7 +12,12 @@ public static class PropertyReader
     public static string? Text(PropertyValue p, RecordValue scope)
         => p.IsBound ? BindingResolver.ResolveText(p.Binding!, scope) : p.LiteralText;
 
+    /// <summary>NaN and the infinities count as "did not resolve": every caller clamps or scales
+    /// the result, and NaN passes straight through Math.Clamp into Direct2D.</summary>
     public static double? Number(PropertyValue p, RecordValue scope)
+        => RawNumber(p, scope) is { } n && double.IsFinite(n) ? n : null;
+
+    private static double? RawNumber(PropertyValue p, RecordValue scope)
     {
         // A map or a blend turns the value into another one ("?<0.9=400,*=700", "~0=12,1=48"), so
         // its text is the number. Any other format ("N0") only prettifies, and is ignored as before.
