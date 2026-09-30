@@ -98,6 +98,7 @@ internal static class Program
         w.WriteLine("  run [--no-tray] [--no-shortcuts]   resident daemon (the default with no command)");
         w.WriteLine("                             --no-tray wins; otherwise settings.json trayIcon decides");
         w.WriteLine("  tick [--layout <path>] [--force] [--measure] [--no-apply] [--no-shortcuts]");
+        w.WriteLine("                             --repeat N (up to 10) measures warm ticks, 12 s apart; requires --no-apply --no-shortcuts");
         w.WriteLine("  install                    start at sign-in, and start now");
         w.WriteLine("  stop                       stop the running daemon for this runtime dir, and wait for it to exit");
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
@@ -329,6 +330,10 @@ internal static class Program
     /// and the resident one draw the same thing. --layout still bypasses the store, for scripting.</summary>
     private static async Task<int> Tick(List<string> opts)
     {
+        var repeatText = TakeOption(opts, "--repeat");
+        var repeats = repeatText is null ? 1 : Math.Clamp(int.Parse(repeatText, CultureInfo.InvariantCulture), 1, 10);
+        if (repeats > 1 && (!opts.Contains("--no-apply") || !opts.Contains("--no-shortcuts")))
+            throw new ArgumentException("Repeated measurements require --no-apply --no-shortcuts.");
         var monitor = Monitors.Enumerate().FirstOrDefault(m => m.IsPrimary);
         if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
         // Read, expand and scale: what a v2 layout adds to activation, which the daemon pays on a
@@ -344,15 +349,20 @@ internal static class Program
         var runner = new TickRunner(layout, sources, registry, clock, monitor, shortcuts: manager);
         try
         {
-            var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
-            // "load" is not a row of the tick's own table, and must not start with "total", which
-            // is what the budget test's ^total regex reads.
-            if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick)");
-            else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
-            if (runner.LastShortcutOutcome is { } o)
+            for (var run = 0; run < repeats; run++)
             {
-                Console.WriteLine($"shortcuts: written={o.Written} positioned={o.Positioned} removed={o.Removed}");
-                foreach (var w in o.Warnings) Console.Error.WriteLine($"shortcuts: {w}");
+                if (run > 0) await Task.Delay(TimeSpan.FromSeconds(12)); // lets history and async recipes populate
+                if (repeats > 1) Console.WriteLine($"run {run + 1}/{repeats}");
+                var t = await runner.RunAsync(force: opts.Contains("--force"), apply: !opts.Contains("--no-apply"), CancellationToken.None);
+                // "load" is not a row of the tick's own table, and must not start with "total", which
+                // is what the budget test's ^total regex reads.
+                if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick)");
+                else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
+                if (runner.LastShortcutOutcome is { } o)
+                {
+                    Console.WriteLine($"shortcuts: written={o.Written} positioned={o.Positioned} removed={o.Removed}");
+                    foreach (var w in o.Warnings) Console.Error.WriteLine($"shortcuts: {w}");
+                }
             }
             return 0;
         }
