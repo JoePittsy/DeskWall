@@ -132,6 +132,7 @@ physical pixels, each property either a literal or a binding into a source's pub
 
 ```powershell
 deskwall tick --layout layouts\clock-disks.json --force --measure   # render once, print timings, do not need a registered store entry
+deskwall tick --force --measure --no-apply --no-shortcuts --repeat 4   # four ticks in one process, 12 s apart: runs 2..4 are the warm numbers
 deskwall layouts list                                                # what is registered, and what this display resolves to
 deskwall shortcuts                                                   # read-only: planned vs actual desktop-icon positions
 deskwall migrate [--check] [<path>...]                               # convert v1 stamped layouts to v2 linked copies (default: all in layouts.json)

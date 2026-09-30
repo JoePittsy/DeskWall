@@ -90,8 +90,11 @@ The tick itself:
 
 1. **Refresh due sources.** For each source, `Scheduler.IsDue` (not the source's own `NextDue`
    directly -- the wake math and the run gate must agree exactly, or a source can be due by one
-   test and not the other) decides whether to call `RefreshAsync`. A source that throws is marked
-   failed; its previous values keep publishing.
+   test and not the other) decides whether to call `RefreshAsync`. Every due refresh is started
+   before any is awaited, so two `command` sources that each spend a second starting
+   `powershell.exe` cost one second of wall time, not two; results are still written to the
+   registry in layout order. A source that throws is marked failed; its previous values keep
+   publishing.
 2. **Resolve and diff.** `LayoutResolver.Resolve` expands the layout (repeaters, after copies are
    already expanded) against the current value tree and computes each component's content key.
    This is compared against `frame-state.json`'s `KeysById` from the previous tick. If nothing
