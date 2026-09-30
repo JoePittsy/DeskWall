@@ -18,7 +18,7 @@
     dusk   the photo as shot, re-encoded at the same size and quality as the others.
 
   Writes <Home>\assets\alpine\ridge-<phase>.jpg at 3440x1440, JPEG quality 92. -Home defaults to
-  $env:DESKWALL_HOME and refuses the live runtime dir.
+  $env:DESKWALL_HOME and refuses the live runtime dir unless -AllowLive is passed.
 
 .EXAMPLE
   $env:DESKWALL_HOME = "$env:TEMP\dw-photo-home"; .\scripts\phase-photos.ps1
@@ -34,14 +34,16 @@ param(
     [int]$Height = 1440,
     [int]$Quality = 92,
     # Also write ridge-<phase>-check.png at half size with the skyline drawn in red.
-    [switch]$Check
+    [switch]$Check,
+    # The owner's deliberate install into %LOCALAPPDATA%\DeskWall; refused without it.
+    [switch]$AllowLive
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Layout) { $Layout = Join-Path $repo 'layouts\alpine-vision.json' }
 if (-not $RuntimeHome) { throw 'Pass -Home or set DESKWALL_HOME to a scratch runtime dir.' }
 $live = Join-Path $env:LOCALAPPDATA 'DeskWall'
-if ((Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force -Path $RuntimeHome)).Path.TrimEnd('\') -ieq $live) {
+if (-not $AllowLive -and (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force -Path $RuntimeHome)).Path.TrimEnd('\') -ieq $live) {
     throw 'Refusing to write into the live runtime dir; point -Home / DESKWALL_HOME at a scratch folder.'
 }
 if (-not (Test-Path -LiteralPath $Source)) { throw "No source photo at $Source." }
