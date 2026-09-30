@@ -160,11 +160,7 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
         // at MinDelay - four ticks a second - which is finding 1 all over again. Once warm the
         // source is back on the whole minute and shares the clock's single wake.
         if (_refreshes == 1 && !HasAnyReading()) return now;
-        var l = lastRefresh.Value;
-        var dayStart = new DateTimeOffset(l.Year, l.Month, l.Day, 0, 0, 0, l.Offset);
-        var sinceMidnight = (l - dayStart).Ticks;
-        var floored = sinceMidnight - sinceMidnight % Every.Ticks;
-        return dayStart.AddTicks(floored) + Every;
+        return NextBoundary(lastRefresh.Value, Every);
     }
 
     /// <summary>A window's samples oldest first, as records <c>{ "v": fraction }</c> for a <c>line</c>.</summary>

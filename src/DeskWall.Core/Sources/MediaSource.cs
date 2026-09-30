@@ -1,5 +1,6 @@
 ﻿using DeskWall.Core.Values;
 using DeskWall.Core.Render;
+using Windows.Foundation;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
 using System.Security.Cryptography;
@@ -9,6 +10,13 @@ namespace DeskWall.Core.Sources;
 /// <summary>Current Windows media session. Changes are signalled, never polled.</summary>
 public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposable
 {
+    internal MediaSource(string name, Func<IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager>> request, TimeSpan timeout) : this(name)
+        => (_request, _timeout) = (request, timeout);
+
+    /// <summary>How long any one call into the media service may take before the refresh fails.</summary>
+    public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
+    private readonly Func<IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager>> _request = GlobalSystemMediaTransportControlsSessionManager.RequestAsync;
+    private readonly TimeSpan _timeout = CallTimeout;
     public string Name => name;
     public event Action<ISource>? Changed;
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
@@ -31,9 +39,11 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
     private void MediaChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args) => Signal();
     private void PlaybackChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args) => Signal();
 
-    // (end time, position, when the position was stamped) as of the last refresh.
-    private (TimeSpan End, TimeSpan Position, DateTimeOffset At) _timeline;
-    private bool _timelinePlaying;
+    /// <summary>What the last refresh saw of the timeline. One immutable object swapped whole: it is
+    /// written by the refresh and read by <see cref="TimelineChanged"/> on a WinRT thread, and the
+    /// tuple and flag it replaces (two fields, 33 bytes) could be read half old and half new.</summary>
+    internal sealed record TimelineStamp(TimeSpan End, TimeSpan Position, DateTimeOffset At, bool Playing);
+    private volatile TimelineStamp? _timeline;
 
     /// <summary>Some apps raise this every second while playing. Only a change the last refresh could
     /// not have predicted -- a seek, a new duration -- is worth a tick; ordinary forward progress
@@ -44,19 +54,33 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
         {
             var t = sender.GetTimelineProperties();
             if (t is null) return;
-            var (end, position, at) = _timeline;
-            var expected = position + (_timelinePlaying ? t.LastUpdatedTime - at : TimeSpan.Zero);
-            if (t.EndTime != end || Math.Abs((t.Position - expected).TotalSeconds) > 3) Signal();
+            if (Surprising(_timeline, t.EndTime, t.Position, t.LastUpdatedTime)) Signal();
         }
         catch (Exception) { }
     }
+
+    /// <summary>True when a timeline update is not what <paramref name="last"/> predicts: a changed
+    /// end time, or a position more than 3 s from where it should be by now.</summary>
+    internal static bool Surprising(TimelineStamp? last, TimeSpan end, TimeSpan position, DateTimeOffset updated)
+    {
+        if (last is null) return true;
+        var expected = last.Position + (last.Playing ? updated - last.At : TimeSpan.Zero);
+        return end != last.End || Math.Abs((position - expected).TotalSeconds) > 3;
+    }
     private void Detach()
     {
-        if (_session is null) return;
-        _session.MediaPropertiesChanged -= MediaChanged;
-        _session.PlaybackInfoChanged -= PlaybackChanged;
-        _session.TimelinePropertiesChanged -= TimelineChanged;
+        if (_session is not { } session) return;
         _session = null;
+        // Each on its own: a session whose app has gone can refuse one removal, and a throw here
+        // used to leave _session set, so every later refresh tried (and failed) the same Detach.
+        Try(() => session.MediaPropertiesChanged -= MediaChanged);
+        Try(() => session.PlaybackInfoChanged -= PlaybackChanged);
+        Try(() => session.TimelinePropertiesChanged -= TimelineChanged);
+    }
+
+    private static void Try(Action action)
+    {
+        try { action(); } catch (Exception) { }
     }
     public async ValueTask<RecordValue> RefreshAsync(CancellationToken ct)
     {
@@ -67,7 +91,7 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             if (_disposed) return Empty();
             if (_manager is null)
             {
-                var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+                var manager = await Bounded(_request(), ct).ConfigureAwait(false);
                 if (_disposed) return Empty();
                 _manager = manager;
                 _manager.CurrentSessionChanged += CurrentChanged;
@@ -86,36 +110,10 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
             }
             if (_session is null) return Empty();
             var session = _session;
-            var properties = await session.TryGetMediaPropertiesAsync();
+            var properties = await Bounded(session.TryGetMediaPropertiesAsync(), ct).ConfigureAwait(false);
             if (_disposed) return Empty();
             var playing = session.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-            var art = "";
-            if (playing && properties.Thumbnail is { } thumbnail)
-            {
-                using var stream = await thumbnail.OpenReadAsync();
-                if (stream.Size > 0 && stream.Size <= 8 * 1024 * 1024)
-                {
-                    using var reader = new DataReader(stream);
-                    var length = await reader.LoadAsync((uint)stream.Size);
-                    var bytes = new byte[length]; reader.ReadBytes(bytes);
-                    var hash = Convert.ToHexString(SHA256.HashData(bytes));
-                    if (_artHash != hash || !File.Exists(_art))
-                    {
-                        var dir = Path.Combine(Paths.RuntimeDir, "media"); Directory.CreateDirectory(dir);
-                        var raw = Path.Combine(dir, "thumbnail.tmp");
-                        var output = Path.Combine(dir, "art.png");
-                        try
-                        {
-                            await File.WriteAllBytesAsync(raw, bytes, ct).ConfigureAwait(false);
-                            using (var image = Surface.Load(raw)) image.SavePng(output + ".tmp");
-                            File.Move(output + ".tmp", output, true);
-                            _artHash = hash; _art = output;
-                        }
-                        finally { File.Delete(raw); }
-                    }
-                    art = _art;
-                }
-            }
+            var art = playing && properties.Thumbnail is { } thumbnail ? await Art(thumbnail, ct).ConfigureAwait(false) : "";
             var (position, duration) = Timeline(session, playing);
             return new RecordValue(new Dictionary<string, Value>
             {
@@ -132,10 +130,74 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
         }
         finally
         {
-            if (_disposed) Release();
+            // Release first, then look: checking _disposed before releasing left a window in which
+            // Dispose saw the gate held, returned, and nobody ever removed the WinRT handlers.
             _gate.Release();
+            if (_disposed) ReleaseIfIdle();
         }
     }
+    /// <summary>The cover as a PNG path, or "" when there is none this refresh. Never fails the
+    /// record: the cover is decoration, and a thumbnail that will not open, read or decode must not
+    /// take the title and artist with it. Only the tick's own cancellation gets out.</summary>
+    private async Task<string> Art(IRandomAccessStreamReference thumbnail, CancellationToken ct)
+    {
+        try
+        {
+            using var stream = await Bounded(thumbnail.OpenReadAsync(), ct).ConfigureAwait(false);
+            if (stream.Size == 0 || stream.Size > 8 * 1024 * 1024) return "";
+            using var reader = new DataReader(stream);
+            var length = await Bounded(reader.LoadAsync((uint)stream.Size), ct).ConfigureAwait(false);
+            var bytes = new byte[length]; reader.ReadBytes(bytes);
+            return SaveArt(bytes);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { return ""; }
+    }
+
+    /// <summary>Decode the thumbnail bytes to runtime/media/art.png, unless they are the ones already
+    /// there. Temp files are unique to the call: the designer runs its own media source on the same
+    /// runtime dir, and with one fixed temp name each could delete or lock the other's. A failure is
+    /// "" and is not remembered, so the next refresh tries again.</summary>
+    internal string SaveArt(byte[] bytes)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        if (_artHash == hash && File.Exists(_art)) return _art;
+        var dir = Path.Combine(Paths.RuntimeDir, "media");
+        var output = Path.Combine(dir, "art.png");
+        var unique = Guid.NewGuid().ToString("N");
+        var raw = Path.Combine(dir, $"thumbnail.{unique}.tmp");
+        var png = Path.Combine(dir, $"art.{unique}.tmp");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(raw, bytes);
+            using (var image = Surface.Load(raw)) image.SavePng(png);
+            File.Move(png, output, true);
+            _artHash = hash; _art = output;
+            return output;
+        }
+        catch (Exception) { return ""; }
+        finally { TryDelete(raw); TryDelete(png); }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch (Exception) { }
+    }
+
+    /// <summary>One call into the media service, bounded by <see cref="CallTimeout"/> and the token.
+    /// The service is out of process and the daemon's tick thread blocks on this refresh, so a call
+    /// that never answers must fail the source rather than freeze the wallpaper. WaitAsync, not
+    /// only AsTask(ct): an operation that ignores Cancel would otherwise still never complete.</summary>
+    private async Task<T> Bounded<T>(IAsyncOperation<T> operation, CancellationToken ct)
+    {
+        try { return await operation.AsTask(ct).WaitAsync(_timeout, ct).ConfigureAwait(false); }
+        catch (TimeoutException)
+        {
+            try { operation.Cancel(); } catch (Exception) { }
+            throw new TimeoutException($"the media service did not answer within {_timeout.TotalSeconds:0.#} s");
+        }
+    }
+
     /// <summary>Seconds into the track and its length, the position carried forward from when the
     /// app last stamped it if it is playing. Zero and zero when the app does not report a timeline.</summary>
     private (double Position, double Duration) Timeline(GlobalSystemMediaTransportControlsSession session, bool playing)
@@ -144,8 +206,7 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
         {
             var t = session.GetTimelineProperties();
             if (t is null) return (0, 0);
-            _timeline = (t.EndTime, t.Position, t.LastUpdatedTime);
-            _timelinePlaying = playing;
+            _timeline = new TimelineStamp(t.EndTime, t.Position, t.LastUpdatedTime, playing);
             if (!playing) return (0, 0);
             var duration = (t.EndTime - t.StartTime).TotalSeconds;
             if (duration <= 0) return (0, 0);
@@ -164,13 +225,23 @@ public sealed class MediaSource(string name) : ISource, ISignalSource, IDisposab
     private void Release()
     {
         Detach();
-        if (_manager is not null) _manager.CurrentSessionChanged -= CurrentChanged;
+        if (_manager is { } manager) Try(() => manager.CurrentSessionChanged -= CurrentChanged);
         _manager = null;
     }
+
+    /// <summary>Let go of the WinRT subscriptions unless a refresh holds the gate, in which case that
+    /// refresh does it on its way out (it re-checks <see cref="_disposed"/> after releasing).</summary>
+    private void ReleaseIfIdle()
+    {
+        if (!_gate.Wait(0)) return;
+        try { Release(); } finally { _gate.Release(); }
+    }
+
+    internal bool HoldsSubscriptions => _manager is not null || _session is not null;
+
     public void Dispose()
     {
         _disposed = true;
-        if (!_gate.Wait(0)) return;
-        try { Release(); } finally { _gate.Release(); }
+        ReleaseIfIdle();
     }
 }

@@ -527,7 +527,9 @@ an `http` source already has, and it is the layout author's choice, but make it 
 
 ## `battery`
 
-Windows GetSystemPowerStatus, every 60 seconds by default. Publishes `percent` (0..100),
+Windows GetSystemPowerStatus, every 60 seconds by default, on whole multiples of `every` since
+midnight (like `hardware`) so it shares the clock's wake instead of adding one at whatever second
+the daemon started. Publishes `percent` (0..100),
 `fraction` (0..1), `charging`, `onBattery`, and `minutesLeft` (-1 when unknown).
 No battery or unknown charge omits percent/fraction. `opacity` is 0.2 when on mains
 and at least 95% charged, otherwise 1; absent for unknown charge.
@@ -545,7 +547,12 @@ refreshes on events: a track change, play/pause, a seek of more than 3 s, or a c
 (`TimelinePropertiesChanged` fires every few seconds on some apps, so smaller moves are
 ignored). A progress bar therefore jumps on those events rather than creeping every minute.
 Paused or absent playback has empty display fields. Thumbnail bytes are hashed; only changed art is decoded to PNG under
-`runtime/media/art.png`. Thumbnails above 8 MB are omitted. Subscriptions are removed on disposal.
+`runtime/media/art.png`, through temp files unique to the call (the designer's own media source
+shares the runtime dir). Thumbnails above 8 MB are omitted, and a thumbnail that will not open,
+read or decode publishes `art` as "" rather than failing the source. Subscriptions are removed on disposal.
+Every call into the media service is bounded at 5 s (`MediaSource.CallTimeout`) and by the tick's
+token: the daemon's tick waits on this refresh, so a service that stops answering fails the source
+(last values kept, retried on the scheduler's back-off) rather than freezing the wallpaper.
 Windows SDK projections compiled successfully under native AOT in the spike.
 
 `disks.worstUsedFraction` is the maximum used fraction across fixed ready drives (0 when none).

@@ -74,6 +74,69 @@ public class LayoutScalerTests
         Assert.Equal("5", d.Thickness.LiteralText);
     }
 
+    /// <summary>Harden review finding 7. A shape bar's and a line's path is inset from its rect by
+    /// thickness / 2 + glow on both axes, so the stroke has to shrink with the smaller factor (as a
+    /// dial's does) to still fit the rect it was authored to fit. Bars were not scaled at all, and
+    /// lines rounded to whole pixels, so a 1 px line at 0.4 became 0 (then the 0.1 px floor).</summary>
+    [Fact]
+    public void Shape_And_Line_Strokes_Scale_With_The_Smaller_Factor_And_Keep_Fractions()
+    {
+        var layout = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [
+            { "type": "bar", "id": "b", "rect": [0, 0, 100, 36], "fraction": 1, "shape": "M0,0 L1000,0", "thickness": 8, "glow": 14 },
+            { "type": "line", "id": "l", "rect": [0, 0, 100, 100], "values": { "bind": "h.v" }, "thickness": 1, "glow": 3 } ] }
+        """);
+        var scaled = LayoutScaler.Scale(layout, new DisplaySignature("A", 1000, 1000, 100), new DisplaySignature("B", 400, 800, 100));
+        var bar = Assert.IsType<BarDef>(scaled.Components[0]);
+        Assert.Equal("3.2", bar.Thickness.LiteralText);
+        Assert.Equal("5.6", bar.Glow.LiteralText);
+        var line = Assert.IsType<LineDef>(scaled.Components[1]);
+        Assert.Equal("0.4", line.Thickness.LiteralText);
+        Assert.Equal("1.2", line.Glow.LiteralText);
+    }
+
+    /// <summary>The same finding, as drawn: alpine-vision's disk bar and peer light are authored
+    /// with 2 * (thickness / 2 + glow) equal to the rect's short side, so the halo just meets the
+    /// rect's edges and the flat axis lands on the centre. Scaled to a 1920x1200 ratio the rect
+    /// shrank but the stroke did not: the fill clip cut the halo off hard at the rect's edge, the
+    /// bar sat 3 px below centre, and the light's interior went negative, mirroring the dot into
+    /// a pill.</summary>
+    [Fact]
+    public void A_Scaled_Shape_Bar_Keeps_Its_Halo_Inside_The_Rect_And_Centred()
+    {
+        var layout = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "sources": [],
+          "components": [
+            { "type": "bar", "id": "disk", "rect": [20, 20, 100, 36], "fraction": 1, "threshold": 2, "track": "#00000000",
+              "fill": "#FF00FF00", "shape": "M0,0 L1000,0", "thickness": 8, "glow": 14, "glowColor": "#FF00FF00", "glowStrength": 0.35 },
+            { "type": "bar", "id": "light", "rect": [200, 20, 26, 26], "fraction": 1, "threshold": 2, "track": "#00000000",
+              "fill": "#FF00FF00", "shape": "M0,0 h0.01", "thickness": 14, "glow": 6, "glowColor": "#FF00FF00", "glowStrength": 0.35 } ] }
+        """);
+        var scaled = LayoutScaler.Scale(layout, new DisplaySignature("A", 344, 144, 100), new DisplaySignature("B", 192, 120, 100));
+        var resolved = DeskWall.Core.Resolve.LayoutResolver.Resolve(scaled, DeskWall.Core.Values.ValueTree.Of());
+        var png = Path.Combine(Path.GetTempPath(), "deskwall-tests", "scaled-shape-base.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(png)!);
+        using (var b = DeskWall.Core.Render.Surface.Create(192, 120)) { b.Clear(new DeskWall.Core.Render.Color(255, 0, 0, 255)); b.SavePng(png); }
+        using var frame = new DeskWall.Core.Render.FrameRenderer(192, 120).RenderAll(DeskWall.Core.Render.BaseCache.Ensure(png, 192, 120, Fit.Cover), resolved);
+
+        var rects = scaled.Components.Select(c => c.Rect).ToArray();
+        for (var y = 0; y < 120; y++)
+            for (var x = 0; x < 192; x++)
+            {
+                // One pixel of slack for the antialiased edge of a halo that exactly fits.
+                if (rects.Any(r => x >= r.X - 1 && x < r.X + r.W + 1 && y >= r.Y - 1 && y < r.Y + r.H + 1)) continue;
+                Assert.True(frame.GetPixel(x, y) == (255, 0, 0, 255), $"painted outside every rect at ({x},{y}): {frame.GetPixel(x, y)}");
+            }
+        foreach (var r in rects)
+        {
+            var cx = r.X + r.W / 2;
+            Assert.True(frame.GetPixel(cx, r.Y + r.H / 2).G > 200, $"not lit at the centre of {r}");
+            Assert.True(frame.GetPixel(cx, r.Y) == (255, 0, 0, 255), $"halo reaches the top edge of {r}: {frame.GetPixel(cx, r.Y)}");
+            Assert.True(frame.GetPixel(cx, r.Y + r.H - 1) == (255, 0, 0, 255), $"halo reaches the bottom edge of {r}: {frame.GetPixel(cx, r.Y + r.H - 1)}");
+        }
+    }
+
     /// <summary>The designer's zoom: every rect and pixel size times the zoom, top-level rects then
     /// offset into the viewport; repeater children scale but stay cell-relative; "auto" stays.</summary>
     [Fact]

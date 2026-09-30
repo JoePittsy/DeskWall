@@ -81,7 +81,7 @@ Example:
 | `threshold` | `1` | At or above this fraction, `thresholdFill` is used instead of `fill`. |
 | `thresholdFill` | `"#D13438"` | |
 | `direction` | `"horizontal"` | `horizontal` \| `vertical`. |
-| `shape` | `""` | SVG path data (`M L H V C Z`, absolute and relative) drawn instead of the box. Its bounds are stretched to `rect`, so any path works and resizing the bar resizes it. The track is the whole path, the fill the same path clipped to the fraction. Unreadable data draws the plain box. |
+| `shape` | `""` | SVG path data (`M L H V C Z`, absolute and relative) drawn instead of the box. Its bounds are stretched to `rect`, so any path works and resizing the bar resizes it; an axis the path does not span (a flat line, a dot) sits on the rect's centre line. The track is the whole path, the fill the same path clipped to the fraction. Unreadable data draws the plain box. |
 | `thickness` | `0` | With a `shape`: 0 fills it, more strokes it this wide (round caps and joins), inset by half so the ink stays inside `rect`. |
 | `glow` | `0` | With a `shape`: a soft halo this many px round the lit part, in the fill colour (stacked low-alpha strokes, like a text shadow). The path is inset by it too, so inflate `rect` by the glow to keep the line where it was. |
 | `glowStrength` | `0.12` | Each of the four glow strokes' share of the glow colour's alpha, 0..1. 0.12 is a halo you have to look for; 0.3 to 0.45 is one you cannot miss. |
@@ -250,7 +250,9 @@ properties, so the one rule in `Value.ToText` makes all three react to a bool.
 A binding that cannot be resolved (a missing field, an out-of-range index, a key with no match,
 indexing into the wrong shape of value) resolves to `null`; the bound property then falls back to
 its own default (spec 3.2: staleness and missing-value handling are the component's problem, not
-the binding's).
+the binding's). A numeric property treats `NaN` and `Infinity` the same way, whether written
+literally, bound to a text that parses as one, or bound to a source value that is one: the
+property takes its default rather than handing a non-finite width or alpha to Direct2D.
 
 ## Repeater semantics
 
@@ -307,6 +309,11 @@ it (`LayoutScaler.Scale`) rather than leaving the canvas blank:
 - `DialDef.Thickness` scales by `min(sx, sy)` instead: the arc's radius is taken from the short
   side of its rect, and the geometric mean is 1 for a display that halves in width and doubles in
   height, which would leave the stroke wider than the ring it is drawn on.
+- A line's and a shape bar's `thickness` and `glow` scale by `min(sx, sy)` too, kept to two
+  decimals: the path is inset from its rect by `thickness / 2 + glow` on both axes, so a halo
+  authored to just meet the rect's edges still does after the rect shrinks. An axis a shape does
+  not span (a flat stroke, a dot) is drawn on the rect's centre line, so it stays centred when
+  the two factors differ.
 - A repeater's `gap` scales by the same geometric mean; its `cellHeight` scales by `sy` (vertical
   axis) or `sx` (horizontal axis) unless it is `"auto"`, which is resolution-independent by
   construction and is left alone.

@@ -471,9 +471,14 @@ public sealed unsafe class Surface : IDisposable
     {
         var (x0, y0, x1, y1) = path.Bounds;
         var inset = thickness / 2f + pad;
-        var sx = x1 > x0 ? (r.W - 2 * inset) / (x1 - x0) : 0;
-        var sy = y1 > y0 ? (r.H - 2 * inset) / (y1 - y0) : 0;
-        D2D_POINT_2F P(float x, float y) => new() { x = r.X + inset + (x - x0) * sx, y = r.Y + inset + (y - y0) * sy };
+        // An axis the path does not span (a flat stroke, a dot) or that the inset leaves no room
+        // on sits on the rect's centre: stretching it would pin it to the inset edge, or with a
+        // negative room mirror it. Where the room is exactly zero the two agree.
+        var sx = x1 > x0 && r.W > 2 * inset ? (r.W - 2 * inset) / (x1 - x0) : 0;
+        var sy = y1 > y0 && r.H > 2 * inset ? (r.H - 2 * inset) / (y1 - y0) : 0;
+        var ox = sx > 0 ? r.X + inset : r.X + r.W / 2f;
+        var oy = sy > 0 ? r.Y + inset : r.Y + r.H / 2f;
+        D2D_POINT_2F P(float x, float y) => new() { x = ox + (x - x0) * sx, y = oy + (y - y0) * sy };
         var brush = Brush(rt, c);
         ID2D1PathGeometry* geo = null; ID2D1GeometrySink* sink = null; ID2D1StrokeStyle* style = null;
         var clipped = false;
