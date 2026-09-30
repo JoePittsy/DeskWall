@@ -41,6 +41,25 @@ public partial class BindingChip : UserControl
 
     /// <summary>A value was picked (or the format of the current one changed): bind to it.</summary>
     public event Action<PropertyValue, ValueEntry>? Chosen;
+    public event Action<PropertyValue, ValueEntry>? Preview;
+    private System.Windows.Threading.DispatcherTimer? _ruleTimer;
+    private void QueuePreview()
+    {
+        if (_syncing || !IsEditing) return;
+        _ruleTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _ruleTimer.Stop();
+        _ruleTimer.Tick -= PreviewRules;
+        _ruleTimer.Tick += PreviewRules;
+        _ruleTimer.Start();
+    }
+    private void PreviewRules(object? sender, EventArgs args)
+    {
+        _ruleTimer?.Stop();
+        if (!IsEditing || Highlighted is not { } entry) return;
+        var binding = BindingFor(entry, SelectedFormat);
+        ChipText.Text = Describe(binding, _entries, _tree);
+        Preview?.Invoke(PropertyValue.Bound(binding), entry);
+    }
 
     /// <summary>Unbind was pressed.</summary>
     public event Action? Unbound;
@@ -92,6 +111,7 @@ public partial class BindingChip : UserControl
     public void EndEdit()
     {
         if (!IsEditing) return;
+        _ruleTimer?.Stop();
         EditorPanel.Visibility = Visibility.Collapsed;
         Closed?.Invoke();
     }
@@ -271,7 +291,7 @@ public partial class BindingChip : UserControl
         var remove = new Button { Content = "✕", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(4, 0, 0, 0), ToolTip = "Remove" };
         AutomationProperties.SetName(remove, "Remove rule");
         var line = RuleLine(Mode == RuleMode.Step ? "Below" : "At", at, to, remove);
-        remove.Click += (_, _) => { RuleRows.Children.Remove(line); _rows.Remove((at, to)); };
+        remove.Click += (_, _) => { RuleRows.Children.Remove(line); _rows.Remove((at, to)); QueuePreview(); };
         _rows.Add((at, to));
         RuleRows.Children.Insert(_otherwise is null ? RuleRows.Children.Count : RuleRows.Children.Count - 1, line);
     }
@@ -292,6 +312,29 @@ public partial class BindingChip : UserControl
             line.Children.Add(unit);
         }
         if (remove is not null) { DockPanel.SetDock(remove, Dock.Right); line.Children.Add(remove); }
+        if (Editor == PropertySchema.Editor.Color)
+        {
+            var swatch = new Button { Width = 28, Height = 26, Margin = new Thickness(4, 0, 4, 0), ToolTip = "Choose rule colour" };
+            AutomationProperties.SetName(swatch, "Choose rule colour");
+            void UpdateSwatch()
+            {
+                if (ColorModel.TryParseHex(to.Text, out var colour))
+                    swatch.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(colour.A, colour.R, colour.G, colour.B));
+            }
+            UpdateSwatch();
+            to.TextChanged += (_, _) => UpdateSwatch();
+            swatch.Click += (_, _) =>
+            {
+                var picker = new ColorPicker { Width = 260, Margin = new Thickness(8) };
+                if (ColorModel.TryParseHex(to.Text, out _)) picker.Value = to.Text;
+                var popup = new System.Windows.Controls.Primitives.Popup { PlacementTarget = swatch,
+                    Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false,
+                    Child = new Border { Background = System.Windows.Media.Brushes.White, Child = picker } };
+                picker.ValueChanged += (_, e) => to.Text = e.NewValue;
+                popup.IsOpen = true;
+            };
+            DockPanel.SetDock(swatch, Dock.Right); line.Children.Add(swatch);
+        }
         line.Children.Add(to);
         return line;
     }
@@ -300,6 +343,7 @@ public partial class BindingChip : UserControl
     {
         var box = new TextBox { Text = text };
         AutomationProperties.SetName(box, $"{name} for {PropertyLabel}");
+        box.TextChanged += (_, _) => QueuePreview();
         box.PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter) { Commit(); e.Handled = true; }
@@ -319,7 +363,7 @@ public partial class BindingChip : UserControl
 
     private void RulesMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_syncing && IsLoaded) BuildRows(null);
+        if (!_syncing && IsLoaded) { BuildRows(null); QueuePreview(); }
     }
 
     private void AddRule_Click(object sender, RoutedEventArgs e)
@@ -327,12 +371,14 @@ public partial class BindingChip : UserControl
         var last = _rows.Select(r => double.TryParse(r.At.Text, NumberStyles.Float, Inv, out var a) ? a : 0).DefaultIfEmpty(0).Max();
         AddRow(new Rule((last + 10) / (Percent ? 100 : 1), ""));
         _rows[^1].At.Focus();
+        QueuePreview();
     }
 
     /// <summary>Done, or Enter in a rule: bind with what the editor now says. Nothing changed, or
     /// nothing to bind yet, just closes.</summary>
     private void Commit()
     {
+        _ruleTimer?.Stop();
         if (Highlighted is { } entry)
         {
             var bound = Binding is not null && string.Equals(PathText(Binding), entry.Path, StringComparison.OrdinalIgnoreCase);

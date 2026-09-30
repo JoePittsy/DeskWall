@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DeskWall.Designer.Views.InsertPanel"
+<UserControl x:Class="DeskWall.Designer.Views.InsertPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:v="clr-namespace:DeskWall.Designer.Views">
@@ -166,6 +166,8 @@
                 AutomationProperties.Name="Bar part" ToolTip="Drag onto the canvas, or press Enter to put it in the middle" />
         <Button Content="Dial" Tag="Dial" Margin="3,0,0,0" HorizontalAlignment="Stretch" Click="Part_Click" PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move"
                 AutomationProperties.Name="Dial part" ToolTip="Drag onto the canvas, or press Enter to put it in the middle" />
+        <Button Content="Line" Tag="Line" Margin="3,0,0,0" Click="Part_Click" PreviewMouseLeftButtonDown="Source_Press" PreviewMouseMove="Source_Move"
+                AutomationProperties.Name="History line part" ToolTip="Draw a history line" />
       </UniformGrid>
     </StackPanel>
 

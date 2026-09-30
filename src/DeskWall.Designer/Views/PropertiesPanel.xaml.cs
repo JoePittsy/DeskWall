@@ -712,8 +712,17 @@ public partial class PropertiesPanel : UserControl
         var chip = new BindingChip { Editor = prop.Editor, PropertyLabel = label };
         var tree = PickerRoot();
         chip.Show(bound, Catalog(tree), tree);
+        chip.Preview += (value, entry) =>
+        {
+            _model?.Transient(() => EditCurrent($"Preview {label}", (l, d) =>
+            {
+                prop.Set(d, value);
+                if (entry.Source is { } source && !l.Sources.Exists(s => s.Name == source.Name)) l.Sources.Add(source);
+            }));
+        };
         chip.Chosen += (value, entry) =>
         {
+            _model?.EndTransient();
             _openChip = null;
             var source = entry.Source;
             if (CurrentFound() is { } f && prop.Get(f.Def) is { } now && Overrides.Same(now, value)) { Render(); return; }
@@ -727,7 +736,7 @@ public partial class PropertiesPanel : UserControl
             });
         };
         chip.Unbound += () => { _openChip = null; EditCurrent($"Unbind {label}", (_, d) => prop.Set(d, PropertyValue.Literal(""))); };
-        chip.Closed += () => { if (_openChip == rowId) { _openChip = null; Render(); } };
+        chip.Closed += () => { _model?.EndTransient(); if (_openChip == rowId) { _openChip = null; Render(); } };
         if (_openChip == rowId) chip.BeginEdit();
         AutomationProperties.SetAutomationId(chip, rowId);
         _chips.Add(chip);
