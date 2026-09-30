@@ -391,9 +391,9 @@
       "id": "now-art",
       "rect": [
         40,
-        1200,
-        160,
-        160
+        1328,
+        72,
+        72
       ],
       "z": 1,
       "radius": 8,
@@ -408,16 +408,16 @@
       "type": "text",
       "id": "now-title",
       "rect": [
-        224,
-        1218,
-        900,
-        40
+        128,
+        1334,
+        600,
+        26
       ],
       "z": 1,
       "text": {
         "bind": "media.title"
       },
-      "size": 32,
+      "size": 20,
       "weight": 400,
       "color": "#E6ECEFF4",
       "effectColor": "#C0000000",
@@ -428,16 +428,16 @@
       "type": "text",
       "id": "now-artist",
       "rect": [
-        224,
-        1262,
-        900,
-        30
+        128,
+        1362,
+        600,
+        20
       ],
       "z": 1,
       "text": {
         "bind": "media.artist"
       },
-      "size": 22,
+      "size": 14,
       "color": "#99D8DEE9",
       "effectColor": "#C0000000",
       "font": "Bahnschrift",
@@ -448,10 +448,10 @@
       "type": "bar",
       "id": "now-progress",
       "rect": [
-        224,
-        1306,
-        400,
-        4
+        128,
+        1392,
+        240,
+        2
       ],
       "z": 1,
       "fraction": {

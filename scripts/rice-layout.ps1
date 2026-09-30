@@ -81,10 +81,10 @@ Set-Prop $f 'stroke' '#FF5E81AC' 'cpu-foothills'; Set-Prop $f 'glowColor' '#FF5E
 if ($f) { $f.rect = @(0, 780, 3440, 660) }   # lower and shallower: it echoes the ridge, it does not compete
 
 # 6. Now playing, bottom-left.
-$art = Get-Comp 'now-art'; if ($art) { $art.rect = @(40, 1200, 160, 160) }
-$t = Get-Comp 'now-title'; if ($t) { $t.rect = @(224, 1218, 900, 40); Set-Prop $t 'size' 32 'now-title'; Set-Prop $t 'weight' 400 'now-title'; Set-Prop $t 'color' $ink 'now-title' }
-$a = Get-Comp 'now-artist'; if ($a) { $a.rect = @(224, 1262, 900, 30); Set-Prop $a 'size' 22 'now-artist'; Set-Prop $a 'weight' 400 'now-artist'; Set-Prop $a 'color' $dim 'now-artist' }
-$p = Get-Comp 'now-progress'; if ($p) { $p.rect = @(224, 1306, 400, 4); Set-Prop $p 'track' '#00000000' 'now-progress'; Set-Prop $p 'fill' $frost 'now-progress'; Recolour-Prop $p 'thresholdFill' '88C0D0' 'FF' 'now-progress' }
+$art = Get-Comp 'now-art'; if ($art) { $art.rect = @(40, 1328, 72, 72) }
+$t = Get-Comp 'now-title'; if ($t) { $t.rect = @(128, 1334, 600, 26); Set-Prop $t 'size' 20 'now-title'; Set-Prop $t 'weight' 400 'now-title'; Set-Prop $t 'color' $ink 'now-title' }
+$a = Get-Comp 'now-artist'; if ($a) { $a.rect = @(128, 1362, 600, 20); Set-Prop $a 'size' 14 'now-artist'; Set-Prop $a 'weight' 400 'now-artist'; Set-Prop $a 'color' $dim 'now-artist' }
+$p = Get-Comp 'now-progress'; if ($p) { $p.rect = @(128, 1392, 240, 2); Set-Prop $p 'track' '#00000000' 'now-progress'; Set-Prop $p 'fill' $frost 'now-progress'; Recolour-Prop $p 'thresholdFill' '88C0D0' 'FF' 'now-progress' }
 
 # 7. Right column: dials, drives, the state lines. x 3000..3420.
 foreach ($m in 'cpu','ram','gpu','battery') {
