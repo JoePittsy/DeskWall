@@ -87,4 +87,149 @@ public class TimeSourceTests
         foreach (var field in new[] { "dayPercent", "weekPercent", "yearPercent" })
             Assert.Equal(Num(v, field), Math.Round(Num(v, field)));
     }
+
+    private static string Text(RecordValue v, string field) => ((TextValue)v.Get(field)!).Text;
+
+    private static TimeSource Sun(DateTimeOffset now, string? sunrise, string? sunset, Func<RecordValue?>? tree = null)
+        => new("time", new FakeClock(now), sunrise, sunset, tree ?? (() => null));
+
+    private static DateTimeOffset At(int h, int m) => new(2026, 9, 30, h, m, 0, TimeSpan.FromHours(1));
+
+    /// <summary>Without settings nothing a layout already binds moves: the fixed thresholds still
+    /// decide the phase, and no sunrise/sunset is claimed.</summary>
+    [Fact]
+    public async Task Without_Sun_Settings_Phase_Keeps_The_Fixed_Thresholds()
+    {
+        var v = await new TimeSource("time", new FakeClock(At(6, 30))).RefreshAsync(default);
+        Assert.Equal("dawn", Text(v, "phase"));   // 0.2708 is between DawnStart and DayStart
+        Assert.Null(v.Get("sunrise"));
+        Assert.Null(v.Get("sunset"));
+        Assert.Equal(0.0417, Num(v, "sunFraction"), 4);   // against the 06:00-18:00 default
+        Assert.Equal(0.0, Num(v, "nightFraction"), 4);
+    }
+
+    /// <summary>Dawn is sunrise +-40 min and dusk sunset +-40 min, at the minute boundaries.</summary>
+    [Theory]
+    [InlineData(6, 19, "night")]
+    [InlineData(6, 20, "dawn")]
+    [InlineData(7, 39, "dawn")]
+    [InlineData(7, 40, "day")]
+    [InlineData(18, 19, "day")]
+    [InlineData(18, 20, "dusk")]
+    [InlineData(19, 39, "dusk")]
+    [InlineData(19, 40, "night")]
+    [InlineData(0, 0, "night")]
+    public async Task Phase_Follows_The_Real_Sun(int h, int m, string phase)
+    {
+        var v = await Sun(At(h, m), "07:00", "19:00").RefreshAsync(default);
+        Assert.Equal(phase, Text(v, "phase"));
+    }
+
+    /// <summary>A sun bound to sunFraction rises and sets when the real one does; nightFraction is
+    /// the same walk across the night, and 0 all day.</summary>
+    [Theory]
+    [InlineData(3, 0, 0.0, 0.6667)]
+    [InlineData(7, 0, 0.0, 0.0)]
+    [InlineData(13, 0, 0.5, 0.0)]
+    [InlineData(19, 0, 1.0, 0.0)]
+    [InlineData(22, 0, 1.0, 0.25)]
+    [InlineData(1, 0, 0.0, 0.5)]
+    [InlineData(6, 59, 0.0, 0.9986)]
+    public async Task Sun_And_Night_Fractions_Run_Between_The_Real_Times(int h, int m, double sun, double night)
+    {
+        var v = await Sun(At(h, m), "07:00", "19:00").RefreshAsync(default);
+        Assert.Equal(sun, Num(v, "sunFraction"), 4);
+        Assert.Equal(night, Num(v, "nightFraction"), 4);
+    }
+
+    [Fact]
+    public async Task Publishes_Sunrise_And_Sunset_As_Times_Today()
+    {
+        var v = await Sun(At(12, 0), "7:02", "18:45").RefreshAsync(default);
+        Assert.Equal(At(7, 2), ((TimeValue)v.Get("sunrise")!).Time);
+        Assert.Equal(At(18, 45), ((TimeValue)v.Get("sunset")!).Time);
+    }
+
+    /// <summary>Open-Meteo's daily block with timezone=auto: arrays of local ISO times, no offset.</summary>
+    private const string Weather = """
+        {"daily":{"time":["2026-09-30","2026-10-01"],"sunrise":["2026-09-30T07:02","2026-10-01T07:04"],"sunset":["2026-09-30T18:45","2026-10-01T18:43"]}}
+        """;
+
+    private static RecordValue Tree(string json, IReadOnlySet<string>? unix = null)
+        => new(new Dictionary<string, Value> { ["weather"] = new RecordValue(new Dictionary<string, Value> { ["json"] = JsonValues.Parse(json, unix) }) });
+
+    [Fact]
+    public async Task Resolves_A_Binding_Path_Into_Another_Sources_Values()
+    {
+        var tree = Tree(Weather);
+        var v = await Sun(At(18, 10), "weather.json.daily.sunrise[0]", "weather.json.daily.sunset[0]", () => tree).RefreshAsync(default);
+        Assert.Equal(At(7, 2), ((TimeValue)v.Get("sunrise")!).Time);
+        Assert.Equal(At(18, 45), ((TimeValue)v.Get("sunset")!).Time);
+        Assert.Equal("dusk", Text(v, "phase"));
+    }
+
+    [Fact]
+    public async Task Resolves_A_Path_To_A_Unix_Time()
+    {
+        var rise = At(7, 2).ToUnixTimeSeconds();
+        var set = At(18, 45).ToUnixTimeSeconds();
+        var tree = Tree($$$"""{"sun":{"rise":{{{rise}}},"set":{{{set}}}}}""", new HashSet<string> { "rise" });
+        var v = await Sun(At(12, 0), "weather.json.sun.rise", "weather.json.sun.set", () => tree).RefreshAsync(default);
+        Assert.Equal(At(7, 2), ((TimeValue)v.Get("sunrise")!).Time);    // a TimeValue (unixTimeFields)
+        Assert.Equal(At(18, 45), ((TimeValue)v.Get("sunset")!).Time);   // a bare number, read as Unix seconds
+    }
+
+    /// <summary>Before the weather source first answers the day is 06:00-18:00; once it has, a
+    /// tree without it (a failed or stale fetch) keeps the last real times rather than jumping back.</summary>
+    [Fact]
+    public async Task An_Unresolved_Path_Uses_The_Default_Then_The_Last_Good_Times()
+    {
+        RecordValue? tree = null;
+        var clock = new FakeClock(At(12, 0));
+        var src = new TimeSource("time", clock, "weather.json.daily.sunrise[0]", "weather.json.daily.sunset[0]", () => tree);
+
+        var first = await src.RefreshAsync(default);
+        Assert.Equal(At(6, 0), ((TimeValue)first.Get("sunrise")!).Time);
+
+        tree = Tree(Weather);
+        var second = await src.RefreshAsync(default);
+        Assert.Equal(At(7, 2), ((TimeValue)second.Get("sunrise")!).Time);
+
+        tree = new RecordValue(new Dictionary<string, Value>());
+        var third = await src.RefreshAsync(default);
+        Assert.Equal(At(7, 2), ((TimeValue)third.Get("sunrise")!).Time);
+        Assert.Equal(At(18, 45), ((TimeValue)third.Get("sunset")!).Time);
+    }
+
+    [Fact]
+    public async Task A_Sunset_Before_The_Sunrise_Is_Ignored()
+    {
+        var v = await Sun(At(12, 0), "19:00", "07:00").RefreshAsync(default);
+        Assert.Equal(At(6, 0), ((TimeValue)v.Get("sunrise")!).Time);
+        Assert.Equal(At(18, 0), ((TimeValue)v.Get("sunset")!).Time);
+    }
+
+    [Fact]
+    public void A_Setting_That_Is_Neither_A_Time_Nor_A_Path_Fails_At_Load()
+        => Assert.Throws<ArgumentException>(() => Sun(At(12, 0), "weather..sunrise", null));
+
+    [Fact]
+    public void The_Registry_Leaves_Its_Latest_Tree_For_Sources_To_Read()
+    {
+        var reg = new SourceRegistry();
+        var values = JsonValues.Parse(Weather);
+        reg.Set(SourceSnapshot.Initial("weather").Succeeded(values, At(12, 0)));
+        var tree = reg.Tree();
+        Assert.Same(tree, SourceTree.Latest);
+        var judged = reg.Tree([], At(12, 0));
+        Assert.Same(judged, SourceTree.Latest);
+    }
+
+    [Fact]
+    public async Task The_Factory_Passes_The_Sun_Settings()
+    {
+        var def = new DeskWall.Core.Layout.SourceDef { Name = "time", Type = "time", Settings = new Dictionary<string, string> { ["sunrise"] = "07:00", ["sunset"] = "19:00" } };
+        var src = SourceFactory.Create(def, new FakeClock(At(18, 30)));
+        Assert.Equal("dusk", Text(await src.RefreshAsync(default), "phase"));
+    }
 }

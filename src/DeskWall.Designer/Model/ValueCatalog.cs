@@ -146,6 +146,10 @@ public static partial class ValueCatalog
         ["time.weekPercent"] = ("Week progress %", false),
         ["time.yearPercent"] = ("Year progress %", false),
         ["time.phase"] = ("Phase of day", false),
+        ["time.sunFraction"] = ("Sun progress", true),
+        ["time.nightFraction"] = ("Night progress", true),
+        ["time.sunrise"] = ("Sunrise", false),
+        ["time.sunset"] = ("Sunset", false),
 
         ["disks.drives"] = ("Drives", false),
         ["disks.drives[*].letter"] = ("{0}: drive letter", false),

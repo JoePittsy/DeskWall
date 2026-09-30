@@ -36,7 +36,8 @@ each source reads its own `settings` keys and defaults) and `SourceFactory.cs`.
 
 ## `time`
 
-No settings. Always due on the next whole minute (`NextDue` rounds up to `:00`).
+Settings (both optional): `sunrise`, `sunset`. Always due on the next whole minute (`NextDue`
+rounds up to `:00`).
 
 Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`TextValue`, e.g.
 `Saturday`), and how far through the day, week and year local time is:
@@ -45,16 +46,58 @@ Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`
 |---|---|
 | `dayFraction`, `weekFraction`, `yearFraction` | 0..1, rounded to 4 decimals |
 | `dayPercent`, `weekPercent`, `yearPercent` | the same, 0..100, rounded to a whole number |
-| `phase` | `night`, `dawn`, `day` or `dusk` from `dayFraction`: dawn from 0.21, day from 0.29, dusk from 0.71, night from 0.83 |
+| `phase` | `night`, `dawn`, `day` or `dusk`. Without sun settings, from `dayFraction`: dawn from 0.21, day from 0.29, dusk from 0.71, night from 0.83. With them, from the real sun: dawn is sunrise ±40 min, dusk is sunset ±40 min, day in between, night otherwise |
+| `sunFraction` | 0 at sunrise, 1 at sunset, clamped (0 before sunrise, 1 after sunset), 4 decimals: a sun bound to it rises and sets when the real one does. 06:00 to 18:00 without settings |
+| `nightFraction` | The same across the night: 0 at sunset, 1 at the next sunrise, 0 all day |
+| `sunrise`, `sunset` | `TimeValue`s today, only when the settings are given (`time.sunset \| HH:mm`) |
 
 `phase` exists so a layer that only needs four colours is one Step rule
 (`time.phase | "?night=#..,dawn=#..,day=#..,dusk=#.."`), and the palette for that layer lives in
-that one place. Use a Blend on `dayFraction` where the change should be gradual.
+that one place. Use a Blend on `dayFraction` where the change should be gradual (or on
+`sunFraction`/`nightFraction`, which follow the real sun).
 
 Both forms exist because a `bar`'s `fraction` wants 0..1 and a `text` wants the percent, and a
 format string cannot multiply by 100. The **week starts on Monday** (`((int)DayOfWeek + 6) % 7`),
 not on Sunday. The year divides by 366 in a leap year and 365 otherwise. All three are derived
 from the same local `now` the clock publishes, so a "day progress" widget needs no script.
+
+### Real sunrise and sunset
+
+`sunrise` and `sunset` each take either a fixed local `HH:mm` or a binding path to another
+source's value. The path is resolved against the value tree at every refresh: the tree the
+previous tick resolved against (`SourceTree.Latest`), so it lags by at most a minute. The value
+it reaches may be:
+
+- an ISO date-time (only the time of day is used; one without an offset is taken as local, one
+  with an offset is converted);
+- `HH:mm` text;
+- a `TimeValue`, or a number read as Unix seconds.
+
+A one-element record from a JSON array of scalars (`[0]` of `["..."]`) is unwrapped.
+
+Until a path first resolves, 06:00 and 18:00 stand in. After that, the last pair that resolved is
+kept while the other source is failing or stale, so the sky does not jump back to 06:00. A pair
+with the sunset before the sunrise is ignored the same way. A setting that is neither `HH:mm` nor
+a parseable path fails when the layout is loaded.
+
+Open-Meteo gives both for free. Add `daily=sunrise,sunset` to the weather source's URL (the
+`weather` widget's `widgets/weather.json`, which `column-system.json` places). Keep
+`timezone=auto`, which it already has, so the times are the town's own local times:
+
+```
+...&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&timezone=auto
+```
+
+and point the time source at the first day:
+
+```json
+{ "name": "time", "type": "time",
+  "settings": { "sunrise": "weather.json.daily.sunrise[0]", "sunset": "weather.json.daily.sunset[0]" } }
+```
+
+`deskwall tick --preview time.at=HH:mm` pins the time fields without the sun settings
+(`TimeSource.Fields(now)`), so under a preview `phase` falls back to the fixed thresholds and
+`sunFraction` to 06:00 to 18:00.
 
 ## `disks`
 

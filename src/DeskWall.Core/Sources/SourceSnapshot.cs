@@ -69,7 +69,7 @@ public sealed class SourceRegistry
     {
         var d = ProviderFields(null);
         foreach (var s in _snaps.Values) if (s.Values is not null) d[s.Name] = s.Values;
-        return new RecordValue(d);
+        return SourceTree.Latest = new RecordValue(d);
     }
 
     /// <summary>Providers first, so a layout source written over the top wins the name outright
@@ -101,7 +101,7 @@ public sealed class SourceRegistry
         if (StaleAfter <= 0)
         {
             foreach (var s in _snaps.Values) if (s.Values is not null) d[s.Name] = s.Values;
-            return new RecordValue(d);
+            return SourceTree.Latest = new RecordValue(d);
         }
         foreach (var s in sources)
         {
@@ -118,7 +118,7 @@ public sealed class SourceRegistry
         // A snapshot whose source the caller did not list is on no schedule we know: publish it unjudged.
         foreach (var snap in _snaps.Values)
             if (snap.Values is not null && !known.Contains(snap.Name)) d[snap.Name] = snap.Values;
-        return new RecordValue(d);
+        return SourceTree.Latest = new RecordValue(d);
     }
 
     private bool IsStale(ISource s, SourceSnapshot snap, DateTimeOffset now)

@@ -11,7 +11,7 @@ public static class SourceFactory
         var every = TimeSpan.FromSeconds(def.EverySeconds ?? DefaultEvery(def.Type));
         return def.Type.ToLowerInvariant() switch
         {
-            "time" => new TimeSource(def.Name, clock),
+            "time" => TimeSource.FromDef(def, clock),
             "media" => new MediaSource(def.Name),
             "battery" => new BatterySource(def.Name, every),
             "disks" => new DisksSource(def.Name, every),
