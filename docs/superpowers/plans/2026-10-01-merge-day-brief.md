@@ -8,7 +8,7 @@ ids are in `.superpowers/copilot-*.log`.
 
 | Branch | Worktree | State |
 |---|---|---|
-| `spike/harden` | `DeskWall-harden` | 8 fix commits + 1 WIP; no report written |
+| `spike/harden` | (worktree removed) | **8 fixes merged into `main` and published 30 Sept 23:20** (`f4c88bf`); its WIP commit (one new test file, `SurfaceTests.cs`) is still unmerged; no report written |
 | `spike/presence-sources` | `DeskWall-presence` | done, reported |
 | `spike/hearth-feed` | `DeskWall-hearth` | done, reported |
 | `spike/photo-phase` | `DeskWall-photo` | done, reported |
@@ -24,8 +24,10 @@ remaining item is the critique-4 round; monitors' is the report and the gallery 
 is `docs/superpowers/plans/2026-09-30-harden-report.md`.
 
 ## 2. Merge, in this order, on `main`
-harden, presence, hearth, photo, parity (`git merge spike/parity-gate~1`, i.e. without the POC
-deletion), designer, monitors. After each: `dotnet build` clean, full tests green, resolve
+**Already merged and published on the night of 30 Sept: harden (8 fixes), presence, hearth,
+photo, parity (without the POC deletion), all with both suites green. Their worktrees are
+removed; `spike/parity-gate`'s final commit `04ef104` (delete `poc/`) is still unmerged on
+purpose.** Remaining: designer, then monitors (both carry a `WIP:` bank). After each: `dotnet build` clean, full tests green, resolve
 conflicts by reading both sides (the duplicate `time.phase` between presence and photo is
 expected: keep presence's, delete photo's copy). Then `scripts/gallery.ps1` and **look at every
 PNG**; `deskwall tick --repeat 10 --measure` on `layouts/alpine-vision.json` and on
