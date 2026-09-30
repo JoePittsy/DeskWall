@@ -370,7 +370,19 @@ Get-Content "$env:LOCALAPPDATA\DeskWall\deskwall.1.log", "$env:LOCALAPPDATA\Desk
   Where-Object { $_.Length -ge 19 -and $_.Substring(0, 19) -ge $start -and $_ -match '\[ERROR\]|tick .* failed' }   # expect nothing
 ```
 
-**R5. Uninstall leaves the desktop as found.**
+**R5. Uninstall leaves the desktop as found.** First check what uninstall will restore. v1
+records the wallpaper that was current when it was first installed, and that was probably the
+POC's own `deskwall.jpg`, since the POC was painting at the time. That is v1's output path too,
+so restoring it would leave the last composed frame on screen:
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\DeskWall\restore.json"   # monitor id -> path
+# If a path is "$env:LOCALAPPDATA\DeskWall\deskwall.jpg", point it at the real pre-DeskWall
+# wallpaper instead: the path in restore.txt (written by hand at POC install), or the Spotlight
+# asset every layout uses as its baseImage. Edit the JSON, keep the monitor ids.
+```
+
+Then:
 
 ```powershell
 $before = Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Force | Select-Object -ExpandProperty Name
@@ -381,13 +393,25 @@ Compare-Object $before $after       # expect only the four non-breaking-space sl
 dw install                          # back on
 ```
 
-**R6. Retire the POC task** (plan Task 7 item 2):
+**R6. Retire the POC task** (plan Task 7 item 2). The POC's four slot shortcuts (names of 1 to
+4 non-breaking spaces, targeting Playnite) outlive the task and would sit invisibly over the
+covers, so remove them too. v1 never deletes them: it deletes only what `shortcuts-owned.json`
+lists.
 
 ```powershell
 Disable-ScheduledTask -TaskName "DeskWall Tick"
 Unregister-ScheduledTask -TaskName "DeskWall Tick" -Confirm:$false
+$desk = [Environment]::GetFolderPath('Desktop'); $wsh = New-Object -ComObject WScript.Shell
+1..4 | ForEach-Object { Join-Path $desk ([string]::new([char]0xA0, $_) + '.lnk') } |
+  Where-Object { (Test-Path -LiteralPath $_) -and $wsh.CreateShortcut($_).TargetPath -like '*Playnite.DesktopApp.exe' } |
+  ForEach-Object { Remove-Item -LiteralPath $_; "removed POC slot $_" }
 dw install
+dw verify                           # still RESULT: OK
 ```
+
+The POC-only runtime files (`state.json`, `base.png/.key`, `tiles\`, `restore.txt`,
+`playnite-config.backup.json`) can stay: nothing reads them any more. Keep
+`playnite-config.backup.json` at least until the Playnite import question in CLAUDE.md is settled.
 
 **R7. Merge.** Tick the four master-plan boxes and this plan's Task 7 items with the evidence
 above, put the date into the POC commit's subject ("v1 reached parity on <date>"), merge
