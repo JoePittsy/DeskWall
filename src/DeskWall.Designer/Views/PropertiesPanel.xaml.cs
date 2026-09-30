@@ -1197,6 +1197,7 @@ public partial class PropertiesPanel : UserControl
         TextDef => "Text",
         ImageDef => "Picture",
         BarDef => "Bar",
+        LineDef => "Line",
         DialDef => "Dial",
         ShortcutDef => "Shortcut",
         RepeaterDef => "Repeated group",

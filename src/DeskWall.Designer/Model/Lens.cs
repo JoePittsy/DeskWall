@@ -157,7 +157,7 @@ public static partial class Lens
         // Named, and keyed, after what the owner typed on it (the first text part's words, "cpu"),
         // else its first part's kind; the key follows a rename until the first Apply (RenameWidget).
         var label = picked.OfType<TextDef>().Select(t => t.Text.LiteralText?.Trim()).FirstOrDefault(t => !string.IsNullOrEmpty(t))
-            ?? picked[0] switch { DialDef => "Dial", BarDef => "Bar", ImageDef => "Image", TextDef => "Text", _ => "Widget" };
+            ?? picked[0] switch { LineDef => "Line", DialDef => "Dial", BarDef => "Bar", ImageDef => "Image", TextDef => "Text", _ => "Widget" };
         var key = FreeKey(model, WidgetDocument.Slug(label));
         var shows = parts.SelectMany(c => ComponentProperties.For(c).Select(p => p.Get(c)))
             .Where(v => v.IsBound).Select(v => ValueCatalog.Known(ValueCatalog.PathText(v.Binding!), model.Layout.Sources).Label)

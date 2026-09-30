@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Widgets;
 
@@ -175,6 +175,7 @@ public static class LayerTree
         TextDef => "text",
         ImageDef => "image",
         BarDef => "bar",
+        LineDef => "line",
         DialDef => "dial",
         ShortcutDef => "shortcut",
         RepeaterDef => "repeater",

@@ -327,9 +327,11 @@ public partial class BindingChip : UserControl
             {
                 var picker = new ColorPicker { Width = 260, Margin = new Thickness(8) };
                 if (ColorModel.TryParseHex(to.Text, out _)) picker.Value = to.Text;
+                var host = new Border { Child = picker };
+                host.SetResourceReference(Border.BackgroundProperty, "SolidBackgroundFillColorBaseAltBrush");
                 var popup = new System.Windows.Controls.Primitives.Popup { PlacementTarget = swatch,
                     Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, StaysOpen = false,
-                    Child = new Border { Background = System.Windows.Media.Brushes.White, Child = picker } };
+                    Child = host };
                 picker.ValueChanged += (_, e) => to.Text = e.NewValue;
                 popup.IsOpen = true;
             };

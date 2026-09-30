@@ -607,8 +607,10 @@ public partial class PreviewView : UserControl
         e.Handled = true;
         if (PenToggle.IsChecked == true)
         {
+            // The double-click's second press lands on the point its first press already added.
+            if (e.ClickCount == 2) { FinishPen(true); return; }
             _penPoints.Add(_surface.ToCanvas(_downScreen)); _surface.PenPoints = _penPoints.ToArray();
-            if (e.ClickCount == 2) FinishPen(true); else Redraw();
+            Redraw();
             return;
         }
         if (TraceToggle.IsChecked == true) { _tracing = true; CaptureMouse(); return; }
@@ -1461,7 +1463,6 @@ public partial class PreviewView : UserControl
 
         protected override void OnRender(DrawingContext dc)
         {
-
             base.OnRender(dc);
             if (CanvasW <= 0 || CanvasH <= 0) return;
 
