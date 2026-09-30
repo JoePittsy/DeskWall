@@ -473,7 +473,7 @@
       "id": "reboot-pending",
       "rect": [
         3000,
-        556,
+        596,
         420,
         28
       ],
@@ -495,7 +495,7 @@
       "id": "recent-crash",
       "rect": [
         3000,
-        588,
+        628,
         420,
         28
       ],
@@ -860,7 +860,7 @@
       "id": "battery-text",
       "rect": [
         3000,
-        524,
+        564,
         420,
         28
       ],
@@ -981,6 +981,168 @@
           }
         }
       ]
+    },
+    {
+      "type": "text",
+      "id": "time-day-label",
+      "rect": [
+        3000,
+        444,
+        200,
+        22
+      ],
+      "z": 1,
+      "text": "Day",
+      "font": "Bahnschrift",
+      "size": 14,
+      "weight": 400,
+      "color": "#99D8DEE9",
+      "effect": "None"
+    },
+    {
+      "type": "text",
+      "id": "time-day-value",
+      "rect": [
+        3200,
+        444,
+        220,
+        22
+      ],
+      "z": 1,
+      "text": {
+        "bind": "time.dayPercent | \"{0}%\""
+      },
+      "font": "Bahnschrift",
+      "size": 14,
+      "weight": 400,
+      "color": "#E6ECEFF4",
+      "align": "right",
+      "effect": "None"
+    },
+    {
+      "type": "bar",
+      "id": "time-day-bar",
+      "rect": [
+        3000,
+        470,
+        420,
+        2
+      ],
+      "z": 1,
+      "fraction": {
+        "bind": "time.dayFraction"
+      },
+      "threshold": 2,
+      "track": "#4DD8DEE9",
+      "fill": "#FF88C0D0"
+    },
+    {
+      "type": "text",
+      "id": "time-week-label",
+      "rect": [
+        3000,
+        480,
+        200,
+        22
+      ],
+      "z": 1,
+      "text": "Week",
+      "font": "Bahnschrift",
+      "size": 14,
+      "weight": 400,
+      "color": "#99D8DEE9",
+      "effect": "None"
+    },
+    {
+      "type": "text",
+      "id": "time-week-value",
+      "rect": [
+        3200,
+        480,
+        220,
+        22
+      ],
+      "z": 1,
+      "text": {
+        "bind": "time.weekPercent | \"{0}%\""
+      },
+      "font": "Bahnschrift",
+      "size": 14,
+      "weight": 400,
+      "color": "#E6ECEFF4",
+      "align": "right",
+      "effect": "None"
+    },
+    {
+      "type": "bar",
+      "id": "time-week-bar",
+      "rect": [
+        3000,
+        506,
+        420,
+        2
+      ],
+      "z": 1,
+      "fraction": {
+        "bind": "time.weekFraction"
+      },
+      "threshold": 2,
+      "track": "#4DD8DEE9",
+      "fill": "#FF88C0D0"
+    },
+    {
+      "type": "text",
+      "id": "time-year-label",
+      "rect": [
+        3000,
+        516,
+        200,
+        22
+      ],
+      "z": 1,
+      "text": "Year",
+      "font": "Bahnschrift",
+      "size": 14,
+      "weight": 400,
+      "color": "#99D8DEE9",
+      "effect": "None"
+    },
+    {
+      "type": "text",
+      "id": "time-year-value",
+      "rect": [
+        3200,
+        516,
+        220,
+        22
+      ],
+      "z": 1,
+      "text": {
+        "bind": "time.yearPercent | \"{0}%\""
+      },
+      "font": "Bahnschrift",
+      "size": 14,
+      "weight": 400,
+      "color": "#E6ECEFF4",
+      "align": "right",
+      "effect": "None"
+    },
+    {
+      "type": "bar",
+      "id": "time-year-bar",
+      "rect": [
+        3000,
+        542,
+        420,
+        2
+      ],
+      "z": 1,
+      "fraction": {
+        "bind": "time.yearFraction"
+      },
+      "threshold": 2,
+      "track": "#4DD8DEE9",
+      "fill": "#FF88C0D0"
     }
   ],
   "copies": [
