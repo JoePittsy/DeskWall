@@ -13,7 +13,7 @@ Commits:
 | `4845ea4` | Bindable `baseImage` in Core, a 4-entry LRU `BaseCache`, the missing-file fallback, the designer photo row's bind chip and preview, and tests. |
 | `92320ba` | `tick --measure` prints a `base` row. `--preview` takes `;`-separated sets that `--repeat` steps through. |
 | `9e657bf` | `layouts/alpine-vision-photos.json` and the `layouts/README.md` note. `phase-photos.ps1 -AllowLive`. |
-| (this one) | This report, the gallery in `gallery-photos/`, `docs/layout-format.md` and `docs/architecture.md`. |
+| `304d649` | This report, the gallery in `gallery-photos/`, `docs/layout-format.md` and `docs/architecture.md`. |
 
 ## 1. Bindable `baseImage`
 
