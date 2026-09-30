@@ -746,15 +746,15 @@
         3000,
         330,
         420,
-        140
+        96
       ],
       "z": 1,
       "items": {
         "bind": "disks.drives"
       },
       "axis": "vertical",
-      "gap": 6,
-      "cellHeight": 66,
+      "gap": 8,
+      "cellHeight": 44,
       "template": [
         {
           "type": "text",
@@ -770,7 +770,8 @@
           },
           "size": 20,
           "weight": 400,
-          "font": "Bahnschrift"
+          "font": "Bahnschrift",
+          "color": "#99D8DEE9"
         },
         {
           "type": "text",
@@ -795,22 +796,22 @@
           "id": "bar",
           "rect": [
             0,
-            30,
+            34,
             420,
-            36
+            2
           ],
           "fraction": {
             "bind": "usedFraction"
           },
           "threshold": 2,
           "track": "#4DD8DEE9",
-          "fill": "#FF88C0D0",
-          "shape": "M0,0 L1000,0",
-          "thickness": 8,
-          "glow": 14,
-          "glowColor": {
-            "bind": "usedFraction | \"~0=#FF5CE1FF,0.6=#FF5CE1FF,0.75=#FFFFFFFF,0.85=#FFFFA030,0.9=#FFFF2A2A\""
+          "fill": {
+            "bind": "usedFraction | \"?<0.85=#FF88C0D0,<0.92=#FFEBCB8B,*=#FFBF616A\""
           },
+          "shape": "M0,0 L1000,0",
+          "thickness": 2,
+          "glow": 0,
+          "glowColor": "#FF88C0D0",
           "glowStrength": 0.35
         }
       ]

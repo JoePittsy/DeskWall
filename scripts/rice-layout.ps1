@@ -134,8 +134,16 @@ $dr = Get-Comp 'drives'
 if ($dr) {
     foreach ($tp in $dr.template) {
         if ($tp.type -eq 'text') { Set-Prop $tp 'font' 'Bahnschrift' "drives.$($tp.id)"; Set-Prop $tp 'weight' 400 "drives.$($tp.id)"; Set-Prop $tp 'size' 20 "drives.$($tp.id)"; if ($tp.PSObject.Properties['color']) { $tp.color = $ink } }
-        if ($tp.type -eq 'bar') { Set-Prop $tp 'track' $track "drives.$($tp.id)"; Set-Prop $tp 'fill' $frost "drives.$($tp.id)"; Recolour-Prop $tp 'thresholdFill' 'BF616A' 'FF' "drives.$($tp.id)" }
+        if ($tp.type -eq 'bar') {
+            # A hairline, not a glowing pill: 2 px, no glow, colour steps to warn/danger by fill alone.
+            $tp.rect = @(0, 34, 420, 2)
+            Set-Prop $tp 'track' $track "drives.$($tp.id)"; Set-Prop $tp 'thickness' 2 "drives.$($tp.id)"; Set-Prop $tp 'glow' 0 "drives.$($tp.id)"
+            Set-Prop $tp 'fill' ([pscustomobject]@{ bind = "usedFraction | `"?<0.85=$frost,<0.92=$warn,*=$danger`"" }) "drives.$($tp.id)"
+            if ($tp.PSObject.Properties['glowColor']) { $tp.glowColor = $frost }
+        }
+        if ($tp.type -eq 'text' -and $tp.id -eq 'letter') { Set-Prop $tp 'color' $dim "drives.letter" }
     }
+    $dr.cellHeight = 44; $dr.gap = 8; $dr.rect = @(3000, 330, 420, 96)
 }
 $vp = Get-Comp 'valley-peers'; if ($vp) { foreach ($tp in $vp.template) { foreach ($n in 'fill','track') { if ($tp.PSObject.Properties[$n]) { Recolour-Prop $tp $n 'EBCB8B' 'B3' "valley-peers.$($tp.id)" } } } }
 $bt = Get-Comp 'battery-text'; if ($bt) { $bt.rect = @(3000, 524, 420, 28); Set-Prop $bt 'size' 18 'battery-text'; Set-Prop $bt 'weight' 400 'battery-text'; Set-Prop $bt 'color' $dim 'battery-text'; Set-Prop $bt 'align' 'right' 'battery-text' }
