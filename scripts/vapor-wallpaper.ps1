@@ -8,7 +8,8 @@
 param(
     [string]$Layout = 'layouts/alpine-rice.json',
     [string]$Out = (Join-Path $env:LOCALAPPDATA 'DeskWall\assets\vapor'),
-    [int]$W = 3440, [int]$H = 1440
+    [int]$W = 3440, [int]$H = 1440,
+    [switch]$BakeSun
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -42,7 +43,9 @@ foreach ($name in $phases.Keys) {
     $sky = [Drawing.Drawing2D.LinearGradientBrush]::new([Drawing.Point]::new(0, 0), [Drawing.Point]::new(0, $horizon), (C $p.top), (C $p.low))
     $blend = [Drawing.Drawing2D.ColorBlend]::new(3); $blend.Colors = @((C $p.top), (C $p.mid), (C $p.low)); $blend.Positions = @(0.0, 0.55, 1.0); $sky.InterpolationColors = $blend
     $g.FillRectangle($sky, 0, 0, $W, $horizon)
-    # Sun: a big disc, lower half cut by horizontal bands of sky.
+    # Sun and silhouette are the layout's job (the sun moves with the time of day and sets behind
+    # the silhouette shape); -BakeSun paints them into the wallpaper instead, for a static image.
+    if ($BakeSun) {
     $cx = 2560; $cy = 640; $r = 330
     $sunBrush = [Drawing.Drawing2D.LinearGradientBrush]::new([Drawing.Point]::new(0, $cy - $r), [Drawing.Point]::new(0, $cy + $r), (C $p.sun), (C $p.sunLo))
     $g.FillEllipse($sunBrush, $cx - $r, $cy - $r, 2 * $r, 2 * $r)
@@ -51,6 +54,7 @@ foreach ($name in $phases.Keys) {
     # Mountain silhouette from the ridge trace, flat colour, down to the horizon.
     $poly = [System.Collections.Generic.List[Drawing.PointF]]::new(); $poly.Add([Drawing.PointF]::new(0, $canvasPts[0].Y)); foreach ($cp in $canvasPts) { $poly.Add($cp) }; $poly.Add([Drawing.PointF]::new($W, $canvasPts[-1].Y)); $poly.Add([Drawing.PointF]::new($W, $horizon)); $poly.Add([Drawing.PointF]::new(0, $horizon))
     $g.FillPolygon([Drawing.SolidBrush]::new((C $p.hill)), $poly.ToArray())
+    }
     # Valley floor with a perspective grid.
     $g.FillRectangle([Drawing.SolidBrush]::new((C $p.floor)), 0, $horizon, $W, $H - $horizon)
     $gc = C $p.grid; $pen = [Drawing.Pen]::new([Drawing.Color]::FromArgb($p.gridA, $gc.R, $gc.G, $gc.B), 2)

@@ -53,9 +53,33 @@ function Recolour-Prop($obj, [string]$name, [string]$rgb, [string]$alpha, [strin
 
 # 1. Delete: washes, halos, glows, the kitsch.
 $drop = 'sky-grade','sky-top','sky-band','stars-big','stars-warm','sun-glow','moon-halo','heat-shimmer','lightning','snow-big','uptime-piste','valley-count'
-# Vapor: the wallpaper carries its own sun, and heat patches speckle a flat silhouette at idle.
-if ($Theme -eq 'vapor') { $drop += 'sun','moon','gpu-snowfield','cpu-snowfield' }
+# Vapor: heat patches speckle a flat silhouette at idle, so no snowfields.
+if ($Theme -eq 'vapor') { $drop += 'gpu-snowfield','cpu-snowfield' }
 $j.components = @($j.components | Where-Object { $_.id -notin $drop })
+if ($Theme -eq 'vapor') {
+    # The mountain as a filled shape above the sun and moon, so they set behind it. Its path is the
+    # ridge's closed to the valley floor; the rect is chosen so the ridge points land exactly where
+    # the ridge bar draws them (the bar insets its path by thickness/2 + glow, this shape by nothing).
+    $rb = $j.components | Where-Object id -eq 'ridge'
+    $pts = [regex]::Matches($rb.shape, '(-?[\d.]+),(-?[\d.]+)') | ForEach-Object { [double]$_.Groups[1].Value, [double]$_.Groups[2].Value }
+    $xs = @(); $ys = @(); for ($i = 0; $i -lt $pts.Count; $i += 2) { $xs += $pts[$i]; $ys += $pts[$i + 1] }
+    $minX = ($xs | Measure-Object -Minimum).Minimum; $maxX = ($xs | Measure-Object -Maximum).Maximum
+    $minY = ($ys | Measure-Object -Minimum).Minimum; $maxY = ($ys | Measure-Object -Maximum).Maximum
+    $inset = 3 / 2 + 12; $horizon = 1000
+    $sy = ($rb.rect[3] - 2 * $inset) / ($maxY - $minY)
+    $top = $rb.rect[1] + $inset
+    $bottomY = $minY + ($horizon - $top) / $sy
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $closed = $rb.shape.TrimEnd() + " L$($maxX.ToString('0.#', $inv)),$($bottomY.ToString('0.#', $inv)) L$($minX.ToString('0.#', $inv)),$($bottomY.ToString('0.#', $inv)) Z"
+    $sil = [pscustomobject]@{
+        type = 'bar'; id = 'silhouette'; rect = @([int]($rb.rect[0] + $inset), [int]$top, [int]($rb.rect[2] - 2 * $inset), [int]($horizon - $top)); z = -8
+        fraction = 1; threshold = 2; track = '#00000000'; thickness = 0; shape = $closed
+        fill = [pscustomobject]@{ bind = 'time.phase | "?night=#FF160A2A,dawn=#FF2A1240,day=#FF4A2C7A,*=#FF1E0C36"' }
+    }
+    $j.components = @($j.components) + $sil
+    $sun = $j.components | Where-Object id -eq 'sun'; if ($sun) { $sun.rect[2] = 560; $sun.rect[3] = 560 }
+    $moon = $j.components | Where-Object id -eq 'moon'; if ($moon) { $moon.rect[2] = 240; $moon.rect[3] = 240 }
+}
 
 # 2. Every text: one family, no effects.
 foreach ($c in $j.components | Where-Object type -eq 'text') {
