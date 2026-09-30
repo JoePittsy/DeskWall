@@ -16,6 +16,12 @@ public class SourceFormsTests
         Assert.Equal(["time", "disks", "system", "hardware", "audio"], SourceForms.BuiltIn);
     }
 
+    /// <summary>A built-in needs no settings, so the Data panel runs it by default and its values
+    /// can be dragged before the layout has the source. audio was once missed here.</summary>
+    [Fact]
+    public void Every_Built_In_Is_A_Data_Panel_Default()
+        => Assert.Equal(SourceForms.BuiltIn.Order(), DeskWall.Designer.Model.Insert.DefaultSources.Select(s => s.Type).Order());
+
     [Theory]
     [InlineData("http", "name", "url", "every", "parse", "timeout")]
     [InlineData("file", "name", "path", "every", "parse")]

@@ -20,6 +20,7 @@ public static class Insert
         new() { Name = "hardware", Type = "hardware" },
         new() { Name = "disks", Type = "disks", EverySeconds = 300 },
         new() { Name = "system", Type = "system" },
+        new() { Name = "audio", Type = "audio" },
     ];
 
     /// <summary>The sources the Data panel runs: at widget depth the widget's own first, then the
