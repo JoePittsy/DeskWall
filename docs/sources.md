@@ -623,3 +623,71 @@ can pass `-InstallDir` and `-LibraryDir`. Cache writes honour DESKWALL_HOME.
 The alpine layout uses `scripts/tailscale-lights.ps1` as a five-minute command recipe. It emits
 `peers` containing one record per online peer while the backend is Running, otherwise an empty
 list, plus `status`. The layout draws up to 18 valley lights from that list.
+
+## Calendar recipe
+
+`scripts/graph-next-event.ps1` (PowerShell 7) reads the signed-in account's calendar from
+Microsoft Graph (`/me/calendarView`) and prints the next three events in the coming 12 hours as
+one line of JSON. Copy it to `%LOCALAPPDATA%\DeskWall\scripts\` (the publish script does not ship
+`scripts/`), then add the source:
+
+```json
+{ "name": "calendar", "type": "command", "every": 300,
+  "settings": { "command": "pwsh.exe",
+                "args": "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File graph-next-event.ps1",
+                "workingDir": "runtime:scripts", "parse": "json", "timeout": "30",
+                "unixTimeFields": "start,end" } }
+```
+
+`timeout` is 30 rather than the default 10: loading the Graph module and refreshing the token
+takes 3 to 4 s on a warm machine. `unixTimeFields` makes `start`/`end` `TimeValue`s, so they take
+a date format. It is not a default source: it needs a sign-in, and a Microsoft 365 or Outlook.com
+account.
+
+Output (`calendar.json...`):
+
+| Field | Notes |
+|---|---|
+| `status` | `ok`, or `signin-required` (exit code 2, empty `events`) when there is no usable token |
+| `account` | The signed-in user principal name |
+| `count` | Events in `events`, 0..3 |
+| `events` | The list: `subject`, `start`, `end`, `startText`/`endText` (local `HH:mm`), `minutesUntil` (whole minutes; negative once started), `inProgress`, `isOnline`, `joinUrl`, `location`, `isAllDay` |
+| `next` | `events[0]`; absent when there is nothing in the window |
+
+Cancelled events are skipped, and so are all-day events unless `-IncludeAllDay` is added to the
+arguments. `-Count N` (1..20) and `-Hours N` (1..168) change the window. Any other failure
+(network, Graph) exits 1 and prints nothing, so the source keeps the last good events.
+
+Bindings: `calendar.json.next.subject`, `calendar.json.next.start | HH:mm`,
+`calendar.json.next.minutesUntil`, `calendar.json.next.isOnline | "?true=online"`, a repeater over
+`calendar.json.events`, and `calendar.json.status | "?signin-required=calendar: sign in"` so the
+layout says when the token has lapsed. `minutesUntil` is as old as the last run (up to five
+minutes); for a live countdown, compare `start` with `time.now` instead.
+
+**Signing in.** The script never prompts when it runs as a source, so sign in once:
+
+```powershell
+deskwall calendar login                    # Windows sign-in (WAM); the default
+deskwall calendar login -Flow devicecode   # device code, token kept by the script
+```
+
+Either one opens a PowerShell 7 window of its own, runs the script with `-Login`, and waits.
+Arguments after `login` go to the script unchanged, and any `-Flow`/`-Tenant` given there must be
+added to the source's `args` as well. The two flows:
+
+- `-Flow mg` (default) uses the `Microsoft.Graph.Authentication` module
+  (`Install-Module Microsoft.Graph.Authentication -Scope CurrentUser`) and its token cache. It
+  shares both with the owner's ms-todo skill. Afterwards `Connect-MgGraph` refreshes the token
+  silently. This is the flow for a work tenant with device-compliance Conditional Access: WAM
+  carries the device's state, and a device code cannot.
+- `-Flow devicecode` signs in with a device code against the public Microsoft Graph PowerShell
+  client (`14d82eec-204b-4c2f-b7e8-296a70dab67e`, scopes `Calendars.Read offline_access`). It keeps
+  the refresh token in `<runtime dir>\calendar-token.txt`, DPAPI-protected for the current user,
+  and saves every rotated token. Use it for a personal account (`-Tenant consumers`) or a tenant
+  without that policy. It needs no module.
+
+Without a visible console, WAM refuses at once ("A window handle must be configured"), which is
+what the source wants. The script exits 2 and the layout shows `signin-required`. From a hidden
+console window (Task Scheduler, `Start-Process -WindowStyle Hidden`), WAM would instead wait on a
+prompt nobody can see. So the script detaches from a hidden console before it connects, and exits
+1 there.
