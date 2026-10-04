@@ -11,8 +11,9 @@ namespace DeskWall.Core.Sources;
 /// Runs hidden (no window), captures stdout (UTF-8) and stderr. Publishes: text | json, exitCode (NumberValue), ranAt (TimeValue), stderr (TextValue when non-empty).
 /// Non-zero exit does not throw while stdout has something in it (users script that); a non-zero exit with
 /// empty stdout throws, so the last good values stay published; a timeout kills the process tree and throws.
-/// Caveat, documented in layouts/README.md: stderr is published verbatim, so a command that fails and echoes
-/// its own argument list can put a substituted {secret:} into a value a component could draw.</summary>
+/// Every string published (text, json's strings, stderr) has any {secret:} substituted into args put back as its
+/// placeholder (Secrets.Redact, #46): a command that fails and echoes its own argument list must not hand the
+/// secret to a value a component could draw.</summary>
 public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout, string command, string? args, string? workingDir, string? parse,
     IReadOnlySet<string> unixTimeFields, Secrets secrets, IClock clock) : AsyncSource(name, every, timeout)
 {
@@ -78,6 +79,6 @@ public sealed class CommandSource(string name, TimeSpan every, TimeSpan timeout,
         // interior lines are the program's own and a component may want them.
         else d["text"] = new TextValue(outText.TrimEnd('\r', '\n'));
         if (!string.IsNullOrWhiteSpace(errText)) d["stderr"] = new TextValue(errText);
-        return new RecordValue(d);
+        return secrets.Redact(new RecordValue(d), args);
     }
 }

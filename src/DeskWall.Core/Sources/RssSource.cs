@@ -42,7 +42,8 @@ public sealed partial class RssSource(string name, TimeSpan every, TimeSpan time
         ct = hard.Token;
         using var res = await _client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!res.IsSuccessStatusCode) throw new HttpRequestException($"{(int)res.StatusCode} from {urlTemplate}");
-        return ParseFeed(await BoundedHttp.ReadStringAsync(res.Content, MaxBody, urlTemplate, ct), max);
+        // #46: a feed whose links echo the request (self links, tracking urls) publishes the template.
+        return secrets.Redact(ParseFeed(await BoundedHttp.ReadStringAsync(res.Content, MaxBody, urlTemplate, ct), max), urlTemplate);
     }
 
     /// <summary>Pure parser, exposed for tests and for FileSource users who point it at a saved feed.</summary>

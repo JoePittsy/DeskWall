@@ -264,10 +264,15 @@ Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` 
   frame resolves. Measured: about 27 ms per run for a `.cmd` script, 1.3-1.5 s for a
   `powershell.exe` recipe (Playnite, Tailscale). Due refreshes run side by side, so two such
   recipes cost the slower one, and only when they are due or on a forced tick.
-- **Caveat:** `stderr` is published verbatim. A command that fails and echoes its own argument
-  list back (the usual shape of a usage error) will publish the *substituted* value of any
-  `{secret:...}` in `args` into a value a text component could draw on the wallpaper. Do not
-  bind a component to a command's `stderr` if its `args` carry a secret. Redaction is #46.
+- **Secrets in the output are redacted.** A command that fails and echoes its own argument list
+  back (the usual shape of a usage error) would otherwise publish the *substituted* value of a
+  `{secret:...}` in `args`. Every string the source publishes -- `stderr`, `text`, and every
+  string inside `json` -- has each value its `args` substituted put back as its `{secret:name}`
+  placeholder before it is published (`Secrets.Redact`), so a value, the designer's source panel
+  and the wallpaper see the template, as the `http` source's errors do. What it cannot catch: a
+  secret the command re-encodes before printing (URL-escaped, base64, JSON-escaped, split across
+  lines), and a number that happens to be one, since only strings are redacted. Only the secrets
+  this source's `args` names are redacted; text that matches some other secret is left alone.
 
 ### `stream: true`: a command that stays up and pushes
 
@@ -286,7 +291,7 @@ A line is expected to be one whole record: `{ "temp": 41.2 }` in `json` mode, or
 Publishes `json` or `text` (the last line that parsed), `ranAt` (`TimeValue`, when that line
 arrived), `running` (`BoolValue`), `starts` (`NumberValue`, how many times the process has been
 started, so a crash loop is visible on the wallpaper), `badLines` (`NumberValue`) and `stderr`
-(the last non-empty stderr line) when there is one.
+(the last non-empty stderr line) when there is one. Lines and `stderr` are redacted as above.
 
 - **The parse mode is fixed once**, by `parse` if it is set and otherwise by the first line. It
   is not re-decided per line: one diagnostic line would otherwise move a producer's values from
@@ -474,7 +479,15 @@ URL. The render path only ever opens **local** files, so `RemoteImageCache`
 references one by name with `{secret:name}` inside an `http` source's `url` or `header.*`
 values, or a `command` source's `args`. Substitution happens at request time
 (`Secrets.Substitute`) and the resolved value is never logged -- a failed request logs the
-template (`.../{secret:steamKey}/...`), not the key. An unknown secret name throws
+template (`.../{secret:steamKey}/...`), not the key. What comes back is redacted the other way
+(`Secrets.Redact`): every string an `http`, `rss` or `command` source publishes has the values its
+own templates substituted replaced by their `{secret:name}` placeholders, so a response or a
+command output that echoes the request cannot carry a secret into a value. Source values never
+reach `events.json` or the event bus's diagnostics ring (both hold only what producers push
+through the pipe), and a source's failure reaches `SourceSnapshot.LastError` (the designer's
+source panel) only as its exception message: DeskWall's own messages name the template or the
+command, and .NET's (a refused connection, a process that cannot start) name the host or the
+program, never the query string or the arguments. An unknown secret name throws
 `KeyNotFoundException` naming the secret, never a value. The daemon and `deskwall tick` never
 write this file; the owner (or the designer's secrets editor) does.
 
