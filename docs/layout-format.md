@@ -129,7 +129,7 @@ place under the same path redraws.
 
 | Property | Default | Notes |
 |---|---|---|
-| `fraction` | required | 0..1. |
+| `fraction` | required | 0..1. A bound fraction that does not resolve hides the bar (track, fill and glow): unknown is not 0. A resolved 0 draws the track as usual. |
 | `track` | `"#46FFFFFF"` | Background fill. |
 | `fill` | `"#EBFFFFFF"` | Fill below `threshold`. |
 | `threshold` | `1` | At or above this fraction, `thresholdFill` is used instead of `fill`. |
@@ -159,7 +159,7 @@ stroked arc centred in `rect` with radius `min(w, h) / 2 - thickness / 2` and fl
 
 | Property | Default | Notes |
 |---|---|---|
-| `fraction` | required | 0..1, clamped. |
+| `fraction` | required | 0..1, clamped. A bound fraction that does not resolve hides the dial, as for `bar`. |
 | `track` | `"#46FFFFFF"` | Full-sweep arc under the fill. |
 | `fill` | `"#EBFFFFFF"` | The value arc, below `threshold`. |
 | `threshold` | `1` | At or above this fraction, `thresholdFill` is used instead of `fill`. A fraction of 1 is therefore at the default threshold, exactly as for `bar`. |
@@ -344,7 +344,8 @@ properties, so the one rule in `Value.ToText` makes all three react to a bool.
 A binding that cannot be resolved (a missing field, an out-of-range index, a key with no match,
 indexing into the wrong shape of value) resolves to `null`; the bound property then falls back to
 its own default (spec 3.2: staleness and missing-value handling are the component's problem, not
-the binding's). A numeric property treats `NaN` and `Infinity` the same way, whether written
+the binding's). The exceptions are the gauges: a `bar` or `dial` whose bound `fraction` does not
+resolve is hidden rather than drawn at 0, because an empty track reads as a confident zero. A numeric property treats `NaN` and `Infinity` the same way, whether written
 literally, bound to a text that parses as one, or bound to a source value that is one: the
 property takes its default rather than handing a non-finite width or alpha to Direct2D.
 

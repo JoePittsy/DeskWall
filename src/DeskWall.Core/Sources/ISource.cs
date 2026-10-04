@@ -53,6 +53,17 @@ public interface ISignalSource
     bool HasPending { get; }
 }
 
+/// <summary>A source with something the owner should see in <c>deskwall.log</c> that is not a
+/// failed refresh: it still publishes, but worse than it should (a push channel that would not
+/// register, so a change waits for the schedule). Core has no logger; the daemon drains this
+/// after every tick and writes each message as a warning.</summary>
+public interface IWarningSource
+{
+    /// <summary>The message waiting to be logged, or null; taking it clears it, so one problem
+    /// is logged once rather than every tick. Called on the tick thread.</summary>
+    string? TakeWarning();
+}
+
 /// <summary>Helper for the common "every N" schedule.</summary>
 public abstract class PeriodicSource(string name, TimeSpan every) : ISource
 {

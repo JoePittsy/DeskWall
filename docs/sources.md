@@ -204,15 +204,37 @@ already stored.
 | `muted` | `BoolValue`; drives a colour through the map format (`docs/layout-format.md`) |
 | `device` | the endpoint's friendly name, e.g. "Digital Output (3- High Definition Audio Device)" |
 
+**A default-device change is pushed too.** A headset being plugged in is silent on the volume
+callback by construction, because that callback is registered on the endpoint that is no longer
+the default. An `IMMNotificationClient` (`CoreAudioDeviceNotifier`, behind
+`IAudioDeviceNotifier`) covers it: `OnDefaultDeviceChanged` for the render endpoint in the
+`eMultimedia` role, and `OnDeviceStateChanged` for any endpoint. The source counts it as a change
+when the new default is not the endpoint it reads, when the endpoint it reads changes state
+(unplugged, disabled), or when it reads none and any endpoint changes state (the first device
+arriving). A microphone plugged into a machine with speakers is not a change, nor is a repeat of
+the per-role notification after the refresh has already moved. A change is handled exactly like a
+volume change - signal, due now, cleared by the refresh - and the refresh compares the default
+endpoint id against the one the volume callback is on and re-registers when they differ.
+`OnDeviceAdded`/`OnDeviceRemoved` (installed, not usable) and `OnPropertyValueChanged` (noisy, and
+nothing published depends on it) are ignored. Re-registering is never done from inside a
+callback, which CoreAudio forbids; and the refresh makes its COM calls outside the source's lock,
+because unregistering the old volume callback can wait for a notification in flight whose handler
+takes that lock.
+
 **The schedule is the whole minute**, the same boundary `time` and `hardware` use, so the source
-shares the clock's existing wake and asks for none of its own. It has exactly two jobs a
-notification cannot do: take the very first reading, and notice that the **default device**
-changed. A headset being plugged in is silent by construction, because any notification would
-come from the endpoint that is no longer the default; the refresh compares the endpoint id
-against the one the callback is registered on and re-registers when they differ.
+shares the clock's existing wake and asks for none of its own. It takes the very first reading
+(which is also when both callbacks are registered, not when the layout loads) and is the
+backstop for a device notification that never came. If the notifier cannot register, the source
+still works on that minute schedule and retries the registration on every refresh; the outage is
+one count in `ReaderFaults` and one warning in `deskwall.log` (`source 'audio': device-change
+notifications unavailable (...)`), through `IWarningSource`, which the daemon drains after each
+tick.
 
 **No playback device publishes an empty record**, not zeros, so every bound property falls back to
-its own default rather than drawing a confident "0%". The same is true of a COM failure on the
+its own default rather than drawing a confident "0%". A `bar` or `dial` whose bound `fraction`
+does not resolve is drawn fully transparent (`docs/layout-format.md`), so the `volume` widget's
+ring and the ridge lines in `alpine-*` and `vapor` disappear instead of reading as volume 0; the
+widget's two text parts already resolve to empty. The same is true of a COM failure on the
 endpoint: it costs that refresh and nothing more, and is counted rather than thrown, so the
 source never lands in the scheduler's failure back-off for something the next minute fixes.
 
@@ -231,11 +253,35 @@ repaints at about 64 ms CPU each; at rest the callback is silent and adds no wak
 costs +31 handles (CoreAudio's enumerator, endpoint, volume object and its RPC connection), +1
 thread and +1.4 MB private bytes.
 
-**Implementation notes.** `IAudioEndpointVolumeCallback` is implemented with a hand-built vtable:
-four `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]` statics over a struct whose
-first field is the vtable pointer, with a `GCHandle` back to the reader. Nothing escapes the
+**Measured, the device notifier** (JOES-PC, 2026-10-04; in-process, `Process.HandleCount` and
+thread count after a GC and a 3 s settle, six fresh processes, the same deltas every time):
+registering the `IMMNotificationClient` on top of a live volume source adds **+3 handles and +1
+thread** (the audio service's notification thread). The other way round, notifier first, it is
++25 handles / +1 thread and the volume source then adds +19 / 0, so the whole source is +44
+handles / +1 thread at rest either way. Disposing returns none of them: CoreAudio keeps its RPC
+plumbing for the life of the process. Over 60 s at rest the process spent 15.6 ms CPU with the
+notifier and 46.9 ms without, both at the timer's granularity, so the new thread costs no
+measurable idle CPU. `Start` costs 7.7-25 ms once per process (it is the first CoreAudio call,
+made before the first reading) and 0.5 us on every later refresh. `tick --measure` on an
+audio-only layout, three runs each, JIT: resolve 65-109 ms on `main`, 51-74 ms with the notifier,
+inside run-to-run noise; native AOT: resolve 13-16 ms, total 138-152 ms.
+
+**How the device path was verified.** The owner's audio device cannot be changed from a test, so
+the default-change logic (which notifications count, the pending flag, the re-registration, the
+empty record) is unit-tested with an injected `IAudioDeviceNotifier`; the real notifier is checked
+to register with and unregister from CoreAudio on this machine (skipped where Audiosrv is
+stopped); and both hand-built vtables are read back and every slot checked to hold the callback
+named for it, in the slot order of CsWin32's generated `IMMNotificationClient.Vtbl` and
+`IAudioEndpointVolumeCallback.Vtbl` (swapping two slots fails the test). Not yet observed: a real
+headset plug on JOES-PC end to end.
+
+**Implementation notes.** `IAudioEndpointVolumeCallback` and `IMMNotificationClient` are
+implemented with hand-built vtables (`ComCallback`): `[UnmanagedCallersOnly(CallConvs =
+[typeof(CallConvStdcall)])]` statics over a struct whose first field is the vtable pointer, with a
+`GCHandle` back to the owner and the shared IUnknown slots. Nothing escapes the
 callback - it runs on an audio service thread inside native code's own call frame, where an
 exception crossing back takes the whole process down - and it calls nothing back into COM. The
+same holds for the device notifier's callbacks. The
 reader keeps two locks: one for the COM pointers, one for the four fields the notification writes,
 never nested, because `UnregisterControlChangeNotify` can block on a notification already in
 flight. COM is touched on the first refresh, not at construction. `Dispose` unregisters, releases

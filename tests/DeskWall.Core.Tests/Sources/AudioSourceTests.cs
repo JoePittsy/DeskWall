@@ -1,4 +1,4 @@
-using DeskWall.Core.Events;
+﻿using DeskWall.Core.Events;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Sources.Audio;
 using DeskWall.Core.Values;
@@ -21,8 +21,13 @@ internal sealed class FakeAudioReader : IAudioReader
     public AudioReading? Current
         => RegisteredDeviceId is { } id && Devices.TryGetValue(id, out var r) ? r : null;
 
+    /// <summary>Runs inside <see cref="Register"/>, where the real reader unregisters the previous
+    /// callback and may wait for a notification already in flight.</summary>
+    public Action? DuringRegister { get; set; }
+
     public void Register()
     {
+        DuringRegister?.Invoke();
         RegisteredDeviceId = DefaultDeviceId;
         Registrations++;
     }
@@ -358,8 +363,306 @@ public class AudioSourceTests
         Assert.Equal(1, wakes);
     }
 
+    // ---- device changes (IAudioDeviceNotifier) -------------------------------------------
+
+    private static readonly DateTimeOffset NextMinute = new(2026, 9, 22, 9, 31, 0, TimeSpan.Zero);
+
+    /// <summary>Speakers registered, a headset known to the fake but not yet default.</summary>
+    private static (FakeAudioReader Reader, FakeAudioDeviceNotifier Notifier, AudioSource Source) SpeakersWithHeadsetAvailable()
+    {
+        var reader = OneSpeaker(0.5);
+        reader.Devices["hs"] = new AudioReading("hs", "Headset Earphone", 0.2, false);
+        var notifier = new FakeAudioDeviceNotifier();
+        var src = new AudioSource("audio", reader, notifier);
+        Refresh(src);
+        return (reader, notifier, src);
+    }
+
+    [Fact]
+    public void The_Notifier_Starts_On_The_First_Refresh_Not_At_Construction()
+    {
+        // COM is first touched on the first refresh, never when the layout is loaded.
+        using var reader = OneSpeaker();
+        var notifier = new FakeAudioDeviceNotifier();
+        using var src = new AudioSource("audio", reader, notifier);
+        Assert.Equal(0, notifier.Starts);
+
+        Refresh(src);
+        Refresh(src);
+
+        Assert.True(notifier.Starts >= 1);
+    }
+
+    [Fact]
+    public void A_Notifier_That_Will_Not_Register_Is_One_Fault_And_One_Warning_Per_Outage()
+    {
+        // The source still works - on the minute - so this is not a failed refresh. It is counted
+        // and handed to the daemon for deskwall.log once, not every minute while it lasts.
+        using var reader = OneSpeaker(0.5);
+        var notifier = new FakeAudioDeviceNotifier { FailWith = "COMException: the service has not been started" };
+        using var src = new AudioSource("audio", reader, notifier);
+
+        var r = Refresh(src);
+
+        Assert.Equal(50, Num(r, "volumePct"));
+        Assert.Equal(1, src.ReaderFaults);
+        var warning = src.TakeWarning();
+        Assert.NotNull(warning);
+        Assert.Contains("the service has not been started", warning);
+        Assert.Contains("next whole minute", warning);
+        Assert.Null(src.TakeWarning());
+
+        // Still down: retried every refresh, but neither counted nor warned again.
+        Refresh(src);
+        Refresh(src);
+        Assert.Equal(3, notifier.Starts);
+        Assert.Equal(1, src.ReaderFaults);
+        Assert.Null(src.TakeWarning());
+
+        // Healed, then lost again: a new outage is a new fault and a new warning.
+        notifier.FailWith = null;
+        Refresh(src);
+        Assert.Null(src.TakeWarning());
+        notifier.FailWith = "COMException: gone again";
+        Refresh(src);
+        Assert.Equal(2, src.ReaderFaults);
+        Assert.Contains("gone again", src.TakeWarning());
+    }
+
+    [Fact]
+    public void A_Listening_Notifier_Has_Nothing_To_Warn_About()
+    {
+        var (_, _, src) = SpeakersWithHeadsetAvailable();
+        using var __ = src;
+        Refresh(src);
+
+        Assert.Null(src.TakeWarning());
+        Assert.Equal(0, src.ReaderFaults);
+    }
+
+    [Fact]
+    public void A_Headset_Becoming_Default_Signals_At_Once_And_The_Refresh_Publishes_It()
+    {
+        // The bug in #26: before the notifier, this waited for the next whole minute.
+        var (reader, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var _ = src;
+        var signals = 0;
+        src.Changed += _ => signals++;
+        Assert.Equal(NextMinute, src.NextDue(T0, T0));
+
+        reader.DefaultDeviceId = "hs";
+        notifier.RaiseDefault("hs");
+
+        Assert.Equal(1, signals);
+        Assert.True(src.HasPending);
+        Assert.Equal(T0, src.NextDue(T0, T0));
+
+        var r = Refresh(src);
+        Assert.Equal("hs", reader.RegisteredDeviceId);
+        Assert.Equal("Headset Earphone", Assert.IsType<TextValue>(r.Fields["device"]).Text);
+        Assert.Equal(20, Num(r, "volumePct"));
+
+        // Cleared in the refresh, or the daemon is pinned at Scheduler.MinDelay.
+        Assert.False(src.HasPending);
+        Assert.Equal(NextMinute, src.NextDue(T0, T0));
+    }
+
+    [Fact]
+    public void A_Default_Change_To_The_Endpoint_Already_Read_Is_Not_A_Change()
+    {
+        // CoreAudio repeats the notification per role, and the refresh acting on the first one
+        // has registered the new endpoint before the repeats land. They must not each buy a tick.
+        var (reader, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var _ = src;
+        var signals = 0;
+        src.Changed += _ => signals++;
+
+        notifier.RaiseDefault("spk");
+
+        Assert.Equal(0, signals);
+        Assert.False(src.HasPending);
+
+        reader.DefaultDeviceId = "hs";
+        notifier.RaiseDefault("hs");
+        Refresh(src);
+        notifier.RaiseDefault("hs");
+        notifier.RaiseDefault("hs");
+
+        Assert.Equal(1, signals);
+        Assert.False(src.HasPending);
+    }
+
+    [Fact]
+    public void The_Last_Playback_Device_Going_Away_Signals_And_Publishes_The_Empty_Record()
+    {
+        var (reader, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var _ = src;
+        var signals = 0;
+        src.Changed += _ => signals++;
+
+        reader.DefaultDeviceId = null;
+        notifier.RaiseDefault(null);
+
+        Assert.Equal(1, signals);
+        Assert.Empty(Refresh(src).Fields);
+        Assert.Null(reader.RegisteredDeviceId);
+        Assert.Equal(0, src.ReaderFaults);
+    }
+
+    [Fact]
+    public void The_Endpoint_Being_Read_Changing_State_Is_A_Change()
+    {
+        var (_, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var __ = src;
+        var signals = 0;
+        src.Changed += _ => signals++;
+
+        notifier.RaiseState("spk");
+
+        Assert.Equal(1, signals);
+        Assert.True(src.HasPending);
+    }
+
+    [Fact]
+    public void Another_Endpoint_Changing_State_Is_Not_A_Change_While_One_Is_Being_Read()
+    {
+        // OnDeviceStateChanged fires for every endpoint, capture included: a microphone plugged
+        // into a machine that has speakers must not cost a tick.
+        var (_, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var __ = src;
+        var signals = 0;
+        src.Changed += _ => signals++;
+
+        notifier.RaiseState("mic");
+
+        Assert.Equal(0, signals);
+        Assert.False(src.HasPending);
+    }
+
+    [Fact]
+    public void Any_Endpoint_Changing_State_Is_A_Change_While_None_Is_Being_Read()
+    {
+        // No playback device: whatever just arrived may be the first one.
+        var reader = new FakeAudioReader { DefaultDeviceId = null };
+        var notifier = new FakeAudioDeviceNotifier();
+        using var src = new AudioSource("audio", reader, notifier);
+        Assert.Empty(Refresh(src).Fields);
+        var signals = 0;
+        src.Changed += _ => signals++;
+
+        reader.Devices["spk"] = new AudioReading("spk", "Speakers (Realtek)", 0.4, false);
+        reader.DefaultDeviceId = "spk";
+        notifier.RaiseState("spk");
+
+        Assert.Equal(1, signals);
+        Assert.Equal(40, Num(Refresh(src), "volumePct"));
+    }
+
+    [Fact]
+    public void A_Device_Change_Signals_The_Bus_Under_Its_Own_Name_Once()
+    {
+        // A headset arriving is up to six default-change calls (three roles, two flows) plus state
+        // changes; the notifier filters the roles and the bus coalesces the rest into one wake.
+        var clock = new FakeClock(T0);
+        using var bus = new EventBus(clock, TimeSpan.FromMilliseconds(400), autoWake: false);
+        var wakes = 0;
+        bus.WakeRequested += () => wakes++;
+        var (reader, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var _ = src;
+        src.Changed += s => bus.Signal(s.Name);
+
+        reader.DefaultDeviceId = "hs";
+        notifier.RaiseState("hs");
+        notifier.RaiseDefault("hs");
+        notifier.RaiseState("spk");
+
+        Assert.True(bus.PumpWake(T0.AddMilliseconds(400)));
+        Assert.Equal(1, wakes);
+    }
+
+    [Fact]
+    public void Nothing_Escapes_The_Device_Change_Path_And_The_Fault_Is_Counted()
+    {
+        var (reader, notifier, src) = SpeakersWithHeadsetAvailable();
+        using var _ = src;
+        src.Changed += _ => throw new InvalidOperationException("a subscriber misbehaved");
+
+        reader.DefaultDeviceId = "hs";
+        notifier.RaiseDefault("hs");
+        notifier.RaiseState("spk");
+
+        Assert.Equal(2, src.ReaderFaults);
+        Assert.True(src.HasPending);
+    }
+
+    [Fact]
+    public void Dispose_Lets_Go_Of_The_Notifier_And_Stops_Listening()
+    {
+        var (reader, notifier, src) = SpeakersWithHeadsetAvailable();
+        var signals = 0;
+        src.Changed += _ => signals++;
+
+        src.Dispose();
+        src.Dispose();
+        reader.DefaultDeviceId = "hs";
+        notifier.RaiseDefault("hs");
+        notifier.RaiseState("spk");
+
+        Assert.Equal(1, notifier.Disposals);
+        Assert.Equal(0, signals);
+    }
+
+    [Fact]
+    public void Re_Registering_Does_Not_Hold_The_Source_Lock_A_Volume_Callback_Needs()
+    {
+        // The real reader's Register unregisters the old volume callback, and
+        // UnregisterControlChangeNotify can wait for a notification already in flight. That
+        // notification's handler takes the source's lock, so a refresh that held the lock across
+        // Register would deadlock the tick against the audio service - and a device change is
+        // exactly when the old endpoint may still be notifying. Here the in-flight notification
+        // runs on another thread and Register waits for it, as the real one may.
+        var (reader, _, src) = SpeakersWithHeadsetAvailable();
+        using var __ = src;
+        var completed = false;
+        reader.DuringRegister = () =>
+        {
+            var t = new Thread(() => reader.Raise());
+            t.Start();
+            completed = t.Join(TimeSpan.FromSeconds(5));
+        };
+
+        reader.DefaultDeviceId = "hs";
+        Refresh(src);
+
+        Assert.True(completed, "the in-flight volume notification could not take the source lock");
+        Assert.Equal("hs", reader.RegisteredDeviceId);
+    }
+
     private sealed class FakeClock(DateTimeOffset now) : IClock
     {
         public DateTimeOffset Now => now;
     }
+}
+
+/// <summary>Raises device notifications on demand, as the audio service would from its thread.</summary>
+internal sealed class FakeAudioDeviceNotifier : IAudioDeviceNotifier
+{
+    public event Action<string?>? DefaultDeviceChanged;
+    public event Action<string>? DeviceStateChanged;
+    public int Starts { get; private set; }
+    public int Disposals { get; private set; }
+
+    /// <summary>When set, registration fails with this reason, as CoreAudio's would with the
+    /// audio service stopped.</summary>
+    public string? FailWith { get; set; }
+
+    public bool TryStart(out string? error)
+    {
+        Starts++;
+        error = FailWith;
+        return FailWith is null;
+    }
+    public void RaiseDefault(string? id) => DefaultDeviceChanged?.Invoke(id);
+    public void RaiseState(string id) => DeviceStateChanged?.Invoke(id);
+    public void Dispose() => Disposals++;
 }
