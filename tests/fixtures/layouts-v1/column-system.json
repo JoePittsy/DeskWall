@@ -54,7 +54,7 @@
       "color": "#EBFFFFFF",
       "align": "right",
       "effect": "shadow",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "clock-1.clock",
       "rect": [
@@ -77,7 +77,7 @@
       "color": "#EBFFFFFF",
       "align": "right",
       "effect": "shadow",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "weather-1.temp",
       "rect": [
@@ -118,7 +118,7 @@
       "color": "#EBFFFFFF",
       "align": "right",
       "effect": "shadow",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "vpn-1.vpn",
       "rect": [
@@ -163,7 +163,7 @@
       "color": "#EBFFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-1.value",
       "rect": [
@@ -184,7 +184,7 @@
       "color": "#A0FFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-1.label",
       "rect": [
@@ -229,7 +229,7 @@
       "color": "#EBFFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-2.value",
       "rect": [
@@ -250,7 +250,7 @@
       "color": "#A0FFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-2.label",
       "rect": [
@@ -295,7 +295,7 @@
       "color": "#EBFFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-3.value",
       "rect": [
@@ -316,7 +316,7 @@
       "color": "#A0FFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-3.label",
       "rect": [
@@ -361,7 +361,7 @@
       "color": "#EBFFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-4.value",
       "rect": [
@@ -382,7 +382,7 @@
       "color": "#A0FFFFFF",
       "align": "center",
       "effect": "none",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "dial-4.label",
       "rect": [
@@ -414,7 +414,7 @@
           "color": "#EBFFFFFF",
           "align": "left",
           "effect": "shadow",
-          "effectRadius": "6",
+          "effectRadius": "auto",
           "effectColor": "#A0000000",
           "id": "letter",
           "rect": [
@@ -437,7 +437,7 @@
           "color": "#EBFFFFFF",
           "align": "right",
           "effect": "shadow",
-          "effectRadius": "6",
+          "effectRadius": "auto",
           "effectColor": "#A0000000",
           "id": "free",
           "rect": [

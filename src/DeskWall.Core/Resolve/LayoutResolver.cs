@@ -92,10 +92,7 @@ public static class LayoutResolver
 
             case BarDef b:
                 var frac = PropertyReader.Number(b.Fraction, scope) ?? 0;
-                var threshold = PropertyReader.Number(b.Threshold, scope) ?? 1;
-                var fill = frac >= threshold
-                    ? PropertyReader.Color(b.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
-                    : PropertyReader.Color(b.Fill, scope) ?? (b.Fill.IsBound ? Color.Transparent : Color.Parse("#EBFFFFFF"));
+                var fill = ThresholdFill(frac, b.Threshold, b.ThresholdFill, b.Fill, b.Fill.IsBound ? Color.Transparent : Color.Parse("#EBFFFFFF"), scope);
                 var shapeText = PropertyReader.Text(b.Shape, scope) ?? "";
                 PathData? shape = null;
                 // An unreadable path draws the plain box rather than aborting the tick.
@@ -114,10 +111,7 @@ public static class LayoutResolver
 
             case DialDef dl:
                 var dfrac = Math.Clamp(PropertyReader.Number(dl.Fraction, scope) ?? 0, 0, 1);
-                var dthr = PropertyReader.Number(dl.Threshold, scope) ?? 1;
-                var dfill = dfrac >= dthr
-                    ? PropertyReader.Color(dl.ThresholdFill, scope) ?? Color.Parse("#FFD13438")
-                    : PropertyReader.Color(dl.Fill, scope) ?? Color.Parse("#EBFFFFFF");
+                var dfill = ThresholdFill(dfrac, dl.Threshold, dl.ThresholdFill, dl.Fill, Color.Parse("#EBFFFFFF"), scope);
                 var opacity = Math.Clamp(PropertyReader.Number(dl.Opacity, scope) ?? (dl.Opacity.IsBound ? 0 : 1), 0, 1);
                 var dtrack = PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF");
                 result.Add(new ResolvedDial(id, rect, def.Z, dfrac,
@@ -168,6 +162,15 @@ public static class LayoutResolver
             Read(def.Y, def.Rect.Y, def.GeometryScaleY, def.GeometryOffsetY),
             Math.Max(0, Read(def.W, def.Rect.W, def.GeometryScaleX)), Math.Max(0, Read(def.H, def.Rect.H, def.GeometryScaleY)));
     }
+
+    /// <summary>The bar's and the dial's shared value rule: at or past the threshold (default 1, so
+    /// a full one turns too) the fill is <paramref name="thresholdFill"/>, otherwise
+    /// <paramref name="fill"/>. Each falls back when it does not read as a colour;
+    /// <paramref name="unreadFill"/> is the caller's, because the two differ there.</summary>
+    private static Color ThresholdFill(double fraction, PropertyValue threshold, PropertyValue thresholdFill, PropertyValue fill, Color unreadFill, RecordValue scope)
+        => fraction >= (PropertyReader.Number(threshold, scope) ?? 1)
+            ? PropertyReader.Color(thresholdFill, scope) ?? Color.Parse("#FFD13438")
+            : PropertyReader.Color(fill, scope) ?? unreadFill;
 
     private static bool IsAuto(PropertyValue p) => !p.IsBound && string.Equals(p.LiteralText, "auto", StringComparison.OrdinalIgnoreCase);
 

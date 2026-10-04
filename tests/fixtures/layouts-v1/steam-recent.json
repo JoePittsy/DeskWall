@@ -39,7 +39,7 @@
       "color": "#EBFFFFFF",
       "align": "right",
       "effect": "shadow",
-      "effectRadius": "6",
+      "effectRadius": "auto",
       "effectColor": "#A0000000",
       "id": "clock-1.clock",
       "rect": [
@@ -128,7 +128,7 @@
           "color": "#EBFFFFFF",
           "align": "left",
           "effect": "shadow",
-          "effectRadius": "6",
+          "effectRadius": "auto",
           "effectColor": "#A0000000",
           "id": "letter",
           "rect": [
@@ -151,7 +151,7 @@
           "color": "#EBFFFFFF",
           "align": "right",
           "effect": "shadow",
-          "effectRadius": "6",
+          "effectRadius": "auto",
           "effectColor": "#A0000000",
           "id": "free",
           "rect": [

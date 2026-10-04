@@ -5,6 +5,12 @@ placed on the canvas in physical pixels. Source of truth for this document: `Lay
 `ComponentDef.cs`, `PropertyValue.cs`, `Bindings/*.cs` and `Resolve/LayoutResolver.cs` in
 `src/DeskWall.Core`. Every default below is the one in the code, not a recommendation.
 
+A file DeskWall writes (the designer's Save, `deskwall migrate`) leaves out every property that
+still holds its default, except `version` and the required ones, and escapes only what JSON
+requires: `"{0:N0}°"` stays readable, not `"{0:N0}°"`. A property left out
+therefore follows its default, so changing a default in the code reaches every file that never set
+it, exactly as a knob at its default does for a copy.
+
 ## Top-level file
 
 | Property | Type | Default | Notes |
