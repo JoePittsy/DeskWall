@@ -2,8 +2,9 @@
 
 A layout is one JSON file. It names a base image, the sources it needs, and the components
 placed on the canvas in physical pixels. Source of truth for this document: `LayoutFile.cs`,
-`ComponentDef.cs`, `PropertyValue.cs`, `Bindings/*.cs` and `Resolve/LayoutResolver.cs` in
-`src/DeskWall.Core`. Every default below is the one in the code, not a recommendation.
+`ComponentDef.cs`, `PropertyValue.cs`, `WidgetCopy.cs`, `Bindings/*.cs`, `Widgets/*.cs` and
+`Resolve/LayoutResolver.cs` in `src/DeskWall.Core`; for the designer, `Model/Lens.cs`,
+`Model/Copies.cs` and `Model/Widgets/` in `src/DeskWall.Designer`. Every default below is the one in the code, not a recommendation.
 
 A file DeskWall writes (the designer's Save, `deskwall migrate`) leaves out every property that
 still holds its default, except `version` and the required ones, and escapes only what JSON
@@ -15,7 +16,7 @@ it, exactly as a knob at its default does for a copy.
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
-| `version` | int | `1` | `1` or `2`; this build reads both. A file with a higher version is rejected, not half-read. Version 2 uses linked copies (below); version 1 uses stamped instances (read-only section at the end for migration). |
+| `version` | int | `1` | `1` or `2`; this build reads both. A file with a higher version is rejected, not half-read. Version 2 uses linked copies ("Copies"); version 1 uses stamped instances, read only to migrate them ("Version 1: stamped instances"). |
 | `baseImage` | string or `{"bind": ...}` | required | Path to a JPEG or PNG, or a binding that resolves to one each tick. `runtime:` and `%ENV%` expand. See "The base image" below. |
 | `baseFit` | `"cover"` \| `"contain"` \| `"stretch"` | `"cover"` | How the base image fills the canvas. |
 | `encode` | `"jpeg"` \| `"png"` | `"jpeg"` | Output format for the composed frame. |
@@ -23,7 +24,7 @@ it, exactly as a knob at its default does for a copy.
 | `sources` | array of source declarations | `[]` | See `docs/sources.md`. |
 | `components` | array of components | `[]` | Drawn in `z` order (ties keep file order). |
 | `copies` | array of copies | absent | Version 2: linked widget copies, expanded into components at load. See "Copies". Omitted from the file when absent. |
-| `widgets` | object | absent | Version 1 only: stamped-instance bookkeeping, read only by the migrator. See "Widgets". Omitted from the file when absent. |
+| `widgets` | object | absent | Version 1 only: stamped-instance bookkeeping, read only by the migrator. See "Version 1: stamped instances". Omitted from the file when absent. |
 
 Example:
 
@@ -88,7 +89,7 @@ resolves under the runtime dir and `%VAR%` expands. A binding needs its source d
 |---|---|---|---|
 | `id` | string | required | Unique across the resolved layout (including repeater-expanded children: `<repeaterId>[<index>].<childId>`). A duplicate throws before anything draws. |
 | `rect` | `[x, y, w, h]` | required | Physical pixels, absolute in the layout's own coordinate space. Encoded as a 4-element JSON array, not an object (`RectConverter`). |
-| `type` | string | required | Discriminator: `text`, `image`, `bar`, `shortcut`, `repeater`. |
+| `type` | string | required | Discriminator: `text`, `image`, `bar`, `dial`, `line`, `shortcut`, `repeater`. An unknown type fails the parse. |
 | `z` | int | `0` | Draw order, ascending. |
 
 ## Component types
@@ -133,6 +134,7 @@ place under the same path redraws.
 | `shape` | `""` | SVG path data (`M L H V C Z`, absolute and relative) drawn instead of the box. Its bounds are stretched to `rect`, so any path works and resizing the bar resizes it; an axis the path does not span (a flat line, a dot) sits on the rect's centre line. The track is the whole path, the fill the same path clipped to the fraction. Unreadable data draws the plain box. |
 | `thickness` | `0` | With a `shape`: 0 fills it, more strokes it this wide (round caps and joins), inset by half so the ink stays inside `rect`. |
 | `glow` | `0` | With a `shape`: a soft halo this many px round the lit part, in the fill colour (stacked low-alpha strokes, like a text shadow). The path is inset by it too, so inflate `rect` by the glow to keep the line where it was. |
+| `glowColor` | `""` | With a `glow`: the halo's ARGB colour; blank is the fill colour. |
 | `glowStrength` | `0.12` | Each of the four glow strokes' share of the glow colour's alpha, 0..1. 0.12 is a halo you have to look for; 0.3 to 0.45 is one you cannot miss. |
 | `opacity` | `1` | 0..1, multiplied into track, fill and glow colour. A bound opacity that does not resolve hides the bar. Lets the weather veil stars whose colour is already bound to the time of day. |
 
@@ -161,6 +163,7 @@ stroked arc centred in `rect` with radius `min(w, h) / 2 - thickness / 2` and fl
 | `thickness` | `6` | Stroke width in pixels. Scales with the smaller of the two display factors, not the geometric mean, because the radius comes from the short side of the rect. |
 | `startAngle` | `225` | Degrees **clockwise from 12 o'clock** where the sweep begins. |
 | `sweep` | `270` | Degrees of arc for fraction 1. 360 or more draws a closed ring (as two arcs; one D2D arc segment cannot describe a full turn). |
+| `opacity` | `1` | 0..1, applied to track and fill. A bound opacity that does not resolve hides the dial (the battery dial fades out on mains at full charge this way). |
 
 Angles are always clockwise from 12 o'clock, so the default `225` / `270` is the familiar gauge
 open at the bottom. Nothing but the arc is drawn: a number inside the dial is an ordinary `text`
@@ -191,7 +194,8 @@ final drawn output.
 
 ## Properties as literal or binding
 
-Every component property except `id`, `rect`, `type`, `z`, `axis`, `gap` and `slot` is a
+Every component property except `id`, `rect`, `type`, `z`, `axis`, `gap`, `slot` and a repeater's
+`template` is a
 `PropertyValue`: a JSON string/number/boolean literal, or an object `{"bind": "<binding text>"}`.
 There is no third form; a property is either fixed at authoring time or fully driven by a source.
 
@@ -435,8 +439,8 @@ widget and knobs already give also deletes it, so the file only ever holds real 
 
 **Orphans.** An override or knob naming a part, property or knob the widget no longer has stays in
 the file untouched. The expander skips it and reports it (`OrphanOverride`, `OrphanKnob`); the
-designer shows it on the copy with Remove; the daemon does not log it, because it is not an error on
-the wallpaper. If the part comes back under the same id (an undo, a restored widget file), the
+designer's Layers panel lists it under the copy as an "orphan" row; the daemon does not log it,
+because it is not an error on the wallpaper. If the part comes back under the same id (an undo, a restored widget file), the
 override applies again. Nothing is deleted silently.
 
 **z.** Each part's z is `copy.z + part.z`, so the default of `0` keeps every part's z as the widget
@@ -451,65 +455,64 @@ overrides applied:
 
 - Same name and an identical definition (type, `every` and settings): shared. Four dials use one
   `hardware` sampler.
-- Same name, different definition: the copy's source is renamed `<name>2`, `<name>3`, and so on,
-  and that copy's bindings are rewritten to match. Two headline copies with different feeds
-  therefore no longer fight, which retires both "Known limitation" paragraphs under "Widgets"
-(#71).
+- Same name, different definition: the copy's source takes the first of `<name>2`, `<name>3`, ...
+  that is free or already identical, and that copy's top-level bindings are rewritten to match (a
+  repeater child binds against its item, never a source by name). Knobs and overrides are applied
+  before the merge, against the widget file's own source names, so a `sources.<name>` path always
+  reaches the copy's own source whatever it ends up called. Two headline copies with different
+  feeds therefore each get their own source, and editing one never changes the other.
 
 **A missing or unparseable widget file.** The daemon skips that copy, paints the rest, and reports
 the problem through the log and tray (`MissingWidget`, `BrokenWidget`). The designer draws a
-broken-link box at the copy's `x,y`, never a silent blank.
+broken-link box at the copy's `x,y` (172x40, `Copies.BrokenSize`), never a silent blank.
 
-**What the designer writes when a copy is edited on the canvas.** A copy is selected, dragged,
-nudged and deleted as one thing, as a stamped instance was:
+**What the designer writes when a copy is edited on the canvas.** At layout depth a copy is
+selected, dragged, nudged and deleted as one thing:
 
 - Moving it changes `x`/`y` only; its overrides stay exactly as they were.
-- Resizing it scales its parts in place about the copy's origin, as a stamped instance's components
-  were scaled, and writes the result as overrides: each part's `rect`, plus (on a corner drag) the
-  pixel sizes a corner drag scales (`size`, dial `thickness`, a repeater's `gap` and `cellHeight`).
-  The origin stays put, even for a drag on the top-left grip: the parts' rect overrides carry the
-  move. A copy whose widget is missing has no parts to scale, so its origin follows the box.
-- Deleting it removes the `copies` entry.
-- Details on one of its parts edits that part as an override on this copy, never the widget.
+- Resizing it scales its parts in place about the copy's origin and writes the result as
+  overrides: each part's `rect`, plus (on a corner drag) the literal pixel sizes a corner drag
+  scales (text `size`, dial `thickness`, a repeater's `gap` and `cellHeight`). The origin stays
+  put, even for a drag on the top-left grip: the parts' rect overrides carry the move. A copy whose
+  widget is missing has no parts to scale, so its origin follows the box.
+- Deleting it removes the `copies` entry; its sources only ever existed in the expansion.
+- Any edit to one of its parts at copy depth is an override on this copy, never the widget (see
+  "Editing widgets in the designer").
 
 **Where widget files come from.** By key, from `%LOCALAPPDATA%\DeskWall\widgets\` first and then
-the shipped `widgets\` beside the exe. Editing a shipped widget writes the user file under the same
-key, so every copy of it, in every layout on the machine, follows the edit without anything being
-rewritten; deleting that user file returns them to the shipped widget, overrides intact. The
-known ceiling: a fork shadows every later shipped update to that key until it is deleted. A key
-made in the designer is the name slugged (lower case, `[a-z0-9]` runs joined by `-`; `GPU °C` ->
-`gpu-c`, an empty name -> `widget`, numbered `-2`, `-3` when taken) and fixed from then on:
-renaming a widget changes its `name` only, because a changed key would orphan every copy.
+the shipped `widgets\` beside the exe (`WidgetCatalog.Finder`: the user folder wins). Editing a
+shipped widget writes the user file under the same key, so every copy of it, in every layout on
+the machine, follows the edit without anything being rewritten; deleting that user file returns
+them to the shipped widget, overrides intact. The known ceiling: a fork shadows every later
+shipped update to that key until it is deleted. The daemon watches the user-folder path of every
+key its layouts reference; the shipped folder changes only on install, which restarts it.
+
+**Widget keys.** A key made in the designer is a slug of the widget's name (lower case, `[a-z0-9]`
+runs joined by `-`; `GPU °C` -> `gpu-c`, an empty name -> `widget`), numbered `-2`, `-3` until no
+user or shipped widget file, unapplied widget edit or copy in the layout already uses it, so a new
+key never collides with anything. Until its first Apply the key follows the name (renaming
+`widget` to "CPU gauge" makes it `cpu-gauge`, and its copies' ids follow); once a file of that key
+exists it is fixed, and renaming changes `name` only, because a changed key would orphan every copy.
 
 **Why the expander is in Core.** Expanding at load, for the daemon and the designer alike, is what
-makes a widget edit reach the wallpaper on the next activation. The rejected alternative, the
-designer flattening widgets on save with the daemon knowing nothing, would reach the wallpaper
-only once every layout that uses the widget had been re-saved. The expander loads widget files
-through a source-generated JSON context, because a reflection fallback compiles and passes under
-JIT and fails only at runtime under native AOT; an AOT publish ticking a v2 layout is the proof.
+makes a widget edit reach the wallpaper on the next activation, rather than only once every layout
+that uses the widget has been re-saved. The expander loads widget files through a source-generated
+JSON context, because a reflection fallback compiles and passes under JIT and fails only at runtime
+under native AOT; an AOT publish ticking a v2 layout is the proof.
 
 **Opening a version-1 file in the designer** migrates it in memory (`LayoutMigrator`, only when the
-result is equivalent); the first Apply writes `<file>.v1.json` beside it if that is absent, then
-the v2 file.
+result is equivalent; otherwise it opens as it is); the first Apply writes `<file>.v1.json` beside
+it if that is absent, then the v2 file.
 
 ## Widgets
 
-**Version 1, read only for migration.** This section describes the stamped-instance model that
-version 2's "Copies" replaces. `LayoutFile.Widgets` and `ComponentDef.Widget` are still read so the
-migrator can turn a version-1 file into copies; they are no longer written when absent.
+A *widget* is a widget file, `widgets/<key>.json`: a small, reusable recipe of some sources, some
+components in widget-local coordinates starting at `(0, 0)`, and up to five *knobs*. Version-2
+layouts place it as linked copies ("Copies"). The model is `WidgetTemplate`
+(`src/DeskWall.Core/Widgets/`), loaded by the daemon's expander and the designer alike; the
+designer's editing model is `src/DeskWall.Designer/Model/Widgets/` and `Model/Lens.cs`.
 
-The designer's widget picker adds a layer above the plain layout format described so far: a *widget
-template* (`widgets/<key>.json`, shipped beside the designer exe and also read from
-`%LOCALAPPDATA%\DeskWall\widgets\`) is a small, reusable recipe -- some sources, some components
-in template-local coordinates starting at `(0, 0)`, and up to five *knobs* -- that gets stamped
-onto a layout as one *widget instance*. The daemon and the resolver know nothing about any of
-this: an instantiated widget is ordinary sources and ordinary components, plus two bookkeeping
-fields (`ComponentDef.Widget`, `LayoutFile.Widgets`) both of which resolve/render ignore
-entirely. The model is `DeskWall.Designer.Model.Widgets` (`src/DeskWall.Designer/Model/Widgets/`);
-`WidgetRecord` itself lives in Core (`src/DeskWall.Core/Layout/WidgetRecord.cs`) only so the
-source-generated JSON context can carry `LayoutFile.Widgets` without reflection.
-
-### Template file
+### Widget file
 
 ```json
 {
@@ -525,157 +528,186 @@ source-generated JSON context can carry `LayoutFile.Widgets` without reflection.
 }
 ```
 
-`name`, `description` and `size` (`[width, height]`) are required; `anchor` (`"top"` or
-`"bottom"`, default `"top"`) and `requires` (a sentence shown on the gallery card when a
-requirement -- an NVIDIA GPU, Tailscale, Steam secrets -- may be missing) are optional. The
-template's key is its file name without `.json` (`WidgetTemplate.Key`), not a field in the file.
-`sources` and `components` are ordinary `SourceDef`/`ComponentDef` JSON exactly as they appear in
-a plain layout, except every component `rect` is relative to the widget's own `(0, 0)`, not the
-canvas.
+`name`, `description` and `size` (`[width, height]`, both positive) are required; `anchor`
+(`"top"` or `"bottom"`, default `"top"`, used only by the Arranger) and `requires` (a sentence
+shown on the Insert card when a requirement -- an NVIDIA GPU, Tailscale, Steam secrets -- may be
+missing) are optional. `version` is written as `1` and not read. The key is the file name without
+`.json` (`WidgetTemplate.Key`), not a field in the file. `sources` and `components` are ordinary
+`SourceDef`/`ComponentDef` JSON exactly as in a layout, except every component `rect` is relative
+to the widget's own `(0, 0)`.
 
-### Instantiation (`WidgetInstance.Add`)
+`WidgetTemplate.Load` rejects, naming the file and field: a missing `name` or `description`, a bad
+`size` or `anchor`, a knob with no `id` or an unknown `type`, more than five knobs, and a part id
+(including a repeater's template children) that is not `[A-Za-z_][A-Za-z0-9_-]*`.
 
-Adding a template to a layout at an origin: components are deep-copied with `id` rewritten to
-`"<instanceId>.<id>"`, `widget` set to the instance id, and `rect` offset by the origin; each
-source is merged into the layout's `sources` by name (same name and same `type`: reused as-is;
-same name, different `type`: the new source is added under `"<name>2"`, `"<name>3"`, ... and
-every binding the *just-added* components make to the old name is rewritten to the new one --
-this can only reach a component this same `Add` call is placing, never another widget's); knob
-defaults are applied through `SetKnob`; and `layout.Widgets["<instanceId>"]` records the
-template key and the applied knob values. The instance id is `"<templateKey>-<n>"`, `n` the
-smallest positive integer not already used as an instance id in this layout.
+Each knob has `id`, `label` (default: the id), `type` (`number`, `text`, `choice`, `color`,
+`drive`, `town`), `default`, `sets`, and optionally `choices` (for `choice`) and `min`/`max`.
 
 ### Knobs and the `sets` grammar
 
-A knob's `sets` list names the paths a value change writes to, in order:
+A knob's `sets` list names the paths a value writes to, in order. Paths are in the widget file's
+own terms: template-local part ids and the widget's own source names (`KnobSets`, the same
+executor that applies a copy's overrides).
 
 | Form | Effect |
 |---|---|
-| `components.<id>.<property>` | Overwrites the component property (found by `<instanceId>.<id>`, matched against `PropertySchema.For` by name) with a **literal**. |
-| `components.<id>.<property>=bind:<text>` | Overwrites the property with a **binding**, parsed from the resolved value (below), not from `<text>` -- `<text>` documents the default choice's shape for a human reading the template but is never parsed. |
-| `sources.<name>.settings.<key>` | Overwrites the named source's setting with a literal. |
-| `sources.<name>.every` | Overwrites the named source's refresh interval, in seconds. Not a setting: `every` is `SourceDef`'s own field and a value under `settings` is ignored by every source factory. A value that is not a positive whole number leaves the interval alone. |
-| any of the above, with a trailing `:{token}` | Instead of overwriting, **substitutes** the literal substring `{token}` inside the target's *current* string (its own currently-authored placeholder, e.g. the weather URL's `{lat}`) with the resolved value, leaving the rest of the string as it was. |
+| `components.<id>.<property>` | Writes a **literal** to the part's property, matched by name, case-insensitively (`ComponentProperties.Find`). `rect` (`"x,y,w,h"`) and `z` work too, and `hidden` with `true` leaves the part out. |
+| `components.<repeaterId>.<childId>.<property>` | The same, on a repeater's template child. |
+| `components.<id>.<property>=bind:<text>` | Writes a **binding**, parsed from the knob's value, not from `<text>` -- `<text>` documents the default's shape for a human reading the file and is never parsed. A value that does not parse as a binding writes nothing. |
+| `sources.<name>.settings.<key>` | Writes the named source's setting, as a literal. |
+| `sources.<name>.every` | Writes the named source's refresh interval, in seconds. Not a setting: `every` is `SourceDef`'s own field and a value under `settings` is ignored by every source factory. A value that is not a positive whole number leaves the interval alone. |
+| any of the above, with a trailing `:{token}` | Instead of overwriting, **substitutes** the literal `{token}` inside the target's value **as the widget file authors it** (the weather URL's `{lat}`), leaving the rest of the string as it is. Every token entry aimed at the same target is applied in one pass, so `{lat}` and `{lon}` both land in the one URL. |
 
-The `:{token}` form works on a **bound** property as well as a literal one: when the template's
-property is a binding, the token is substituted into the binding's own text and the property is
-written back as a binding, so it goes on drawing live data. That is what a `drive` knob is made
-of -- `components.bar.fraction:{drive}` against a template binding of
-`disks.drives[{drive}].usedFraction` repoints the bar at another drive without touching anything
-else in the path or its format. (Before this, a token knob on a bound property overwrote it with
-an empty literal.)
+The `:{token}` form works on a **bound** property as well as a literal one: when the file's
+property is a binding, the token is substituted into the binding's own text and the property stays
+a binding, so it goes on drawing live data. That is what a `drive` knob is made of --
+`components.bar.fraction:{drive}` against a file binding of `disks.drives[{drive}].usedFraction`
+repoints the bar at another drive without touching anything else in the path or its format.
 
-A knob's stored value (`Knob.Default`, what a caller passes to `SetKnob`, and what
-`WidgetRecord.Knobs[knobId]` keeps for showing a knob back and re-applying it) may be a **plain
-string** or a **composite** of parts joined by `||` (two pipes, chosen because a binding's own
-`|` format separator and every value a shipped widget writes -- URLs, format strings, captions --
-use a single `|` at most). Part `0` is the whole value for a plain (non-composite) knob and the
-display value for a composite one; for the `i`-th entry in `sets` (0-based), the value substituted
-or written is part `i + 1` when it exists, else part `0`. This is how one knob drives several
-differently-shaped targets:
+An entry that finds no target (no such part, property, source or token target; a binding written
+to a setting) is skipped and its knob reported as an orphan (`OrphanKnob`).
+
+A knob's value (`default` in the file, and what a copy's `knobs` stores when it differs) may be a
+**plain string** or a **composite** of parts joined by `||` (two pipes, chosen because a binding's
+own `|` format separator and every value a shipped widget writes -- URLs, format strings, captions
+-- use a single `|` at most). Part `0` is the whole value for a plain knob and the display value
+for a composite one; for the `i`-th entry in `sets` (0-based), the value written or substituted is
+part `i + 1` when it exists, else part `0`. This is how one knob drives several differently-shaped
+targets:
 
 - **Town** (`weather.json`): default `"Leeds||53.8008||-1.5491"`, `sets`
   `["sources.weather.settings.url:{lat}", "sources.weather.settings.url:{lon}"]`. Part 0
-  ("Leeds") is what a re-opened knobs panel shows back; part 1 substitutes `{lat}`, part 2
-  substitutes `{lon}` -- both into the *same* setting string, which is why the substitution form
-  exists instead of a plain overwrite (an overwrite could only place one of the two numbers).
-  Because `SetKnob` never makes a network call, a template's `default` for a `town` knob must
-  already carry resolved coordinates; `ResolveTownAsync` (Open-Meteo geocoding, `count=1`) is
-  what the designer calls to turn an arbitrary typed-in town into a fresh `"town||lat||lon"`
-  value before calling `SetKnob` interactively -- it is not consulted for defaults.
+  ("Leeds") is what the knobs panel shows; part 1 substitutes `{lat}`, part 2 `{lon}` -- both into
+  the *same* setting string, which is why the substitution form exists instead of a plain
+  overwrite. Applying a knob never makes a network call, so a `town` knob's `default` must already
+  carry coordinates; the designer turns a typed-in town into a fresh `"town||lat||lon"` value with
+  `Copies.ResolveTownAsync` (Open-Meteo geocoding, `count=1`) before storing it on the copy.
 - **Metric** (`dial.json`): a `choice` knob whose four `choices` are themselves full composites,
   e.g. `"GPU temperature||hardware.gpuTempFraction||hardware.gpuTempC | \"{0}°\"||gpu °C"`.
   `sets` has three entries -- `components.dial.fraction=bind:...`, `components.value.text=bind:...`,
-  `components.label.text` (plain literal, no `:{token}` needed since the caption fully replaces
-  the label rather than being spliced into it) -- consuming parts 1, 2 and 3 respectively. The
-  four metrics need genuinely different target text (`cpuPct`/`{0}%` vs. `gpuTempC`/`{0}°`), which
-  a single shared template could not express, so the composite carries the whole resolved content
-  per choice rather than a token to drop into one.
+  `components.label.text` (a plain literal: the caption fully replaces the label) -- consuming
+  parts 1, 2 and 3. The four metrics need genuinely different text (`cpuPct`/`{0}%` vs.
+  `gpuTempC`/`{0}°`), so the composite carries the whole resolved content per choice rather than a
+  token to drop into one.
 - **Warn at** (`dial.json`): an ordinary `number` knob, default `"0.9"`, `sets`
-  `["components.dial.threshold"]` -- no composite needed; part 0 (the whole value) is used
-  directly. `column-system.json`'s GPU-temperature dial instance overrides this to `"0.83"`
-  (83 °C, the RTX 3050's throttle point) itself (`StarterGenerator`), matching the dial widget's own default for every other metric;
-  the widget model has no mechanism for one knob's default to depend on another's value, so a
-  metric-specific default is the instantiator's job, not the template's.
+  `["components.dial.threshold"]` -- part 0, the whole value, is used directly. `column-system.json`'s
+  GPU-temperature copy stores `"warnAt": "0.83"` (83 °C, the RTX 3050's throttle point); its
+  generator sets that, because one knob's default cannot depend on another knob's value.
 
-**Known limitation (a renamed source):** `sources.<name>` in a `sets` path is resolved by the
-template-local name literally, not through the rename an `Add`-time source clash would have
-produced for that instance, so after a clash re-editing that knob writes to the original source.
-No two shipped widgets clash (#25). This paragraph and the next predate v2 copies (#71).
+### Editing widgets in the designer
 
-**Known limitation (two instances, one source):** `MergeSources` *reuses* a source of the same
-name and the same type rather than adding a second one, so two instances of the same widget share
-one source. For widgets whose sources carry no knobs (`clock`, `dial`, `drives`, `uptime`, ...)
-that is the point -- four dials want one `hardware` sampler, not four. For a widget whose knobs
-write to `sources.<name>.settings.*` -- `command` and `headline` -- it means the two instances
-fight: adding the second applies its own defaults over the first's settings, and editing either
-one's knob afterwards changes what both draw. Two different commands, or two different feeds, need
-the second instance's source renamed by hand in the layout file (and its component's binding with
-it).
+There is one canvas with three depths (`DepthKind`). Enter or a double-click goes down one; Esc,
+or a double-click outside the open copy or widget, comes back up.
 
-### Your own templates, and the widget editor
+- **Layout depth.** Copies and loose components are selected, moved, resized and deleted ("Copies",
+  "What the designer writes").
+- **Copy depth** (double-click a copy, Enter, or **Edit parts** in its properties): that copy's
+  parts, with its knobs and overrides applied. Every change is an override on the copy, computed
+  as the difference from the knob-applied widget (`Overrides.Diff`), so a value put back to the
+  widget's drops its override. Orphan overrides, and overrides on a part the copy hides, are kept.
+  A copy cannot gain parts. An overridden property's row menu offers **Reset to widget** (delete
+  the override) and **Push to widget** (move the value into the widget and delete the override:
+  every copy without its own override of that key follows). A copy selected at layout depth
+  shows its knobs, **Edit widget**, **Edit parts** and **Remove widget** in the properties panel.
+- **Widget depth** (Enter or double-click again, **Edit widget**, or Ctrl+Alt+K): the widget
+  itself, drawn at the origin of the copy it was opened from. Every copy of that key, in every
+  layout on the machine, follows. Parts (`text`, `image`, `bar`, `dial`, `line`) and values from
+  the Insert and Data panels can be dropped into the frame; a drop more than 16 px outside it is
+  refused. The frame hugs its parts: its `size` is their extent from `(0, 0)`, and a part moved
+  above or left of the frame renormalises the parts and shifts every copy of the widget in the
+  layout back by as much, so nothing on the canvas jumps. An edit that more than doubles the
+  frame's area says so.
 
-Templates in `%LOCALAPPDATA%\DeskWall\widgets\` are the owner's own and sit in the same gallery
-as the shipped ones, overriding a shipped template of the same key. They are written by the
-designer's **widget editor**, reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** on
-any of them, **Duplicate to mine** on any of them, and **Delete** (or **Reset**, below) on the
-owner's own. The editor is the layout
-canvas over a document the size of the widget, plus a parts palette (`text`, `image`, `bar`,
-`dial` only), the source list and its live values, and a "Knob" toggle on each property and each
-source setting that exposes it as a knob. It writes only the simple knob forms; a composite, a
-`{token}` splice or a `=bind:` write in a duplicated template is shown read-only and written back
-exactly as it was read, so nothing is lost by opening one.
+**Knobs** are made at widget depth: **Expose as knob** in a property's row menu (offered only for a
+literal: a knob over a binding would replace it with a literal) or the **Knob** toggle on a source
+setting. The knobs panel names, bounds and removes them. The designer writes only plain knobs, one
+literal per knob, with one exception below; a composite, a `{token}` splice or a `=bind:` write
+from a hand-written file is listed read-only and written back exactly as it was read. A knob the
+designer made has no stored default: the default written is whatever its target holds when the
+widget is applied, so changing the value after exposing it moves the default with it.
 
-**Editing a shipped widget is copy on write.** The shipped folder sits beside the exe and is
-replaced by every install, so nothing is ever written back into it. Editing a shipped widget opens
-it with no path and its shipped key, and saving writes `%LOCALAPPDATA%\DeskWall\widgets\<key>.json`,
-which `WidgetCatalog.Load` then prefers -- in the place the key was first seen, so the gallery's
-order does not move. Such a card is marked "edited" and its menu offers **Reset to the
-out-of-the-box version**, which deletes only that user file; the shipped template returns on the
-next catalog reload. (Renaming while editing a shipped widget saves under the new key and still
-leaves the shipped file alone.) The refusal "A shipped widget is already called '<name>'" is about
-a *new* widget silently shadowing a shipped one and still fires for that; it does not fire for a
-deliberate edit of that key.
+**The Drive knob** is the one knob the designer builds over a *binding*. A property bound to a
+drive-keyed path -- `disks.drives[C].usedFraction`, `disks.drives[C].freeGB | "{0:N0} GB"` -- offers
+**Expose as drive picker** instead, which makes a `drive` knob whose `sets` entry is
+`components.<id>.<property>:{drive}`. A second drive-keyed property **joins the knob already there**
+rather than making a second one, so one picker repoints the bar and its caption together. Only the
+**saved file** carries `{drive}`: the widget on the canvas keeps the real letter so it goes on
+drawing real data, and opening a saved drive widget puts the knob's default letter back.
+Tokenising is idempotent, so applying twice writes the same file. Nothing else about a binding can
+be made a knob; `disks.drives[0]` (an index, not a drive) is not offered.
 
-A knob the editor made has no stored default: the default written to the file is whatever the
-target holds on the canvas at the moment of saving, so changing the value after exposing it moves
-the default with it.
+**Routes to a widget.** In the Insert panel, a widget card's menu offers:
 
-**The Drive knob** is the one knob the editor builds over a *binding*. A property bound to a
-drive-keyed path -- `disks.drives[C].usedFraction`, `disks.drives[C].freeGB | "{0:N0} GB"` -- gets
-a "Drive" toggle instead of the usual "Knob" one, and turning it on exposes a `drive` knob whose
-`sets` entry is `components.<id>.<property>:{drive}`. A second drive-keyed property **joins the
-knob already there** rather than making a second one, so one picker repoints the bar and its
-caption together; the knob's card lists every target it writes. Only the **saved file** carries
-`{drive}`: the document in the editor keeps the real letter, so the canvas goes on drawing real
-data, and re-opening a saved drive widget puts the knob's default letter back before the canvas is
-shown. Tokenising is idempotent, so saving twice writes the same file. Nothing else about a
-binding can be made adjustable; `disks.drives[0]` (an index, not a drive) is not offered.
+- **Edit**: widget depth on the first copy of it in this layout. A widget with no copy here gets a
+  temporary one, removed when the canvas is back at layout depth; the widget edits stay.
+- **Duplicate**: the widget under a new key, named "`<name>` copy", with one copy of it, at widget
+  depth.
+- **Delete**, on the owner's own widget files only: every copy of it, in every layout on the
+  machine, shows as missing. On a fork of a shipped widget (its card reads "edited") the item is
+  **Reset to the out-of-the-box version**: it deletes the fork, the shipped widget returns, and
+  each copy keeps its own overrides.
+- **New widget** (also the "+ New widget" button): an empty 172x40 widget with one copy, at widget
+  depth.
 
-**A placed instance is a stamped copy.** `WidgetInstance.Add` copies the template's components and
-sources into the layout, and nothing afterwards links the two. Saving a template therefore changes
-the gallery card and every *future* placement, and changes nothing already on a wallpaper. Deleting
-a template leaves its placed instances exactly as they are, minus the knobs panel (which needs the
-template to know what the knobs are; the Details expander still edits the components).
+**Make widget** (Ctrl+Alt+K, or the button when two or more loose components are selected) turns
+loose components into a new widget in one undoable edit: the parts become relative to their
+bounds, the layout sources they bind are copied into the widget, and a copy takes their place.
+It is named after the first text part's literal text, else the first part's kind. With a copy (or
+one of its parts) selected instead, Ctrl+Alt+K opens that copy's widget.
 
-### Arranger
+**Apply.** Widget edits are held in the document (`DesignerModel.WidgetEdits`) and undone with the
+layout until Apply, which writes each edited widget to `%LOCALAPPDATA%\DeskWall\widgets\<key>.json`,
+then the layout. Each widget file is written to a temp file and read back with
+`WidgetTemplate.Load` before any is renamed into place; one that would not load (no name, more
+than five knobs) stops the Apply with nothing written, because a file the daemon cannot read turns
+every copy of that widget into a broken link. The shipped folder is never written: it sits beside
+the exe and every install replaces it.
 
-`Arranger.Arrange` lays every non-`Unlocked` instance out as a single vertical stack at
-`ColumnX = 3220`: top-anchored instances downward from `TopY = 40`, bottom-anchored instances
-(`drives.json`) upward from `BottomY = 1400`, `Gap = 16` between instances, using each instance's
-current bounding box (`WidgetInstance.Bounds`, the union of its components' rects) for height --
-it does not resize anything, including a narrower widget like a dial (`80` px) inside the
-`ColumnWidth = 172` px column. `Unlocked` instances (an explicit opt-out, `WidgetRecord.Unlocked`)
-are skipped entirely and keep whatever rect they already have. `column-system.json` and
-`clock-disks.json` are generated this way, not hand-placed, which is why they are not
-pixel-identical to the layouts they replace.
+### Version 1: stamped instances
+
+Read only, to migrate. A version-1 layout holds each placed widget as stamped components: ids
+`"<instanceId>.<partId>"`, `rect` offset by the placement, and `widget` set to the instance id
+(`ComponentDef.Widget`); and a top-level `widgets` object (`LayoutFile.Widgets`, `WidgetRecord`)
+mapping each instance id (`"<widgetKey>-<n>"`) to `{ "template": "<widgetKey>", "knobs": {...},
+"unlocked": false }`. Resolve and render ignore both fields; `unlocked` is parsed and ignored. In a
+v2 expansion `widget` holds the copy id, which is how the designer finds a copy's parts.
+
+`LayoutMigrator.Migrate` (`deskwall migrate`, and the designer on open) makes each record a copy:
+its origin is the most common offset of its parts from the widget's own, its knobs are those that
+differ from the default, and whatever else differs from the knob-applied widget is an override,
+with `hidden` for a part the instance lacks. A part no override can reproduce, every component of
+a widget that is missing, and any component the widget lacks stay in `components` with their v1
+ids. A layout source is dropped only when no loose component binds it and the copies reproduce
+it. The result is *equivalent* when its expansion reproduces the v1 components (by id, `widget`
+aside), sources, and the paint order of every overlapping pair at equal `z`. `deskwall migrate`
+refuses a result that is not equivalent and refuses to overwrite an existing `<file>.v1.json`
+backup; `--check` prints the conversion and writes nothing.
+
+### Starter layouts and the Arranger
+
+The designer's canvas is free placement. `Arranger.Arrange` (`src/DeskWall.Designer/Model/Widgets/`)
+is used only by `StarterGenerator` (`tests/DeskWall.Designer.Tests/Widgets/`), which builds
+`column-system.json`, `clock-disks.json` and `steam-recent.json` as v2 copies;
+`StarterGeneratorTests` asserts the committed files equal its output. It stacks copies in a given
+order by moving their origins into a column at `ColumnX = 3220`, `ColumnWidth = 172`: `anchor:
+"top"` widgets downward from `TopY = 40`, `anchor: "bottom"` widgets (`drives.json`) upward from
+`BottomY = 1400`, `Gap = 16` between them, each by its expanded bounds. It resizes nothing, so an
+80 px dial sits at the column's left edge. On a canvas other than 3440x1440 (`Arranger.Column`) the
+column keeps its 172 px width and is right-aligned at the same proportional margin; its top,
+bottom and gap scale with the height (gap at least 4 px).
+
+`Arranger.Column` is also the designer's spawn region, drawn on an empty canvas: a widget added
+from Insert lands in the first gap in the column, top down, that holds it 16 px clear of
+everything; failing that, the same search one column further left, and so on; failing everywhere,
+it cascades down from the top of the column in 24 px steps (`Placement.Spawn`).
 
 ## `line` (history)
 
 `values` binds a list of records; `field` defaults to `v`. Oldest is leftmost.
-`min`/`max` default to 0/1 and fix the vertical scale; out-of-range samples clamp.
-Non-finite or absent samples are omitted; fewer than two samples draws nothing.
-`stroke` is an ARGB colour, `thickness` defaults to 2 px, `glow` to 0.
+`min`/`max` default to 0/1 and fix the vertical scale; out-of-range samples clamp, and a `max`
+not above `min` draws nothing. Non-finite or absent samples are omitted; fewer than two samples
+draws nothing. `stroke` is an ARGB colour (default `#AA9CCBEE`), `thickness` defaults to 2 px,
+`glow` to 0.
 `baseline: true` fills beneath the line, in `areaFill` when set and otherwise at 12% of the
 stroke alpha. `glowColor` (blank is the stroke colour) and `glowStrength` (default 0.12, same
 meaning as a bar's) style the halo that `glow` draws.
@@ -690,7 +722,6 @@ included in content keys; old and new paint bounds are restored when something m
 Display scaling and designer zoom apply after binding resolution through retained transforms.
 The designer geometry rows accept bindings just like colour and size.
 
-Shaped bars also accept `glowColor`; blank defaults to their fill colour.
 
 An unresolved bound bar fill is transparent, so absent weather or temperature data cannot
 turn a conditional full-screen overlay opaque. Literal fill defaults are unchanged.
@@ -712,6 +743,3 @@ Coordinates are physical image pixels for the CLI. Output is a layout containing
 The trace is a starting outline for editing; clouds and low-contrast rock can affect the result.
 Rules colour rows have swatch pickers and 150 ms coalesced transient preview. Done commits one
 undo entry; Escape restores the previous value.
-
-Dials accept `opacity` (0..1, default 1), applied to both track and fill. An unresolved bound
-opacity hides the dial. The battery dial uses this to fade on mains at full charge.
