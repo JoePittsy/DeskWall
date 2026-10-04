@@ -1,11 +1,12 @@
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using DeskWall.Core;
 
 namespace DeskWall.Daemon.Host;
 
-/// <summary>The event ingress: newline delimited JSON on <c>\\.\pipe\DeskWall.Events</c>, one
-/// object per line, restricted to the current user. Spec section 6. It lives in the daemon rather
+/// <summary>The event ingress: newline delimited JSON on <c>\\.\pipe\DeskWall.Events</c> (suffixed for
+/// any other home, <see cref="RuntimeInstance.EventPipeName"/>), one object per line, restricted to the current user. Spec section 6. It lives in the daemon rather
 /// than Core because two processes cannot own one pipe name, and the designer runs its own bus.
 /// <para>A producer may connect, write one line and disconnect, or hold the connection open and
 /// stream; both are ordinary. Nothing a producer sends may take the listener down, so a malformed
@@ -18,8 +19,6 @@ namespace DeskWall.Daemon.Host;
 /// <see cref="DeskWall.Core.Events.EventBus.Publish(string)"/> is.</para></summary>
 public sealed class EventPipeServer : IDisposable
 {
-    public const string PipeName = "DeskWall.Events";
-
     /// <summary>Four at once: enough for a script, a shell and a background producer to overlap,
     /// and low enough that a runaway producer cannot make the daemon hold instances open forever.
     /// A fifth producer's connect waits in WaitNamedPipe until one frees, which is what a client
@@ -44,15 +43,21 @@ public sealed class EventPipeServer : IDisposable
     /// <param name="onError">Diagnostics for what never reached the callback at all: a pipe that
     /// could not be created, a connection that broke mid-line.</param>
     /// <param name="pipeName">Overridden only by tests, which each need their own name; two tests
-    /// on one name would fight over the instances.</param>
-    public EventPipeServer(Func<string, bool> onLine, Action<string>? onError = null, string pipeName = PipeName)
+    /// on one name would fight over the instances. The default is this runtime dir's
+    /// (<see cref="RuntimeInstance.EventPipeName"/>): DeskWall.Events for the default home, a
+    /// suffixed name for any other, so a scratch daemon never shares the live one's pipe.</param>
+    public EventPipeServer(Func<string, bool> onLine, Action<string>? onError = null, string? pipeName = null)
     {
         ArgumentNullException.ThrowIfNull(onLine);
+        pipeName ??= RuntimeInstance.EventPipeName(Paths.RuntimeDir);
         ArgumentException.ThrowIfNullOrEmpty(pipeName);
         _onLine = onLine;
         _onError = onError;
         _pipeName = pipeName;
     }
+
+    /// <summary>The name this server listens on, <c>\.\pipe\&lt;this&gt;</c>.</summary>
+    public string PipeName => _pipeName;
 
     /// <summary>Begin accepting. Returns at once; nothing here blocks the caller's thread, which
     /// is the daemon's message pump.</summary>
