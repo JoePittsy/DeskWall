@@ -1,5 +1,7 @@
+using System.Text.Json;
 using DeskWall.Core;
 using DeskWall.Core.Layout;
+using DeskWall.Core.Tests.Widgets;
 using Xunit;
 
 namespace DeskWall.Core.Tests.Layout;
@@ -120,5 +122,87 @@ public class LayoutFileTests
 
         Assert.ThrowsAny<Exception>(() => l.Save(path));
         Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    public static TheoryData<string> ShippedLayouts()
+    {
+        var data = new TheoryData<string>();
+        foreach (var f in Directory.GetFiles(Path.Combine(Repo.Root, "layouts"), "*.json").Order()) data.Add(Path.GetFileName(f));
+        return data;
+    }
+
+    /// <summary>Every property, defaults included: what "the same layout" means, independent of
+    /// what <see cref="LayoutFile.ToJson"/> chooses to leave out.</summary>
+    private static string Full(LayoutFile l) => JsonSerializer.Serialize(l, LayoutJsonContext.Default.LayoutFile);
+
+    /// <summary>Issue #56: each shipped layout loads, saves, and reloads as the same layout, and a
+    /// second save writes the same bytes as the first.</summary>
+    [Theory, MemberData(nameof(ShippedLayouts))]
+    public void Shipped_Layout_Loads_Saves_And_Reloads_Identically(string name)
+    {
+        var original = LayoutFile.Load(Path.Combine(Repo.Root, "layouts", name));
+        var dir = Repo.TempDir($"layoutfile-roundtrip-{Path.GetFileNameWithoutExtension(name)}-{Guid.NewGuid():N}");
+        var path = Path.Combine(dir, name);
+
+        original.Save(path);
+        var saved = File.ReadAllText(path);
+        var reloaded = LayoutFile.Load(path);
+
+        Assert.Equal(Full(original), Full(reloaded));
+        Assert.Equal(saved, reloaded.ToJson());
+        Assert.DoesNotContain("\\u00", saved);
+    }
+
+    [Fact]
+    public void ToJson_Does_Not_Escape_Quotes_Or_Non_Ascii()
+    {
+        var l = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "components": [
+          { "type": "text", "id": "t", "rect": [0,0,10,10], "text": { "bind": "w.temp | \"{0:N0}°\"" } },
+          { "type": "text", "id": "u", "rect": [0,0,10,10], "text": "Tom & \"Jerry\" <3 +1" } ] }
+        """);
+
+        var json = l.ToJson();
+
+        Assert.Contains("""
+            "bind": "w.temp | \"{0:N0}°\""
+            """, json);
+        Assert.Contains("""
+            "text": "Tom & \"Jerry\" <3 +1"
+            """, json);
+        Assert.DoesNotContain("\\u", json);
+    }
+
+    [Fact]
+    public void ToJson_Leaves_Out_Defaults_And_Keeps_Everything_Else()
+    {
+        var l = LayoutFile.Parse("""
+        { "version": 1, "baseImage": "x.jpg", "baseFit": "contain", "encode": "jpeg", "jpegQuality": 92, "sources": [],
+          "components": [
+            { "type": "text", "id": "t", "rect": [0,0,10,10], "z": 0, "text": "hi", "font": "Segoe UI", "size": 16, "effectRadius": "auto" },
+            { "type": "dial", "id": "d", "rect": [0,0,10,10], "z": 3, "fraction": 0.5, "thickness": 0, "sweep": 270 },
+            { "type": "repeater", "id": "r", "rect": [0,0,10,10], "items": { "bind": "x.y" }, "axis": "horizontal", "gap": 0, "template": [] } ] }
+        """);
+
+        var json = l.ToJson();
+
+        // Defaults, including empty lists and zeros, are gone ...
+        foreach (var gone in new[] { "\"encode\"", "\"jpegQuality\"", "\"sources\"", "\"z\": 0", "\"font\"", "\"size\"", "\"effectRadius\"", "\"sweep\"", "\"gap\"", "\"copies\"", "\"widgets\"" })
+            Assert.DoesNotContain(gone, json);
+        // ... while the version, required members (even empty), and non-defaults stay, including a
+        // zero where the default is not zero.
+        foreach (var kept in new[] { "\"version\": 1", "\"baseFit\": \"contain\"", "\"components\"", "\"text\": \"hi\"", "\"z\": 3", "\"thickness\": \"0\"", "\"axis\": \"horizontal\"", "\"template\": []" })
+            Assert.Contains(kept, json);
+        Assert.Equal(Full(l), Full(LayoutFile.Parse(json)));
+    }
+
+    /// <summary>A type with no prototype is written in full: correct, but it would quietly undo
+    /// issue #56 for that type. Every component type and every record in the format needs one.</summary>
+    [Fact]
+    public void Every_Written_Type_Has_A_Prototype()
+    {
+        var types = LayoutJsonContext.Default.ComponentDef.PolymorphismOptions!.DerivedTypes.Select(d => d.DerivedType)
+            .Concat([typeof(LayoutFile), typeof(SourceDef), typeof(WidgetCopy), typeof(WidgetRecord)]);
+        Assert.All(types, t => Assert.NotNull(LayoutJsonWrite.Prototype(t)));
     }
 }
