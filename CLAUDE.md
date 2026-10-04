@@ -216,15 +216,23 @@ deskwall verify                                   # per-slot arrow padding + clo
 ```
 
 The default `dotnet test` leaves out two categories, via `tests/deskwall.runsettings` (both test
-projects use it): `Budget` and `Desktop`. `Desktop` is every test that acts on the live
-interactive session -- writes `.lnk` files into the real desktop folder, moves icons, switches the
-desktop folder flags, captures the screen, shows a window, or starts a resident `deskwall run`.
+projects use it): `Budget` and `Desktop`. `Desktop` is every test that changes the live
+interactive session or needs it unlocked -- writes `.lnk` files into the real desktop folder, moves
+icons, switches the desktop folder flags, captures the screen, shows a window, or starts a resident
+`deskwall run`.
 Run them only on a desktop you may disturb, by name:
 `dotnet test tests/DeskWall.Core.Tests --filter Category=Desktop` (and the same for
 `tests/DeskWall.Designer.Tests`). Any command-line `--filter` replaces the runsettings filter
 rather than adding to it, so a hand-written filter must exclude `Desktop` itself
 (`--filter "FullyQualifiedName~Foo&Category!=Desktop"`). A new test that touches the live session
 without the trait is a defect, like one that writes the real runtime dir.
+
+`Session` tests only *read* the live session -- monitor enumeration, `IDesktopWallpaper::GetWallpaper`,
+icon spacing and size, the position of a missing item -- so they are in the default run. Each
+returns early when what it reads is absent (no monitors, no desktop folder view). A test that reads
+the session but might also change it, even only on a regression, is `Desktop`. So is one that
+depends on the session being unlocked: the screen-capture tests stay `Desktop`, because a capture of
+a locked session is all black and `BitBlt` can fail on a disconnected RDP session.
 
 `--no-apply --no-shortcuts` keeps a scratch tick from touching the live wallpaper or desktop
 icons; drop them (and use a scratch `--home`) only when actually exercising the real thing.

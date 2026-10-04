@@ -5,7 +5,7 @@ using Xunit;
 public class WallpaperSetterTests
 {
     [Fact]
-    [Trait("Category", "Desktop")]
+    [Trait("Category", "Session")]
     public void Get_ReturnsCurrentPath_ForPrimary()
     {
         var mons = Monitors.Enumerate();

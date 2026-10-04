@@ -22,7 +22,7 @@ public class DisplaySignatureTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
+    [Trait("Category", "Session")]
     public void Enumerate_Returns_At_Least_Primary()
     {
         var mons = Monitors.Enumerate();
