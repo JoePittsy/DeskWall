@@ -306,7 +306,6 @@ commit.
 
 ## 11. Open questions carried forward
 
-- Playnite's own last-played stays stale for Steam-launched sessions (Steam plugin 2.44).
-  Irrelevant to the daemon now; relevant to the Hearth recipe.
-- Whether Steam's public API rate limits are a problem at a 10-minute schedule (expected no).
-- Whether to offer the global arrow-overlay removal as a guided admin step in a later version.
+- Playnite last-played stale for Steam-launched sessions -- #69.
+- Steam API rate limits at a 10-minute schedule -- #72.
+- Arrow-overlay removal as a guided admin step -- #47.

@@ -29,7 +29,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) { $Exe = Join-Path $repo 'src\DeskWall.Daemon\bin\Debug\net10.0-windows10.0.19041.0\deskwall.exe' }
-if (-not $Out) { $Out = Join-Path $repo 'docs\superpowers\plans\gallery' }
+if (-not $Out) { $Out = Join-Path $env:TEMP 'dw-gallery-out' }
 if (-not (Test-Path -LiteralPath $Exe)) { throw "No deskwall.exe at $Exe; build first or pass -Exe." }
 if (-not (Test-Path -LiteralPath $Layout)) { throw "No layout at $Layout." }
 $Layout = (Resolve-Path -LiteralPath $Layout).Path

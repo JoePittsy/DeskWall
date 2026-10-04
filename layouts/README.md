@@ -9,7 +9,7 @@ layout proportionally when the display signature has no layout of its own.
 | `clock-disks.json` | Clock top right, one row per fixed drive bottom right. No network, no secrets. |
 | `steam-recent.json` | The same column with the four most recently played Steam games between them, covers from Steam's CDN, each cover a click-to-launch shortcut. Needs two secrets. |
 | `column-system.json` | Clock, Leeds weather, Tailscale state, four hardware dials (CPU/GPU/RAM load, GPU temperature) and the drives row, all in the right-hand column. No Steam covers. See "column-system.json requirements" below. |
-| `alpine-vision.json` | Hand-authored, not a starter: the landscape spike (`docs/superpowers/plans/2026-09-30-spike-report.md`), with day/night grade, weather and hardware overlays painted into the scene, plus `clock`, `weather` and `drives` copies. Its `baseImage` is an absolute path on JOES-XPS-17; point it at your own picture before using it elsewhere. |
+| `alpine-vision.json` | Hand-authored, not a starter: the landscape layout, with day/night grade, weather and hardware overlays painted into the scene, plus `clock`, `weather` and `drives` copies. Its `baseImage` is an absolute path on JOES-XPS-17; point it at your own picture before using it elsewhere. |
 
 The three starters (all but `alpine-vision.json`) are version 2 layouts made only of linked copies of the shipped widgets
 (`widgets/*.json`, `docs/layout-format.md` "Copies"): each copy is a widget key, a position and the
@@ -25,7 +25,8 @@ secrets described below, which the `steam-covers` widget needs but does not set 
 
 ## Steam secrets
 
-`steam-recent.json` calls Steam's public `GetRecentlyPlayedGames` endpoint. It needs a Web API
+`steam-recent.json` calls Steam's public `GetRecentlyPlayedGames` endpoint, which returns only games
+played in the last two weeks, most recent first (a quiet fortnight leaves slots empty). It needs a Web API
 key and your 64-bit SteamID, neither of which belongs in a layout file. Put them in
 `%LOCALAPPDATA%\DeskWall\secrets.json`:
 
@@ -84,19 +85,14 @@ to 8 entries draw, by setting the repeater's width so the extra items fall past
 than by trimming the bound list -- there is no list-slicing in the binding language, so this is
 the mechanism every widget with a count-like knob has available.
 
-It lives in `layouts/widgets/`, not the shipped `widgets/` folder beside the exe, because this
-recipe was built on a lane that could not touch `widgets/` (another lane was rewriting it on
-`main` at the same time -- `docs/superpowers/plans/2026-09-30-lane-hearth.md`). To try it before
-the lanes merge, copy the file into `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the
+It lives in `layouts/widgets/`, not the shipped `widgets/` folder beside the exe (#36). To try
+it, copy the file into `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the
 same user-override location `docs/layout-format.md` "Where widget files come from" describes) or
 a scratch `--home`'s `widgets\` folder, then add a version 2 `copies` entry with
-`"widget": "recent-games"` to any layout. Once merged it belongs beside the other shipped
-widgets and this note should go with it.
+`"widget": "recent-games"` to any layout.
 
 Needs Hearth installed and writing the feed file; see
-`docs/superpowers/plans/2026-09-30-hearth-feed-spec.md` for what Hearth itself has to do, and
-`docs/superpowers/plans/2026-09-30-lane-hearth-report.md` for how this was proved with a fake
-feed.
+`docs/hearth-feed.md` for what Hearth itself has to do.
 
 ## Shortcut slots
 

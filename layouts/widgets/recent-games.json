@@ -3,7 +3,7 @@
   "name": "Recent games (Hearth)",
   "description": "Covers for the most recently played games from Hearth's feed; no Steam key needed. Each cover is a click-to-launch shortcut.",
   "size": [504, 180],
-  "requires": "Needs Hearth (the owner's Playnite add-on) installed and writing %LOCALAPPDATA%\\DeskWall\\feeds\\hearth-recent.json (docs/superpowers/plans/2026-09-30-hearth-feed-spec.md)",
+  "requires": "Needs Hearth (the owner's Playnite add-on) installed and writing %LOCALAPPDATA%\\DeskWall\\feeds\\hearth-recent.json (docs/hearth-feed.md)",
   "sources": [
     { "name": "hearth", "type": "file", "every": 300, "settings": {
         "path": "runtime:feeds/hearth-recent.json", "parse": "json" } }

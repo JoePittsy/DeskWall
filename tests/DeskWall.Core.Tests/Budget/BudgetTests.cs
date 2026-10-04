@@ -80,7 +80,7 @@ internal static class IdleObservation
 /// <c>dotnet test --filter Category=Budget</c>.
 /// <para>
 /// A failing line here is a finding, not a budget to loosen. Every test prints a markdown row for
-/// <c>docs/superpowers/plans/2026-09-20-phase1-spike-results.md</c> under "Phase 6 budget results".
+/// <c>docs/measurements.md</c> under "Phase 6 budget results".
 /// </para></summary>
 public class BudgetTests(ITestOutputHelper output)
 {

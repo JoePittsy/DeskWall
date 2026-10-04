@@ -1,6 +1,8 @@
 # Hearth feed spec: writing `hearth-recent.json` for DeskWall
 
-Implementation spec for part 1 of `docs/superpowers/plans/2026-09-30-lane-hearth.md`, written
+Status: not built -- tracked in #35.
+
+Implementation spec for the Hearth side of the recent-games feed, written
 because the Hearth repo (`C:\Users\JosephPitts\source\repos\Hearth` or
 `D:\Source\Personal\Hearth`) is not present on this machine. Point an agent at this one file on
 JOES-PC, where Hearth lives, and it has everything needed: the feed schema, the atomic write, the
@@ -300,4 +302,4 @@ LiteDB or `IPlayniteAPI` in it):
 5. Point `deskwall tick --layout <a layout using the recent-games widget> --force --measure` (or
    register it with `deskwall layouts set`) at the real feed once it exists, and confirm the
    covers and launch targets are correct -- this is the same widget already proved against a
-   fake feed in this lane (`docs/superpowers/plans/2026-09-30-lane-hearth-report.md`).
+   fake feed.

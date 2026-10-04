@@ -2,7 +2,7 @@
 
 Source of truth for this document: `src/DeskWall.Daemon/Program.cs`, `DaemonLoop.cs`,
 `src/DeskWall.Core/Tick/TickRunner.cs`, `Paths.cs`, `Diagnostics/Footprint.cs`, and the spec
-(`docs/superpowers/specs/2026-09-20-deskwall-v1-design.md`, sections 3 and 6). Every number cited
+(`docs/design-spec.md`, sections 3 and 6). Every number cited
 is from a measurement file; none is asserted here.
 
 ## The process model, in one page
@@ -30,7 +30,10 @@ Three things run, never more than two at once on an idle machine:
   It never opens a channel to the daemon: it reads and writes the same files the daemon reads
   (the layout store, layout files, `secrets.json`, `settings.json`) and the daemon's hot-reload
   watcher picks up the change. The daemon's tray menu launches it as a plain child process
-  (`Designer.Open` in `DaemonLoop.cs`) and otherwise knows nothing about it.
+  (`Designer.Open` in `DaemonLoop.cs`) and otherwise knows nothing about it. One designer per
+  runtime dir (`RuntimeInstance.DesignerLockName`, the same home hash as the daemon's lock). Above
+  1:1 zoom the canvas re-renders the layout transformed into the viewport
+  (`LayoutScaler.Transform`), never an upscaled bitmap, so a 13 px label stays crisp at 800%.
 - **`DeskWall.Core`** -- a library, not a process. Both executables reference it; it contains
   every model, renderer and platform-interop type and is native-AOT-safe
   (`IsAotCompatible=true` in `Directory.Build.props`, enforced by the analyzer on every build,
@@ -43,9 +46,10 @@ path the resident daemon uses, useful for scripting and for this documentation's
 
 1. **Start.** Create the hidden host window, register the tray icon unless `--no-tray` (menu:
    Open designer, Refresh now, Pause, Exit), load the layout store, create the user widgets
-   folder (`%LOCALAPPDATA%\DeskWall\widgets\`), watch the widget folders for file changes (to
-   reactivate when a widget is edited), subscribe the remote image cache's `Landed` event to a
-   wake, sweep image-cache entries untouched for 30 days.
+   folder (`%LOCALAPPDATA%\DeskWall\widgets\`), watch the user widget file of every key the
+   layout references (to reactivate when a widget is edited; the shipped folder is not watched,
+   because it changes only on install and `publish.ps1` restarts the daemon then), route the
+   remote image cache's `Landed` event to a wake, sweep image-cache entries untouched for 30 days.
 2. **First tick**, forced (`Tick("start", force: true, ...)`), so the wallpaper is correct before
    the loop ever waits.
 3. **Sleep.** The waitable timer is set to the earliest due time across every active source
@@ -62,6 +66,22 @@ path the resident daemon uses, useful for scripting and for this documentation's
    seconds. The Explorer restart's tick is forced because a forced tick is the only one that
    re-places shortcuts whose planned positions have not changed (spec 9 "Explorer restart keeps
    icons"). A widget file change triggers a Reactivate.
+
+   **Values arriving out of band take one path.** An async fetch landing late, a remote image
+   landing, a watched file changing, an `audio`/`media`/`notifications` callback and a pipe event
+   all end in `EventBus` (`ISignalSource.Changed` -> `EventBus.Signal(name)`, or `Publish` for the
+   pipe), which raises one coalesced `WakeRequested` at most every 400 ms with a trailing wake, so
+   the final state always lands; the daemon posts that as `WakeKind.SourceCompleted`. Signals are
+   not written to the bus's diagnostics ring. The layout watcher, display change and Explorer
+   restart stay separate: they are structural, not a value arriving. **A signal buys a wake and
+   nothing else**: the tick that follows refreshes only what `Scheduler.IsDue` says is due, so a
+   source that signals must also answer "due now" from `NextDue` (a pending flag, set where it
+   raises `Changed`, cleared in `RefreshAsync`). Without it the first `audio` build woke the daemon
+   for eight volume changes and a 6 s slider drag and repainted nothing; without clearing it, an
+   always-due source pins the wake at `Scheduler.MinDelay`, four ticks a second. Time, disks,
+   system, hardware, http, rss and non-streaming command stay on the schedule: they are
+   schedule-shaped, and the pull path carries the failure back-off and staleness that the push
+   path deliberately does not.
 5. **After every tick:** log the outcome, update the tray tooltip, compute the next wake,
    `Footprint.Trim()` (`SetProcessWorkingSetSize`, giving freed pages back so Task Manager shows
    the idle number rather than the render peak).
@@ -89,7 +109,12 @@ the resident daemon leaves it off). Before the tick proper,
   timing output (read + expand + scale time, before the tick). The expander resolves widget files
   from the user folder first (`%LOCALAPPDATA%\DeskWall\widgets\`) and then the shipped folder
   beside the exe, enabling copy-on-write for a shipped widget: editing it writes a user copy and
-  every placed copy of that widget, in every layout on the machine, follows the edit.
+  every placed copy of that widget, in every layout on the machine, follows the edit. Only the
+  referenced keys are read. Measured on JOES-XPS-17 (AOT, `column-system.json`, 2026-09-29):
+  `load` is 4-7 ms for the v1 file and 11-13 ms for its v2 form (15 widget files, 8 copies);
+  `total`, `cpu`, the skip path and idle handles (+1-2) were unchanged within one 15.6 ms quantum
+  over 30 interleaved samples per build. The daemon pays `load` once per activation (a layout or
+  widget edit, a display change), never per minute; a one-shot `tick` pays it every time.
 
 The tick itself:
 
@@ -117,7 +142,16 @@ The tick itself:
    every component fresh (`FrameRenderer.RenderAll`). Otherwise only components whose content key
    changed, or whose paint bounds intersect one that did, are redrawn onto the previous frame
    loaded from `frame.raw` (`RenderIncremental`, which mutates that frame in place rather than
-   allocating a second full-size buffer).
+   allocating a second full-size buffer). A bar whose track, fill and glow are all fully
+   transparent is skipped (`FrameRenderer`), as is an image at opacity 0 or with a fully
+   transparent `tint`, so weather and warning
+   overlays cost nothing while invisible. A pure upscale whose destination is at least 250,000 px
+   draws with linear interpolation (`Surface.DrawSurface`): `HIGH_QUALITY_CUBIC`'s cost scales
+   with destination area, and two 8x512 gradient strips stretched over the canvas measured 45-59
+   and 31-42 ms with it, 3-5 ms without. Icon-sized upscales keep the cubic filter (the
+   `image-fits` and `repeater-auto` goldens fail without it). Measured per layer on the 50-component
+   `alpine-vision.json` (AOT, 3440x1440): no layer above 12 ms; 400 round-cap stars cost 5.8 ms
+   over four layers and 600 rain strokes 5.5 ms, so caching path geometry is not needed.
 5. **Encode.** The frame is written to a temp file and renamed into place (`Surface.SaveJpeg` /
    `SavePng`, and `SaveRaw` for `frame.raw` itself) -- an atomic replace, never a partial file on
    disk mid-write.
@@ -127,7 +161,7 @@ The tick itself:
    name stay constant tick after tick.
 7. **Shortcuts.** If the shortcut manager's fingerprint (slots, rects, targets, tooltips, pad,
    the arrow rect for the current icon size/scale) differs from the last one recorded, reconcile
-   the desktop (`ShortcutManager.Reconcile`, `docs/superpowers/specs/...` section 7). Skipped
+   the desktop (`ShortcutManager.Reconcile`, `docs/design-spec.md` section 7). Skipped
    when nothing shortcut-related changed, because talking to Explorer costs far more than the
    rest of a tick combined. A reconcile failure (a bad slot, Explorer briefly gone) leaves the
    fingerprint unstored so the next tick retries, rather than leaving a broken icon in place
@@ -150,6 +184,9 @@ directory.
 | `secrets.json` | the owner / designer only | `{secret:name}` substitutions; never written by the daemon or `tick`. |
 | `settings.json` | the designer | Tray on/off, start-at-logon, last-opened layout, panel layout. |
 | `calibration.json` | `deskwall calibrate` | Arrow-overlay rect per `(icon size, display scale)`. |
+| `desktop-flags.json` | `DesktopFlags` | The desktop's original auto-arrange and snap-to-grid flags, saved the first time placement turns them off (through `IFolderView2` folder flags, never Explorer's registry) and never overwritten after; `deskwall uninstall` restores them and deletes the file. |
+| `events.json` | `EventBus` / `EventStore` | Every pushed provider's last record (`docs/sources.md` "Pushed values: events"), written atomically at most every few seconds and on shutdown; the designer watches it. |
+| `widgets/<key>.json`, `providers/<name>.json` | the designer / the owner | User widget files (shadowing shipped ones by key) and provider manifests. |
 | `shortcuts-owned.json` | `ShortcutManager` | Slot -> hash of the spec last written there; the only slots `ShortcutManager` will ever delete. |
 | `frame-state.json` | `TickRunner` | Content keys, paint bounds, signature, base-image key, the last base photo drawn (and any missing one already warned about) and shortcuts fingerprint from the last tick -- the skip gate's input. |
 | `frame.raw` | `TickRunner` / `Surface.SaveRaw` | The full previous frame as raw PBGRA, loaded (not decoded) for incremental redraw. Deliberately never held in memory across ticks: at 3440x1440 it is ~19.8 MB, which alone would blow the 10 MB idle budget. |
@@ -164,7 +201,7 @@ directory.
 
 ## The cost budget and how it is enforced
 
-Spec 1.2's table (reproduced from `docs/superpowers/specs/2026-09-20-deskwall-v1-design.md`):
+Spec 1.2's table (reproduced from `docs/design-spec.md`):
 
 | Measure | Budget |
 |---|---|
@@ -182,7 +219,7 @@ Spec 1.2's table (reproduced from `docs/superpowers/specs/2026-09-20-deskwall-v1
 --measure` and `Footprint.Current()` on the reference machine (JOES-PC, i7-6700K, 3440x1440).
 
 **Native AOT runs, 2026-09-21** (`deskwall.exe` 6.54 MB, MSVC 14.51, SDK 10.0.26100; the full
-rows and their caveats are in `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` under
+rows and their caveats are in `docs/measurements.md` under
 "Phase 6 budget results"). Three of the five budgets are met, two are not:
 
 | Budget row | First run | After the memory fix wave | Verdict |
@@ -245,9 +282,8 @@ same morning. These are the owner's accepted costs for the widgets he asked for;
 recorded, not hidden, and the two OVER rows are the same two open findings as the clock-only
 layout plus NVML's footprint.
 
-The JIT numbers this section used to carry (15.5 MB working set, 69.8 MB private bytes, 368
-handles, 15 threads resident; 67-90 ms clock-only tick) are in
-`.superpowers/sdd/2026-09-20-deskwall-v1-phase2-daemon/lane-loop-report.md`. Against the POC
+Under JIT (phase 2, JOES-PC) the same daemon measured 15.5 MB working set, 69.8 MB private
+bytes, 368 handles and 15 threads resident, with a 67-90 ms clock-only tick. Against the POC
 reference in spec 1.2 (about 370 ms wall / 190 ms CPU per tick, ~5 s cold start) every row is
 already a large improvement; against the spec's own table, three rows are open findings.
 

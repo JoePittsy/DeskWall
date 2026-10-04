@@ -21,7 +21,7 @@ namespace DeskWall.Core.Render;
 /// <summary>
 /// A premultiplied-BGRA bitmap (WIC) drawn through a software Direct2D render target. No
 /// hardware D3D device is created: Direct2D's SOFTWARE type runs on WARP in-process.
-/// Call shapes verified in docs/superpowers/plans/2026-09-20-phase1-spike-results.md.
+/// Call shapes verified in docs/measurements.md.
 /// </summary>
 public sealed unsafe class Surface : IDisposable
 {
