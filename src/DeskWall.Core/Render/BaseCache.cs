@@ -16,13 +16,20 @@ public static class BaseCache
     /// <summary>Entries kept per canvas size: one per phase of the day.</summary>
     public const int Capacity = 4;
 
+    /// <summary>What an empty <c>imagePath</c> fills the canvas with: the tick's last resort when
+    /// the base photo is missing and there is no previous base or other photo to draw on instead.
+    /// The same opaque black as the bars of a <c>contain</c> fit.</summary>
+    public static readonly Color SolidColor = new(255, 0, 0, 0);
+
     /// <summary>The key <see cref="Ensure"/> would use, without decoding or writing anything.
     /// Only stats the file, so the tick's skip gate can detect a replaced base image (finding 12)
-    /// before paying for a full render - the spec requires the skip gate to run before any drawing.</summary>
+    /// before paying for a full render - the spec requires the skip gate to run before any drawing.
+    /// An empty <paramref name="imagePath"/> is the solid base.</summary>
     public static string KeyFor(string imagePath, int w, int h, Fit fit)
     {
-        var mtime = File.GetLastWriteTimeUtc(imagePath).Ticks;
-        var keySrc = $"{imagePath}|{mtime}|{w}x{h}|{fit}";
+        var keySrc = imagePath.Length == 0
+            ? $"solid|{w}x{h}"
+            : $"{imagePath}|{File.GetLastWriteTimeUtc(imagePath).Ticks}|{w}x{h}|{fit}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keySrc)))[..16];
     }
 
@@ -43,14 +50,17 @@ public static class BaseCache
             return path;
         }
         Directory.CreateDirectory(dir);
-        using (var src = Surface.Load(imagePath))
         using (var dst = Surface.Create(w, h))
         {
-            dst.Clear(new Color(255, 0, 0, 0));
-            // Resample.Fast: the base is a mild downscale of a very large image, and the
-            // high-quality filter measured +163 ms here against a 500 ms cold-start budget for no
-            // visible gain at that ratio. See Resample.
-            dst.DrawSurface(src, new Rect(0, 0, w, h), fit, resample: Resample.Fast);
+            dst.Clear(SolidColor);
+            if (imagePath.Length > 0)
+            {
+                using var src = Surface.Load(imagePath);
+                // Resample.Fast: the base is a mild downscale of a very large image, and the
+                // high-quality filter measured +163 ms here against a 500 ms cold-start budget for no
+                // visible gain at that ratio. See Resample.
+                dst.DrawSurface(src, new Rect(0, 0, w, h), fit, resample: Resample.Fast);
+            }
             dst.SaveRaw(path);
         }
         Evict(dir, path, $"{w}x{h}-");

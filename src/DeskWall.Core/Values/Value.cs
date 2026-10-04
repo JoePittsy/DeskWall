@@ -52,6 +52,31 @@ public abstract record Value
     {
         var rest = format.AsSpan(1);
         string? fallback = null;
+        while (NextMapPair(ref rest, out var key, out var to))
+        {
+            if (key.Length == 1 && key[0] == '*') fallback = new string(to);
+            else if (key.Length > 0 && key[0] is '<' or '>') { if (Holds(key, text)) return new string(to); }
+            else if (key.Equals(text, StringComparison.OrdinalIgnoreCase)) return new string(to);
+        }
+        return fallback ?? "";
+    }
+
+    /// <summary>Every string a map format can pick, in order, or none when
+    /// <paramref name="format"/> is not a map. What the tick tries for a base image when the one
+    /// picked is missing and there is no previous base to keep.</summary>
+    public static IReadOnlyList<string> MapValues(string? format)
+    {
+        if (format is null || !format.StartsWith('?') || !format.Contains('=')) return [];
+        var values = new List<string>();
+        var rest = format.AsSpan(1);
+        while (NextMapPair(ref rest, out _, out var to)) values.Add(new string(to));
+        return values;
+    }
+
+    /// <summary>The next "key=value" pair of a map body, skipping entries that are not pairs (a map
+    /// is allowed to carry junk). The key comes back trimmed, the value verbatim.</summary>
+    private static bool NextMapPair(ref ReadOnlySpan<char> rest, out ReadOnlySpan<char> key, out ReadOnlySpan<char> to)
+    {
         while (!rest.IsEmpty)
         {
             var comma = rest.IndexOf(',');
@@ -61,14 +86,14 @@ public abstract record Value
             var lead = pair.Length - pair.TrimStart().Length;
             var skip = pair.Length > lead + 1 && pair[lead] is '<' or '>' && pair[lead + 1] == '=' ? lead + 2 : 0;
             var eq = pair[skip..].IndexOf('=');
-            if (eq < 0) continue;                       // not a pair; a map is allowed to carry junk
+            if (eq < 0) continue;
             eq += skip;
-            var key = pair[..eq].Trim();
-            if (key.Length == 1 && key[0] == '*') fallback = new string(pair[(eq + 1)..]);
-            else if (key.Length > 0 && key[0] is '<' or '>') { if (Holds(key, text)) return new string(pair[(eq + 1)..]); }
-            else if (key.Equals(text, StringComparison.OrdinalIgnoreCase)) return new string(pair[(eq + 1)..]);
+            key = pair[..eq].Trim();
+            to = pair[(eq + 1)..];
+            return true;
         }
-        return fallback ?? "";
+        key = to = default;
+        return false;
     }
 
     /// <summary>A comparison key: "&lt;0.3", "&lt;=0.3", "&gt;0.7", "&gt;=0.7" against the value as a number.

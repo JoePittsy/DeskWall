@@ -132,12 +132,57 @@ public class TickRunnerBoundBaseTests
     }
 
     [Fact]
-    public async Task With_No_Previous_Base_A_Missing_Photo_Fails_The_Tick()
+    public async Task With_No_Previous_Base_And_No_Photos_A_Fresh_Home_Draws_A_Solid_Base()
     {
-        var (_, rel) = Assets();   // no files at all
+        var (assets, rel) = Assets();   // no files at all: a fresh home before the photos are copied in
         var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bound-none-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
+        var clock = new BoundBaseClock(DateTimeOffset.Now.Date.AddHours(2));
+        var runner = Runner(PhaseLayout(rel), clock, dir);
+
+        var t1 = await runner.RunAsync(force: true, apply: false, default);
+        Assert.NotNull(t1.Warning);
+        Assert.Contains("night.png", t1.Warning);
+        Assert.Contains("solid", t1.Warning);
+        Assert.Equal(Px(BaseCache.SolidColor), Corner(dir));
+        Assert.True(File.Exists(Path.Combine(dir, "out.jpg")));
+
+        clock.Now = clock.Now.AddMinutes(1);
+        Assert.Null((await runner.RunAsync(force: false, apply: false, default)).Warning);   // once, not every tick
+
+        // The photo turns up: the base key moves, so an unforced tick renders onto it.
+        Png(Path.Combine(assets, "night.png"), Night);
+        clock.Now = clock.Now.AddMinutes(1);
+        var t3 = await runner.RunAsync(force: false, apply: false, default);
+        Assert.False(t3.Skipped);
+        Assert.Null(t3.Warning);
+        Assert.Equal(Px(Night), Corner(dir));
+        Assert.Equal("", FrameState.Load(Path.Combine(dir, "state.json")).BaseMissing);
+    }
+
+    [Fact]
+    public async Task With_No_Previous_Base_A_Missing_Photo_Falls_Back_To_Another_Photo_In_The_Map()
+    {
+        var (assets, rel) = Assets();
+        Png(Path.Combine(assets, "day.png"), Day);   // only the day photo: night (02:00) is missing
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bound-other-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
         var runner = Runner(PhaseLayout(rel), new BoundBaseClock(DateTimeOffset.Now.Date.AddHours(2)), dir);
-        await Assert.ThrowsAnyAsync<Exception>(() => runner.RunAsync(force: true, apply: false, default));
+
+        var t1 = await runner.RunAsync(force: true, apply: false, default);
+        Assert.NotNull(t1.Warning);
+        Assert.Contains("night.png", t1.Warning);
+        Assert.Contains("day.png", t1.Warning);
+        Assert.Equal(Px(Day), Corner(dir));
+    }
+
+    [Fact]
+    public void Base_Image_Alternatives_Are_The_Map_Values_Expanded()
+    {
+        Assert.Equal(
+            [Paths.InRuntime("assets", "x", "night.png"), Paths.InRuntime("assets", "x", "day.png"), Paths.InRuntime("assets", "x", "dawn.png")],
+            LayoutResolver.BaseImageAlternatives(PhaseLayout("assets/x")));
+        var literal = LayoutFile.Parse("""{ "baseImage": "runtime:assets/photo.jpg", "components": [] }""");
+        Assert.Empty(LayoutResolver.BaseImageAlternatives(literal));
     }
 }

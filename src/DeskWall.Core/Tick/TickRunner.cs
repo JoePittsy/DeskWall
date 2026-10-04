@@ -194,8 +194,10 @@ public sealed class TickRunner(
     /// The base image path for this tick. A path that is not on disk - a bound photo not generated
     /// yet, a typo in a map, a literal whose file was deleted - falls back to the last base that
     /// rendered, and says so once through <see cref="TickTimings.Warning"/>; the next tick that
-    /// resolves to a real file clears the debt. With no previous base there is nothing to keep, and
-    /// the missing path goes through to fail the tick as it always has.
+    /// resolves to a real file clears the debt. With no previous base on disk (a fresh runtime dir,
+    /// or the last base deleted too) it falls back to the first of the layout's other photos that
+    /// exists - another entry of a bound base's map - and failing that to the solid base (an empty
+    /// path, <see cref="BaseCache.SolidColor"/>), so a first tick still produces a wallpaper.
     /// </summary>
     /// <param name="stateMoved">true when the warn-once fields changed and the state needs saving
     /// even on a skipped tick</param>
@@ -208,15 +210,21 @@ public sealed class TickRunner(
             if (state.BaseMissing.Length > 0) { state.BaseMissing = ""; stateMoved = true; }
             return path;
         }
-        if (state.BasePath.Length == 0 || state.BasePath == path || !File.Exists(state.BasePath)) return path;
+        string fallback, instead;
+        if (state.BasePath.Length > 0 && File.Exists(state.BasePath))
+            (fallback, instead) = (state.BasePath, $"keeping {state.BasePath}");
+        else if (LayoutResolver.BaseImageAlternatives(layout).FirstOrDefault(File.Exists) is { } other)
+            (fallback, instead) = (other, $"no previous base; using {other}");
+        else
+            (fallback, instead) = ("", "no previous base or other photo; using a solid base");
         var shown = path.Length > 0 ? path : $"(nothing: {layout.BaseImage})";
         if (state.BaseMissing != shown)
         {
-            t.Warning = $"base image {shown} not found; keeping {state.BasePath}";
+            t.Warning = $"base image {shown} not found; {instead}";
             state.BaseMissing = shown;
             stateMoved = true;
         }
-        return state.BasePath;
+        return fallback;
     }
 
     /// <summary>

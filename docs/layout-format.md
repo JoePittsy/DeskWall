@@ -67,8 +67,12 @@ resolves under the runtime dir and `%VAR%` expands. A binding needs its source d
 - **A missing file keeps the last good base.** When the resolved path does not exist, the tick
   draws on the base it used last and logs one warning (`base image X not found; keeping Y`), not
   one a minute; the warning is re-armed once the path resolves to a file again. With no previous
-  base at all (a first tick) the missing file fails the tick as it always has. This applies to a
-  literal path too.
+  base on disk (the first tick on a fresh runtime dir, before the photos are copied in) it draws
+  on the first of the map's other photos that exists (`base image X not found; no previous base;
+  using Y`), and failing that on a solid black base (`...; using a solid base`), so the first tick
+  still produces a wallpaper. When the photo turns up its base key moves and the next tick
+  renders onto it. All of this applies to a literal path too, which has no other photos and goes
+  straight to the solid base.
 - **A photo per phase replaces the sky-grade overlays.** A layout that tints the sky with
   full-canvas layers bound to `time.dayFraction` (the `sky-grade`, `sky-top` and `sky-band`
   layers of `alpine-vision.json`) is painting the mood on top of a photo that cannot change. When

@@ -138,7 +138,8 @@ The tick itself:
    the whole point of content keys (spec 4.4).
 3. **Base image.** The layout's `baseImage` is resolved against the value tree first (it may be
    bound, e.g. to `time.phase`; a resolved path that does not exist falls back to the last base
-   drawn, `FrameState.BasePath`, with one warning). `BaseCache.Ensure` scales that photo to the
+   drawn, `FrameState.BasePath`, with one warning; with none, to another photo in the binding's
+   map that exists, else to a solid black base, `BaseCache.SolidColor`). `BaseCache.Ensure` scales that photo to the
    canvas once and caches the result as a raw PBGRA dump under `runtime/base/<w>x<h>-<key>.raw`,
    keyed by the resolved path, mtime, target size and fit, so a cache hit is a file copy, not a
    JPEG/PNG decode. It keeps the four most recently used raws per canvas size, so a layout that
