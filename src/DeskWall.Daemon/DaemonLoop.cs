@@ -53,6 +53,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
     private readonly HashSet<string> _seenProviders = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _clashesLogged = new(StringComparer.OrdinalIgnoreCase);
     private EventBus? _bus;
+    private EventFile? _eventFile;
     // Set on a pipe reader thread, read and cleared on the tick thread.
     private volatile bool _eventsDirty;
     private DateTimeOffset _eventsSaved;
@@ -83,14 +84,18 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         using var trayIcon = wantTray ? new TrayIcon(win) : null;
         using var watcher = new LayoutWatcher(store, () => win.Post(WakeKind.LayoutChanged));
         using var events = new EventPipeServer(line => Publish(bus, line), m => log.Warn($"events: {m}"));
+        // The designer's Forget rewrites events.json; this is how a running daemon hears of it
+        // instead of writing the record straight back on its next save (issue #17).
+        using var eventsWatcher = new EventsFileWatcher(EventStore.Path, () => win.Post(WakeKind.EventsFileChanged));
         _win = win;
         _watcher = watcher;
         _bus = bus;
+        _eventFile = new EventFile(bus);
         var exit = false;
 
         // Spec section 3: every provider's last record is remembered, so a pushed widget survives a
         // sign-in and the designer can offer a binding for a producer it has never been told about.
-        bus.Restore(EventStore.Load());
+        _eventFile.Restore();
         // The one out-of-band wake there is. A pipe event, a late async source, a landed image, a
         // watched file, a streaming command: all of them signal the bus, the bus coalesces them
         // into one deadline, and this is where the batch becomes a tick.
@@ -147,6 +152,9 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
             var reasons = win.WaitAndPump(timer);
             var plan = TickPlan.From(reasons);
             if (plan.Shutdown) break;
+            // A Forget is worth a frame (the forgotten values must leave the wallpaper); the
+            // daemon's own save, which raises the same wake, is not.
+            if (plan.ReadEvents && ReadBackEvents() && !plan.Tick) plan = plan with { Tick = true };
             if (!plan.Tick) continue;   // an unrelated window message woke the pump; back to sleep
             // Spec 3.1: Explorer is still re-laying the desktop right after a mode change, and the
             // shell hands back the old metrics until it finishes.
@@ -166,6 +174,7 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         _win = null;
         _watcher = null;
         _bus = null;
+        _eventFile = null;
         return 0;
     }
 
@@ -254,19 +263,43 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         }
     }
 
+    /// <summary>Read events.json back and drop from the bus any provider the designer has forgotten
+    /// since the daemon last wrote it (issue #17). True when something was dropped. Tick thread
+    /// only, like the save. The registry catches up at the next SyncProviders.</summary>
+    private bool ReadBackEvents()
+    {
+        if (_eventFile is null) return false;
+        try
+        {
+            var forgotten = _eventFile.Reconcile();
+            if (forgotten.Count == 0) return false;
+            log.Info($"events: forgotten in {EventStore.Path}: {string.Join(", ", forgotten)}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Warn($"events: could not read back {EventStore.Path}: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>Write events.json, at most every few seconds, and unconditionally on shutdown. Tick
     /// thread only, so two writers can never race for the file.</summary>
     private void SaveEvents(bool force)
     {
-        if (_bus is null || !_eventsDirty) return;
+        if (_eventFile is null || !_eventsDirty) return;
         var now = clock.Now;
         if (!force && now - _eventsSaved < SaveEventsEvery) return;
+        // Read back first, every time: a Forget written in the 300 ms before its watcher wake
+        // arrives would otherwise be overwritten here and lost. If it drops something, the frame
+        // just drawn still shows it, so ask for another.
+        if (ReadBackEvents() && !force) _win?.Post(WakeKind.SourceCompleted);
         try
         {
             // Cleared before the read, not after: an event that lands mid-save would otherwise be
             // marked saved when what went to disk predates it.
             _eventsDirty = false;
-            EventStore.Save(_bus.Providers.Values);
+            _eventFile.Save();
             _eventsSaved = now;
         }
         catch (Exception ex)

@@ -62,12 +62,15 @@ path the resident daemon uses, useful for scripting and for this documentation's
    change (`LayoutWatcher`, debounced), a widget file change (watched folder), a tray command, or
    a source finishing a fetch that overran into the next tick. `TickPlan.From(reasons)` turns the
    batch of reasons the pump collected into `{ Tick, Force, Reactivate, DelayForExplorer,
-   Shutdown }`. A display change or an Explorer restart adds a two-second `Thread.Sleep` before
+   Shutdown, ReadEvents }`. A display change or an Explorer restart adds a two-second `Thread.Sleep` before
    the tick runs, because Explorer is still re-laying the desktop and hands back stale metrics
    until it finishes (spec 3.1); this blocks the pump, including a tray Exit, for those two
    seconds. The Explorer restart's tick is forced because a forced tick is the only one that
    re-places shortcuts whose planned positions have not changed (spec 9 "Explorer restart keeps
-   icons"). A widget file change triggers a Reactivate.
+   icons"). A widget file change triggers a Reactivate. A change to `events.json`
+   (`EventsFileWatcher`, debounced, `WakeKind.EventsFileChanged`) is not a tick by itself
+   (`ReadEvents`): the loop reads the file back with `EventFile.Reconcile` and ticks only if that
+   dropped a provider the designer forgot, since the daemon's own save raises the same wake.
 
    **Values arriving out of band take one path.** An async fetch landing late, a remote image
    landing, a watched file changing, an `audio`/`media`/`notifications` callback and a pipe event
@@ -187,7 +190,7 @@ directory.
 | `settings.json` | the designer | Tray on/off, start-at-logon, last-opened layout, panel layout. |
 | `calibration.json` | `deskwall calibrate` | Arrow-overlay rect per `(icon size, display scale)`. |
 | `desktop-flags.json` | `DesktopFlags` | The desktop's original auto-arrange and snap-to-grid flags, saved the first time placement turns them off (through `IFolderView2` folder flags, never Explorer's registry) and never overwritten after; `deskwall uninstall` restores them and deletes the file. |
-| `events.json` | `EventBus` / `EventStore` | Every pushed provider's last record (`docs/sources.md` "Pushed values: events"), written atomically at most every few seconds and on shutdown; the designer watches it. |
+| `events.json` | `EventBus` / `EventStore` | Every pushed provider's last record (`docs/sources.md` "Pushed values: events"), written atomically at most every few seconds and on shutdown; the designer watches it, and so does the daemon, which takes a record that has gone from the file as the designer's Forget (`EventFile`). |
 | `widgets/<key>.json`, `providers/<name>.json` | the designer / the owner | User widget files (shadowing shipped ones by key) and provider manifests. |
 | `shortcuts-owned.json` | `ShortcutManager` | Slot -> hash of the spec last written there; the only slots `ShortcutManager` will ever delete. |
 | `frame-state.json` | `TickRunner` | Content keys, paint bounds, signature, base-image key, the last base photo drawn (and any missing one already warned about) and shortcuts fingerprint from the last tick -- the skip gate's input. |

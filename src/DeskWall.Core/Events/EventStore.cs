@@ -20,28 +20,34 @@ public static class EventStore
     /// <summary>Never throws; missing or corrupt gives empty. A record whose own shape is wrong
     /// is skipped and the rest are kept: one bad entry must not cost a user every provider they
     /// have.</summary>
-    public static IReadOnlyList<ProviderRecord> Load()
+    public static IReadOnlyList<ProviderRecord> Load() => TryLoad() ?? [];
+
+    /// <summary>As <see cref="Load"/>, but null rather than empty when the file is missing,
+    /// unreadable or not a providers document, so a caller that treats the file as a statement of
+    /// what to keep (the daemon reading back a Forget, issue #17) can tell "nothing is remembered"
+    /// from "nothing could be read".</summary>
+    public static IReadOnlyList<ProviderRecord>? TryLoad()
     {
         string text;
         try
         {
-            if (!File.Exists(Path)) return [];
+            if (!File.Exists(Path)) return null;
             text = File.ReadAllText(Path);
         }
-        catch (IOException) { return []; }
-        catch (UnauthorizedAccessException) { return []; }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
 
         try
         {
             using var doc = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return [];
-            if (!doc.RootElement.TryGetProperty("providers", out var arr) || arr.ValueKind != JsonValueKind.Array) return [];
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (!doc.RootElement.TryGetProperty("providers", out var arr) || arr.ValueKind != JsonValueKind.Array) return null;
             var list = new List<ProviderRecord>();
             foreach (var el in arr.EnumerateArray())
                 if (ReadRecord(el) is { } r) list.Add(r);
             return list;
         }
-        catch (JsonException) { return []; }
+        catch (JsonException) { return null; }
     }
 
     public static void Save(IEnumerable<ProviderRecord> records)

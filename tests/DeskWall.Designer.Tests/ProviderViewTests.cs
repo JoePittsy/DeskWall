@@ -121,6 +121,22 @@ public class ProviderViewTests
     }
 
     [Fact]
+    public void Forget_Rereads_The_File_So_A_Provider_The_Daemon_Saved_Since_The_Last_Load_Survives()
+    {
+        // Issue #17: the daemon now takes a record missing from events.json as forgotten, so
+        // writing back a stale list would forget whatever it had saved since the panel last read.
+        using var h = new Harness();
+        h.Records.Add(Record("build", ("status", new TextValue("green"))));
+        var model = h.Model();
+        model.Load();
+        h.Records = [.. h.Records, Record("hearth", ("game", new TextValue("Hollow Knight")))];   // the daemon's save
+
+        model.Forget("build");
+
+        Assert.Equal(["hearth"], h.Saved!.Select(r => r.Name));
+    }
+
+    [Fact]
     public void Forget_Is_Silent_About_A_Provider_It_Has_Never_Heard_Of()
     {
         using var h = new Harness();
