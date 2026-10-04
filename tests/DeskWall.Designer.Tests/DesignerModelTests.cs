@@ -110,7 +110,7 @@ public class DesignerModelTests
     [Fact]
     public void Save_And_Revert()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "designer-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "designer-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var m = Model(); m.Path = Path.Combine(dir, "l.json");
         m.Save();

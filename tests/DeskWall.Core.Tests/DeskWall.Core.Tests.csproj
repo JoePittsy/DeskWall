@@ -10,6 +10,10 @@
     <RunSettingsFilePath Condition="'$(VSTestTestCaseFilter)' == ''">$(MSBuildThisFileDirectory)..\deskwall.runsettings</RunSettingsFilePath>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Gives the run its own DESKWALL_HOME and temp root, shared by both test projects. -->
+    <Compile Include="..\Shared\TestRun.cs" Link="TestRun.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
     <PackageReference Include="xunit" Version="2.*" />

@@ -139,7 +139,7 @@ public class SecretsTests
     [Fact]
     public void Substitutes_Known_And_Throws_On_Unknown_Without_Leaking()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         var p = Path.Combine(dir, "secrets-" + Guid.NewGuid().ToString("N")[..8] + ".json");
         File.WriteAllText(p, """{ "steamKey": "ABC123" }""");
@@ -175,7 +175,7 @@ public class SecretsTests
     [Fact]
     public void Missing_File_Means_No_Secrets()
     {
-        var s = new Secrets(Path.Combine(Path.GetTempPath(), "deskwall-tests", "no-such-secrets.json"));
+        var s = new Secrets(Path.Combine(TestRun.Root, "no-such-secrets.json"));
         Assert.Null(s.Get("x"));
         Assert.Equal("plain", s.Substitute("plain"));
     }

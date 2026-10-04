@@ -16,7 +16,7 @@ file sealed class FixedClock(DateTimeOffset now) : IClock { public DateTimeOffse
 public class HttpSourceTests
 {
     private static Secrets SecretsWith(string json)
-    { var p = Path.Combine(Path.GetTempPath(), "deskwall-tests", "s-" + Guid.NewGuid().ToString("N")[..8] + ".json"); File.WriteAllText(p, json); return new Secrets(p); }
+    { var p = Path.Combine(TestRun.Root, "s-" + Guid.NewGuid().ToString("N")[..8] + ".json"); File.WriteAllText(p, json); return new Secrets(p); }
 
     private static SourceDef Def(string url, params (string k, string v)[] extra)
     {

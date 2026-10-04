@@ -10,7 +10,7 @@ public class ResolvedImageContentKeyTests
     [Fact]
     public void Touching_The_File_Changes_The_Key()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "img-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "img-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "cover.png");
         File.WriteAllBytes(path, [1, 2, 3]);
@@ -27,7 +27,7 @@ public class ResolvedImageContentKeyTests
     [Fact]
     public void Missing_File_Does_Not_Throw_And_Still_Keys()
     {
-        var missing = Path.Combine(Path.GetTempPath(), "deskwall-tests", "no-such-" + Guid.NewGuid().ToString("N") + ".png");
+        var missing = Path.Combine(TestRun.Root, "no-such-" + Guid.NewGuid().ToString("N") + ".png");
         var img = new ResolvedImage("i", new Rect(0, 0, 10, 10), 0, missing, Fit.Cover, 0, 1);
         Assert.Equal(16, ContentKey.Of(img).Length);
     }

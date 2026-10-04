@@ -39,7 +39,7 @@ public class ShortcutManagerTests
     [Fact]
     public void RemoveOwned_Deletes_Only_The_Slots_We_Own()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "rm-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "rm-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var ownedFile = Paths.InRuntime("shortcuts-owned.json");
         try
@@ -74,7 +74,7 @@ public class ShortcutManagerTests
     public void A_Failed_Write_Keeps_The_Slot_Owned_And_Reports_SlotFailed()
     {
         if (!DesktopView.IsAvailable()) return;   // no interactive desktop: nothing to reconcile against
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "fail-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "fail-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var ownedFile = Paths.InRuntime("shortcuts-owned.json");
         var slotPath = Path.Combine(dir, ShortcutPlan.SlotFileName(60));

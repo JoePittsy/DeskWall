@@ -79,7 +79,7 @@ public class TickRunnerBoundBaseTests
         var (assets, rel) = Assets();
         Png(Path.Combine(assets, "night.png"), Night);
         Png(Path.Combine(assets, "day.png"), Day);
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bound-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-bound-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var clock = new BoundBaseClock(DateTimeOffset.Now.Date.AddHours(2));
         var runner = Runner(PhaseLayout(rel), clock, dir);
@@ -103,7 +103,7 @@ public class TickRunnerBoundBaseTests
     {
         var (assets, rel) = Assets();
         Png(Path.Combine(assets, "night.png"), Night);   // no dawn.png: the binding will name a file that is not there
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bound-miss-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-bound-miss-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var clock = new BoundBaseClock(DateTimeOffset.Now.Date.AddHours(2));
         var runner = Runner(PhaseLayout(rel), clock, dir);
@@ -135,7 +135,7 @@ public class TickRunnerBoundBaseTests
     public async Task With_No_Previous_Base_And_No_Photos_A_Fresh_Home_Draws_A_Solid_Base()
     {
         var (assets, rel) = Assets();   // no files at all: a fresh home before the photos are copied in
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bound-none-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-bound-none-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var clock = new BoundBaseClock(DateTimeOffset.Now.Date.AddHours(2));
         var runner = Runner(PhaseLayout(rel), clock, dir);

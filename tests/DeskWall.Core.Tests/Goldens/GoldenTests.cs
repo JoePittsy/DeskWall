@@ -61,7 +61,7 @@ public class GoldenTests
 
     private static readonly Lazy<string> FlatBaseRawPath = new(() =>
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "golden-base");
+        var dir = Path.Combine(TestRun.Root, "golden-base");
         Directory.CreateDirectory(dir);
         var png = Path.Combine(dir, "flat.png");
         using (var s = Surface.Create(W, H)) { s.Clear(Color.Parse("#FF203040")); s.SavePng(png); }

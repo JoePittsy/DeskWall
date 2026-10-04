@@ -15,7 +15,7 @@ file sealed class GatedHandler(Func<Task<HttpResponseMessage>> respond) : HttpMe
 
 public class RemoteImageCacheTests
 {
-    private static string Dir() { var d = Path.Combine(Path.GetTempPath(), "deskwall-tests", "img-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return d; }
+    private static string Dir() { var d = Path.Combine(TestRun.Root, "img-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return d; }
     private static byte[] Png() { using var s = Surface.Create(4, 4); s.Clear(new Color(255, 1, 2, 3)); var p = Path.GetTempFileName(); s.SavePng(p); var b = File.ReadAllBytes(p); File.Delete(p); return b; }
 
     [Fact]

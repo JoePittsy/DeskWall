@@ -182,7 +182,7 @@ public class LensTests
 
     private static WidgetTemplate TemplateRoundTrip(WidgetTemplate t)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"deskwall-lens-{Guid.NewGuid():N}.json");
+        var path = Path.Combine(TestRun.Root, $"deskwall-lens-{Guid.NewGuid():N}.json");
         try
         {
             File.WriteAllText(path, DeskWall.Designer.Model.Widgets.WidgetTemplateWriter.ToJson(t));
@@ -304,7 +304,7 @@ public class LensTests
     [Fact]
     public void Renaming_Moves_The_Key_Until_The_First_Apply_And_Never_After()
     {
-        var home = Path.Combine(Path.GetTempPath(), "deskwall-tests", "rename-" + Guid.NewGuid().ToString("N")[..8]);
+        var home = Path.Combine(TestRun.Root, "rename-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(home);
         var m = LoosePair();
         m.Path = Path.Combine(home, "layout.json");

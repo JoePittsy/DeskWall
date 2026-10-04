@@ -157,7 +157,7 @@ public class ShellStateTests
     [Fact]
     public void The_V1_Backup_Uses_The_Daemons_Name_And_Is_Written_Once()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "backup-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "backup-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         try
         {
@@ -182,7 +182,7 @@ public class ShellStateTests
     [Fact]
     public void A_File_That_Is_Already_V2_On_Disk_Is_Not_Backed_Up()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "backup-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "backup-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         try
         {
@@ -235,7 +235,7 @@ public class ShellStateTests
     [Fact]
     public void A_Store_Keyed_For_Another_Display_Still_Opens_That_Displays_File()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "openfrom-" + Guid.NewGuid());
+        var dir = Path.Combine(TestRun.Root, "openfrom-" + Guid.NewGuid());
         Directory.CreateDirectory(dir);
         try
         {
@@ -282,7 +282,7 @@ public class ShellStateTests
     [Fact]
     public void CopyAssets_Copies_Files_Into_The_Runtime_Weather_Folder()
     {
-        var src = Path.Combine(Path.GetTempPath(), "deskwall-tests", "copyassets-src-" + Guid.NewGuid());
+        var src = Path.Combine(TestRun.Root, "copyassets-src-" + Guid.NewGuid());
         Directory.CreateDirectory(src);
         try
         {
@@ -301,7 +301,7 @@ public class ShellStateTests
     [Fact]
     public void CopyAssets_Never_Overwrites_A_File_Already_There()
     {
-        var src = Path.Combine(Path.GetTempPath(), "deskwall-tests", "copyassets-src-" + Guid.NewGuid());
+        var src = Path.Combine(TestRun.Root, "copyassets-src-" + Guid.NewGuid());
         Directory.CreateDirectory(src);
         try
         {
@@ -322,7 +322,7 @@ public class ShellStateTests
     [Fact]
     public void CopyAssets_Is_A_NoOp_When_The_Source_Directory_Is_Missing()
     {
-        var src = Path.Combine(Path.GetTempPath(), "deskwall-tests", "copyassets-missing-" + Guid.NewGuid());
+        var src = Path.Combine(TestRun.Root, "copyassets-missing-" + Guid.NewGuid());
         Assert.False(Directory.Exists(src));
 
         ShellState.CopyAssets(src);   // must not throw

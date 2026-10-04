@@ -8,7 +8,7 @@ file sealed class FixedClock(DateTimeOffset now) : IClock { public DateTimeOffse
 
 public class CommandSourceTests
 {
-    private static Secrets NoSecrets() => new(Path.Combine(Path.GetTempPath(), "deskwall-tests", "none.json"));
+    private static Secrets NoSecrets() => new(Path.Combine(TestRun.Root, "none.json"));
 
     private static SourceDef Def(string command, string args, params (string k, string v)[] extra)
     {

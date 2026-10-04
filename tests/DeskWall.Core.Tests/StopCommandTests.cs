@@ -33,7 +33,7 @@ public class StopCommandTests
     [Fact]
     public void Stop_closes_the_daemon_for_its_home_and_then_reports_nothing_running()
     {
-        var home = Path.Combine(Path.GetTempPath(), "deskwall-tests", "stop-" + Guid.NewGuid().ToString("N"));
+        var home = Path.Combine(TestRun.Root, "stop-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(home);
         var psi = new ProcessStartInfo(Exe) { UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in new[] { "--home", home, "run", "--no-tray", "--no-shortcuts" }) psi.ArgumentList.Add(a);

@@ -7,7 +7,7 @@ public class FrameStateTests
     [Fact]
     public void Save_Failure_Leaves_No_Tmp_File()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "framestate-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "framestate-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "frame-state.json");
         Directory.CreateDirectory(path);   // destination is a directory: File.Move fails after the tmp write
@@ -20,7 +20,7 @@ public class FrameStateTests
     [Fact]
     public void Save_Then_Load_RoundTrips_BaseKey()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "framestate-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "framestate-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "frame-state.json");
         var state = new FrameState { SignatureKey = "sig", BaseKey = "abc123" };

@@ -38,7 +38,7 @@ public class BoundedFetchTests
 {
     private static Secrets NoSecrets()
     {
-        var p = Path.Combine(Path.GetTempPath(), "deskwall-tests", "s-" + Guid.NewGuid().ToString("N")[..8] + ".json");
+        var p = Path.Combine(TestRun.Root, "s-" + Guid.NewGuid().ToString("N")[..8] + ".json");
         File.WriteAllText(p, "{}");
         return new Secrets(p);
     }
@@ -81,7 +81,7 @@ public class BoundedFetchTests
     [Fact]
     public async Task The_Cap_Message_Carries_The_Template_Not_The_Secret()
     {
-        var p = Path.Combine(Path.GetTempPath(), "deskwall-tests", "s-" + Guid.NewGuid().ToString("N")[..8] + ".json");
+        var p = Path.Combine(TestRun.Root, "s-" + Guid.NewGuid().ToString("N")[..8] + ".json");
         File.WriteAllText(p, """{ "k": "SHOULD-NOT-APPEAR" }""");
         var h = new Handler((_, _) => Task.FromResult(Endless("text/plain")));
         var def = new SourceDef { Name = "steam", Type = "http" };
@@ -119,7 +119,7 @@ public class BoundedFetchTests
     [Fact]
     public async Task An_Oversized_Image_Leaves_No_File_And_No_Temp_File()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "img-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "img-" + Guid.NewGuid().ToString("N")[..8]);
         try
         {
             var h = new Handler((_, _) => Task.FromResult(Endless("image/jpeg")));
@@ -142,7 +142,7 @@ public class BoundedFetchTests
     [Fact]
     public async Task A_Throwing_Landed_Subscriber_Does_Not_Poison_The_Cache()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "img-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "img-" + Guid.NewGuid().ToString("N")[..8]);
         try
         {
             var h = new Handler((_, _) =>

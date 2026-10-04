@@ -13,7 +13,7 @@ public class TickRunnerTests
     [Fact]
     public async Task Second_Tick_Without_Changes_Is_Skipped_And_Clock_Change_Redraws()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "tickbase.png");
         using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 30, 30, 30)); b.SavePng(basePng); }
@@ -58,7 +58,7 @@ public class TickRunnerTests
     [Fact]
     public async Task Replacing_The_Base_Image_In_Place_Is_Not_Skipped()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-basekey-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-basekey-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "base.png");
         using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 10, 10, 10)); b.SavePng(basePng); }
@@ -98,7 +98,7 @@ public class TickRunnerTests
     [Fact]
     public async Task Incremental_Path_Disposes_The_Previous_Frame_When_RenderIncremental_Throws()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-leak-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-leak-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "leakbase.png");
         using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 5, 5, 5)); b.SavePng(basePng); }
@@ -139,7 +139,7 @@ public class TickRunnerTests
     [Fact]
     public async Task A_Component_Whose_Paint_Bounds_Moved_Redraws_Even_Though_Its_Key_Did_Not()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bounds-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-bounds-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "base.png");
         using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 10, 10, 10)); b.SavePng(basePng); }

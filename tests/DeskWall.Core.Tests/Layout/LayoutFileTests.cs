@@ -113,7 +113,7 @@ public class LayoutFileTests
     public void Save_Failure_Leaves_No_Tmp_File()
     {
         var l = LayoutFile.Parse(Json);
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "layoutfile-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "layoutfile-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         // A destination that is itself an existing directory makes File.Move fail after the tmp
         // file has already been written, which is the failure shape the finding describes.

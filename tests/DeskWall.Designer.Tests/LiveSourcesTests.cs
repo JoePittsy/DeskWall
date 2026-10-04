@@ -62,7 +62,7 @@ file sealed class GatedSource(string name) : ISource, IDisposable
 
 public class LiveSourcesTests
 {
-    private static Secrets NoSecrets() => new(Path.Combine(Path.GetTempPath(), "deskwall-tests", "home-designer", "no-such-secrets.json"));
+    private static Secrets NoSecrets() => new(Path.Combine(TestRun.Home, "no-such-secrets.json"));
 
     [Fact]
     public async Task Tree_Merges_Snapshots_From_Multiple_Sources()
@@ -97,7 +97,7 @@ public class LiveSourcesTests
     [Fact]
     public async Task Failing_Source_Keeps_Last_Values_And_Exposes_LastError()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "livesources-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "livesources-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var exe = Path.Combine(dir, "t.exe");
         File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), exe);

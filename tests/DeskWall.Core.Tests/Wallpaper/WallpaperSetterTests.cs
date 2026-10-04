@@ -20,7 +20,7 @@ public class WallpaperSetterTests
 
     /// <summary>
     /// Finding 17: the previous version of this test never actually exercised "once" - on every
-    /// run after the first, restore.json already existed from a prior run (DESKWALL_HOME is a
+    /// run after the first, restore.json already existed from a prior run (DESKWALL_HOME was then a
     /// fixed temp folder that is never cleaned between runs), so the only content assertion was
     /// skipped and the test reduced to Assert.True(File.Exists(path)), which would pass even if
     /// RecordRestorePoint were an empty method. Delete the file first, call twice with the content
