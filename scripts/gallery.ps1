@@ -63,9 +63,11 @@ $g.FillEllipse((New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Fr
 $g.Dispose(); $bmp.Save($art, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
 
 # ---- scenes --------------------------------------------------------------------------------
-# One baseline, so a scene differs from noon only in what it is about.
+# One baseline, so a scene differs from noon only in what it is about. The sun is pinned too: a
+# time pin follows the layout's live sunrise/sunset, so without it "dawn" at 06:00 is night all
+# winter. 06:00/18:00 matches the fixed thresholds a layout without sun settings uses.
 $baseline = @(
-    'time.at=12:00',
+    'time.at=12:00', 'time.sunrise=06:00', 'time.sunset=18:00',
     'weather.json.current.weather_code=0', 'weather.json.current.temperature_2m=14', 'weather.json.current.is_day=1',
     'audio.volume=0.65', 'audio.muted=false',
     'hardware.cpu=0.2', 'hardware.ram=0.45', 'hardware.gpu=0.12', 'hardware.gpuTempFraction=0.42',
