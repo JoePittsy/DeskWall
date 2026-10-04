@@ -221,6 +221,13 @@ mute - actually differs from what was last published or signalled.
 `volumePct` rounds away from zero rather than to even, so 12.5 and 37.5 percent do not round in
 opposite directions at neighbouring steps of the same slider.
 
+**Measured** (JOES-PC, AOT, 2026-09-22): a refresh costs 1.6-1.8 ms (the default-device check;
+13.9-14.3 ms for the first in a cold process); a volume or mute change reaches the wallpaper in
+459-478 ms, 400 of it the bus's coalescing window; a 6 s slider drag of 64 changes cost 15
+repaints at about 64 ms CPU each; at rest the callback is silent and adds no wake. The source
+costs +31 handles (CoreAudio's enumerator, endpoint, volume object and its RPC connection), +1
+thread and +1.4 MB private bytes.
+
 **Implementation notes.** `IAudioEndpointVolumeCallback` is implemented with a hand-built vtable:
 four `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]` statics over a struct whose
 first field is the vtable pointer, with a `GCHandle` back to the reader. Nothing escapes the
@@ -253,6 +260,10 @@ Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` 
   code as a flag the layout can bind to); a non-zero exit with **empty** stdout throws, so the
   last good values stay published.
 - A timeout kills the whole process tree and throws.
+- **A poll is on the tick's critical path**: the refresh waits for the process to exit before the
+  frame resolves. Measured: about 27 ms per run for a `.cmd` script, 1.3-1.5 s for a
+  `powershell.exe` recipe (Playnite, Tailscale). Due refreshes run side by side, so two such
+  recipes cost the slower one, and only when they are due or on a forced tick.
 - **Caveat:** `stderr` is published verbatim. A command that fails and echoes its own argument
   list back (the usual shape of a usage error) will publish the *substituted* value of any
   `{secret:...}` in `args` into a value a text component could draw on the wallpaper. Do not
@@ -298,6 +309,11 @@ started, so a crash loop is visible on the wallpaper), `badLines` (`NumberValue`
   latency, which is the line arriving plus the bus's 400 ms coalescing window.
 - `Dispose` -- a layout change, a display change, shutdown -- kills the whole process tree, so a
   producer that starts a helper of its own does not leave it behind.
+- **Cost at rest** (JOES-PC, AOT, four minutes against the same command polled at `every: 300`):
+  +7 handles and +2 threads (the process handle, two redirected pipes, the stdout reader), 16 ms
+  of CPU outside ticks (one 15.6 ms quantum), and no wakes of its own beyond the lines it prints.
+  The trade is the producer's own resident process (8.5 MB for a `cmd.exe` loop), against a poll's
+  spawn on the tick path (above).
 
 ```json
 {
@@ -380,6 +396,8 @@ always `true` when this source has ever published -- see below).
   rather than at the next re-check. Several file-system events for one save (an editor writing,
   or writing a temp file and renaming it over the target) are collapsed by a 300 ms debounce into
   one signal, and a burst of signals across several sources costs one repaint, not one each.
+  One save raises two file-system events on JOES-PC, three or four for a save-by-rename. Measured
+  save-to-wallpaper: 759-793 ms, median 766 (300 ms debounce, 400 ms bus window, ~66 ms of tick).
 - Because the watcher carries the latency, `every` defaults to **300 s** (it was 30 s while the
   mtime poll was the only path). It is now purely a re-check, and it stays because a watcher is
   not guaranteed: a network path or a container mount can raise no events at all, and a directory
@@ -410,7 +428,7 @@ Hearth writes `%LOCALAPPDATA%\DeskWall\feeds\hearth-recent.json` (atomically, te
 any game start/stop or library change -- the 8 most recent installed, non-hidden games, Steam
 sessions merged from `localconfig.vdf` the way `poc/data.ps1` does it, because Playnite never
 records those itself. Full feed schema, the exact merge rule and error handling:
-`docs/superpowers/plans/2026-09-30-hearth-feed-spec.md`.
+`docs/hearth-feed.md`.
 
 ```json
 { "name": "hearth", "type": "file", "every": 300,
@@ -446,7 +464,8 @@ URL. The render path only ever opens **local** files, so `RemoteImageCache`
 - When a download lands, `Landed` fires and the daemon posts a wake so the frame gets repainted
   with the real image on the next tick.
 - Files nobody has looked up for 30 days are deleted by `Sweep()`, which the daemon runs once at
-  startup.
+  startup. A lookup sets the file's last-access time explicitly, so this works with NTFS
+  last-access updates disabled.
 
 ## Secrets
 
@@ -474,6 +493,14 @@ A layout binds `build.data.status` and it resolves. There is **no event source t
 goes in the `sources` array: a source declaration exists to say what to go and do, and a pushed
 provider needs none of that. A binding to a provider that has never sent anything falls back like
 any other unresolvable binding.
+
+**The renderer draws state, not moments.** An event is a patch to the value tree plus a request to
+repaint, never something drawn for a while and then removed: there are no transient displays, no
+component lifetimes, no un-draw timers. And **subscription is the binding graph**: a component
+bound to `build.data.status` is subscribed by definition, and content keys already redraw only
+what changed, so there is deliberately no register/unsubscribe API to drift from it. The bus
+lives in Core (the designer runs its own); the pipe belongs to the daemon, because two processes
+cannot own one pipe name.
 
 ### The envelope
 
@@ -533,6 +560,14 @@ four producers can be connected at once. Blank lines are ignored, so a trailing 
 Repaints are coalesced: the bus wakes the daemon at most every 400 ms, with a trailing wake so the
 final state always lands. Fifty events sent in a burst cost one repaint, and fifty spread over a
 two-second slider drag cost about six.
+
+Measured (JOES-PC, AOT, 2026-09-21): one connect-write-disconnect event reaches a new wallpaper
+on disk in about 480 ms -- 12 ms for the client, the 400 ms window, about 60 ms of tick. An idle
+daemon with providers in the registry still wakes only on the minute. The seam itself costs about
++35 to +39 handles and one thread at rest: `EventPipeServer` is one synchronous listener thread
+blocked in `ConnectNamedPipe` (synchronous on purpose; CLAUDE.md "A named-pipe client can beat
+`ConnectNamedPipe`"), plus a second only while a producer is connected. It is its own thread,
+not a pool work item, so an event never queues behind a render.
 
 ### Remembering, and forgetting
 

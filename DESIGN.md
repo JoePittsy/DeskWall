@@ -31,6 +31,10 @@ One family, Bahnschrift. Light 160 for the clock (centred over the main peak, xâ
 for now-playing title/artist; 22/12 for dial value/label; 20 for drive rows; 18 for the state lines.
 Weight 400 everywhere except nothing. No text effects: legibility comes from the dark ground.
 
+A dial is earned only by a value that changes continuously and has a natural full scale (load,
+memory, temperature); nothing else gets one. Each carries its 12 px label, because four identical
+arcs with a number inside cannot be told apart.
+
 ## Lines and glow
 
 Ridge and foothills 3 px, glow 12 / 8 px at strength 0.3 / 0.25, round caps. Dials 4 px. The
@@ -46,7 +50,7 @@ it. Sun 140 px and moon 120 px on their arcs, no halos.
 
 `scripts/rice-layout.ps1` derives this layout from `layouts/alpine-vision-photos.json`; every
 value above lives there. Judge changes with `scripts/gallery.ps1 -Layout layouts/alpine-rice.json`
-(`docs/superpowers/plans/gallery-rice/all.png` is the shipped montage).
+(`docs/images/rice.png` is the shipped montage).
 
 ## Second world: vapor (`layouts/vapor.json`)
 
@@ -58,6 +62,6 @@ dials, drives), secondary cyan `#FF01CDFE` (foothills), warn peach `#FFFFB86C`, 
 tracks `#40F6E9FF`. The layout's own sun, moon and heat snowfields are dropped: the wallpaper's sun
 is the hero and a flat silhouette shows every speckle. Derive with
 `scripts/rice-layout.ps1 -Theme vapor -Out layouts/vapor.json`; judge with
-`scripts/gallery.ps1 -Layout layouts/vapor.json` (`docs/superpowers/plans/gallery-vapor/all.png`).
+`scripts/gallery.ps1 -Layout layouts/vapor.json` (`docs/images/vapor.png`).
 
 Switching themes is two copies (a `deskwall theme` subcommand is #31): back up `%LOCALAPPDATA%\DeskWall\column-system.json`, then copy `layouts/<theme>.json` over it.

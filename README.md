@@ -10,7 +10,7 @@ the parity gate against the PowerShell proof of concept it replaces (`poc/`, sti
 desktop today) -- see "The proof of concept" below. Open work, the gate included (label
 `parity-gate`), is tracked in GitHub issues on `JoePittsy/DeskWall`, not in these docs.
 
-Full design: `docs/superpowers/specs/2026-09-20-deskwall-v1-design.md`. This file is the
+Full design: `docs/design-spec.md`. This file is the
 human-facing overview; `CLAUDE.md` is the agent hand-off notes (gotchas, conventions).
 
 ## What it renders
@@ -135,7 +135,8 @@ physical pixels, each property either a literal or a binding into a source's pub
 deskwall tick --layout layouts\clock-disks.json --force --measure   # render once, print timings, do not need a registered store entry
 deskwall tick --force --measure --no-apply --no-shortcuts --repeat 4   # four ticks in one process, 12 s apart: runs 2..4 are the warm numbers
 deskwall tick --force --no-apply --no-shortcuts --preview time.at=23:30,weather.json.current.weather_code=65   # pin source values after the refresh: render a scene that is not happening
-deskwall tick --layout layouts\alpine-vision.json --force --no-apply --no-shortcuts --canvas 3440x1440   # draw at the authored size whatever the display (RDP reports 1920x1200)scripts\gallery.ps1 -Layout layouts\alpine-vision.json               # ten pinned scenes plus a montage, to docs\superpowers\plans\gallery\
+deskwall tick --layout layouts\alpine-vision.json --force --no-apply --no-shortcuts --canvas 3440x1440   # draw at the authored size whatever the display (RDP reports 1920x1200)
+scripts\gallery.ps1 -Layout layouts\alpine-vision.json               # ten pinned scenes plus a montage, to %TEMP%\dw-gallery-out\
 deskwall layouts list                                                # what is registered, and what this display resolves to
 deskwall shortcuts                                                   # read-only: planned vs actual desktop-icon positions
 deskwall migrate [--check] [<path>...]                               # convert v1 stamped layouts to v2 linked copies (default: all in layouts.json)
@@ -182,7 +183,7 @@ staging copies of the frame, a compacting collection after every tick) brought i
 8.2 MB idle commit are in budget; 279 handles / 9 threads and a clock-only tick of 92 ms wall /
 62 ms CPU are not. The rows, the caveats and what each finding appears to be are in
 `docs/architecture.md`'s budget section and
-`docs/superpowers/plans/2026-09-20-phase1-spike-results.md` ("Phase 6 budget results"). Nobody
+`docs/measurements.md` ("Phase 6 budget results"). Nobody
 should read "meets budget" into the two open rows; they are findings, not a budget to raise (#4).
 
 For comparison, the proof of concept it replaces measured about 370 ms wall / 190 ms CPU per
@@ -237,7 +238,7 @@ install` ever ran. No admin rights needed.
 `poc/` is a PowerShell 5.1 + System.Drawing tool that did the same job first and **still runs the
 desktop today**, via a scheduled task (`DeskWall Tick`) ticking once a minute. It is not legacy
 code kept for reference; it is the thing currently painting JOES-PC's wallpaper, and it stays
-enabled until every item in the phase 6 parity gate (`docs/superpowers/plans/2026-09-20-deskwall-v1-phase6-parity.md`)
+enabled until every item in the phase 6 parity gate (GitHub milestone "Phase 6 parity gate")
 is checked off, at which point the task is disabled and `poc/` is deleted in its own commit
 (#12, #13).
 

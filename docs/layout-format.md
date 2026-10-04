@@ -52,10 +52,11 @@ resolves under the runtime dir and `%VAR%` expands. A binding needs its source d
   path and renders every component onto the new photo. Every other tick is exactly as before.
 - **Four photos stay decoded.** `BaseCache` keeps the four most recently used bases per canvas size
   as pre-scaled raws (`runtime/base/<w>x<h>-<key>.raw`), so after the first day each swap reads a
-  raw instead of decoding a JPEG. The fifth photo evicts the one used longest ago. Measured at
-  3440x1440 (`docs/superpowers/plans/2026-09-30-lane-photo-report.md`): a first-seen photo costs a
-  48-149 ms decode, a cached one about 0 ms, and a warm swap tick draws in the same 80-125 ms as
-  the minute ticks on either side of it.
+  raw instead of decoding a JPEG. The fifth photo evicts the one used longest ago. The LRU is per
+  canvas size because the designer renders its preview into the same `base\` at its own size, and
+  one global LRU would let the preview evict the daemon's photos. Measured at 3440x1440 (Debug
+  JIT, JOES-XPS-17, 2026-09-30): a first-seen photo costs a 48-149 ms decode, a cached one about
+  0 ms, and a warm swap tick draws in the same 80-125 ms as the minute ticks on either side of it.
 - **A missing file keeps the last good base.** When the resolved path does not exist, the tick
   draws on the base it used last and logs one warning (`base image X not found; keeping Y`), not
   one a minute; the warning is re-armed once the path resolves to a file again. With no previous
@@ -109,6 +110,9 @@ resolves under the runtime dir and `%VAR%` expands. A binding needs its source d
 | `radius` | `0` | Corner radius in pixels. |
 | `opacity` | `1` | 0..1. |
 | `tint` | `""` | ARGB colour every pixel is multiplied by (RGB by RGB, alpha by A); empty is none. A white PNG tinted by a blend on `time.dayFraction` is one asset that is red at dawn and gold at noon. Part of the content key. |
+
+The content key of an image includes the local file's last-write time, so a file replaced in
+place under the same path redraws.
 
 ### `bar`
 
@@ -219,7 +223,8 @@ Twelve examples, each valid against the value trees the built-in sources publish
 12. `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"` -- composite format
     building a path instead of a URL; the leading `runtime:` is a token `LayoutResolver` expands
     against the runtime directory (not the repo) after formatting, so a committed layout never
-    names a per-user absolute path. See `assets/weather/README.md` for the icon set this recipe
+    names a per-user absolute path. The token is a prefix rather than `{runtime}` because a
+    composite format would swallow the braces. See `assets/weather/README.md` for the icon set this recipe
     expects at that path.
 
 Three format rules matter (`Value.ToText`, spec 4.2):
@@ -464,7 +469,22 @@ nudged and deleted as one thing, as a stamped instance was:
 **Where widget files come from.** By key, from `%LOCALAPPDATA%\DeskWall\widgets\` first and then
 the shipped `widgets\` beside the exe. Editing a shipped widget writes the user file under the same
 key, so every copy of it, in every layout on the machine, follows the edit without anything being
-rewritten; deleting that user file returns them to the shipped widget, overrides intact.
+rewritten; deleting that user file returns them to the shipped widget, overrides intact. The
+known ceiling: a fork shadows every later shipped update to that key until it is deleted. A key
+made in the designer is the name slugged (lower case, `[a-z0-9]` runs joined by `-`; `GPU °C` ->
+`gpu-c`, an empty name -> `widget`, numbered `-2`, `-3` when taken) and fixed from then on:
+renaming a widget changes its `name` only, because a changed key would orphan every copy.
+
+**Why the expander is in Core.** Expanding at load, for the daemon and the designer alike, is what
+makes a widget edit reach the wallpaper on the next activation. The rejected alternative, the
+designer flattening widgets on save with the daemon knowing nothing, would reach the wallpaper
+only once every layout that uses the widget had been re-saved. The expander loads widget files
+through a source-generated JSON context, because a reflection fallback compiles and passes under
+JIT and fails only at runtime under native AOT; an AOT publish ticking a v2 layout is the proof.
+
+**Opening a version-1 file in the designer** migrates it in memory (`LayoutMigrator`, only when the
+result is equivalent); the first Apply writes `<file>.v1.json` beside it if that is absent, then
+the v2 file.
 
 ## Widgets
 
@@ -472,8 +492,7 @@ rewritten; deleting that user file returns them to the shipped widget, overrides
 version 2's "Copies" replaces. `LayoutFile.Widgets` and `ComponentDef.Widget` are still read so the
 migrator can turn a version-1 file into copies; they are no longer written when absent.
 
-The designer's widget picker (`docs/superpowers/specs/2026-09-21-designer-widgets-design.md`
-sections 3, 5, 6) adds a layer above the plain layout format described so far: a *widget
+The designer's widget picker adds a layer above the plain layout format described so far: a *widget
 template* (`widgets/<key>.json`, shipped beside the designer exe and also read from
 `%LOCALAPPDATA%\DeskWall\widgets\`) is a small, reusable recipe -- some sources, some components
 in template-local coordinates starting at `(0, 0)`, and up to five *knobs* -- that gets stamped
@@ -569,7 +588,7 @@ differently-shaped targets:
 - **Warn at** (`dial.json`): an ordinary `number` knob, default `"0.9"`, `sets`
   `["components.dial.threshold"]` -- no composite needed; part 0 (the whole value) is used
   directly. `column-system.json`'s GPU-temperature dial instance overrides this to `"0.83"`
-  itself (`StarterGenerator`), matching the dial widget's own default for every other metric;
+  (83 °C, the RTX 3050's throttle point) itself (`StarterGenerator`), matching the dial widget's own default for every other metric;
   the widget model has no mechanism for one knob's default to depend on another's value, so a
   metric-specific default is the instantiator's job, not the template's.
 
@@ -592,8 +611,7 @@ it).
 
 Templates in `%LOCALAPPDATA%\DeskWall\widgets\` are the owner's own and sit in the same gallery
 as the shipped ones, overriding a shipped template of the same key. They are written by the
-designer's **widget editor** (`WidgetEditorWindow`, `docs/superpowers/specs/2026-09-21-widget-editor-design.md`),
-reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** on
+designer's **widget editor**, reached from "+ New widget" at the foot of the gallery or by right-clicking a card: **Edit** on
 any of them, **Duplicate to mine** on any of them, and **Delete** (or **Reset**, below) on the
 owner's own. The editor is the layout
 canvas over a document the size of the widget, plus a parts palette (`text`, `image`, `bar`,

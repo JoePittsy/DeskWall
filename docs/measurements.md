@@ -1,4 +1,7 @@
-# Phase 1 spike results: CsWin32 + software Direct2D + WIC + IDesktopWallpaper
+# Measurements: CsWin32 + software Direct2D + WIC + IDesktopWallpaper
+
+Started as the phase 1 spike results; now the place measured numbers live. Append, with date and
+machine, rather than overwriting an older run.
 
 Date: 2026-09-20. Machine: JOES-PC (i7-6700K, 3440x1440). Runtime: **JIT Release**, not
 native AOT. Native AOT publish is blocked until the Visual Studio "Desktop development with
