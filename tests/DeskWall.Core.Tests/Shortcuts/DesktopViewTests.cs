@@ -38,7 +38,7 @@ public class DesktopViewTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
+    [Trait("Category", "Session")]
     public void View_Is_Available_And_Reports_Spacing_And_IconSize()
     {
         if (!DesktopView.IsAvailable()) return;   // Session 0 or a locked workstation: skip, do not fail
@@ -77,13 +77,29 @@ public class DesktopViewTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
+    [Trait("Category", "Session")]
     public void GetPosition_Of_A_Missing_Item_Is_Null_And_Position_Throws()
     {
         if (!DesktopView.IsAvailable()) return;
         var lnk = Path.Combine(DesktopDir(), "DeskWallTest-missing.lnk");
         Assert.Null(DesktopView.GetPosition(lnk));
         Assert.Throws<FileNotFoundException>(() => DesktopView.Position([(lnk, 0, 0)]));
+    }
+
+    /// <summary>What keeps the test above read-only: Position checks every item exists before it
+    /// acquires the view, so a batch with one missing item moves nothing, not the items before it.
+    /// Needs no desktop: the existing item is a temp file, and the throw names the missing one.</summary>
+    [Fact]
+    public void Position_Checks_Every_Item_Before_Moving_Any()
+    {
+        var present = Path.GetTempFileName();
+        try
+        {
+            var missing = Path.Combine(DesktopDir(), $"DeskWallTest-missing-{Guid.NewGuid():N}.lnk");
+            var e = Assert.Throws<FileNotFoundException>(() => DesktopView.Position([(present, 0, 0), (missing, 0, 0)]));
+            Assert.Equal(missing, e.FileName);
+        }
+        finally { File.Delete(present); }
     }
 
     [Fact]

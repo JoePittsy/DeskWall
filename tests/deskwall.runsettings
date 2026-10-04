@@ -2,9 +2,11 @@
 <!-- Two categories are not part of the default run, in either test project:
        Budget   drives a published native-AOT daemon for minutes at a time and paints the real
                 desktop.
-       Desktop  acts on the live interactive session: writes .lnk files into the real desktop
-                folder, moves icons, switches the desktop folder flags, captures the screen, shows
-                windows, or starts a resident `deskwall run` beside the owner's daemon.
+       Desktop  changes the live interactive session: writes .lnk files into the real desktop
+                folder, moves icons, switches the desktop folder flags, shows windows, or starts a
+                resident `deskwall run` beside the owner's daemon.
+     Session (tests that only read the live session: monitors, the current wallpaper, a screen
+     capture into memory, icon spacing) is not excluded and runs by default.
      They are asked for by name (two dashes before filter):
        dotnet test tests/DeskWall.Core.Tests -filter Category=Desktop
        dotnet test tests/DeskWall.Designer.Tests -filter Category=Desktop

@@ -76,7 +76,7 @@ public class CalibratorTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
+    [Trait("Category", "Session")]
     public void Screenshot_Captures_Primary_Monitor_Size()
     {
         if (!DesktopView.IsAvailable()) return;   // Session 0 or a locked workstation: skip, do not fail
@@ -88,7 +88,7 @@ public class CalibratorTests
     /// <summary>The second half of the name is the half that matters: a capture on a locked session
     /// comes back fully black and still has alpha 255, so asserting only alpha proved nothing.</summary>
     [Fact]
-    [Trait("Category", "Desktop")]
+    [Trait("Category", "Session")]
     public void Screenshot_Is_Opaque_And_Not_Uniformly_Black()
     {
         if (!DesktopView.IsAvailable()) return;
