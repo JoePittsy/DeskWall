@@ -160,7 +160,7 @@ public class SecretsTests
     [Fact]
     public void Redact_Puts_The_Placeholders_Of_The_Template_Back()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         var p = Path.Combine(dir, "secrets-" + Guid.NewGuid().ToString("N")[..8] + ".json");
         File.WriteAllText(p, """{ "short": "abc", "long": "abc123", "empty": "", "other": "zzz" }""");

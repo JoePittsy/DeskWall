@@ -165,7 +165,7 @@ public class TickRunnerBoundBaseTests
     {
         var (assets, rel) = Assets();
         Png(Path.Combine(assets, "day.png"), Day);   // only the day photo: night (02:00) is missing
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tick-bound-other-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tick-bound-other-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var runner = Runner(PhaseLayout(rel), new BoundBaseClock(DateTimeOffset.Now.Date.AddHours(2)), dir);
 

@@ -69,7 +69,7 @@ public class CommandSourceTests
     }
 
     private static Secrets SecretsWith(string json)
-    { var p = Path.Combine(Path.GetTempPath(), "deskwall-tests", "s-" + Guid.NewGuid().ToString("N")[..8] + ".json"); Directory.CreateDirectory(Path.GetDirectoryName(p)!); File.WriteAllText(p, json); return new Secrets(p); }
+    { var p = Path.Combine(TestRun.Root, "s-" + Guid.NewGuid().ToString("N")[..8] + ".json"); Directory.CreateDirectory(Path.GetDirectoryName(p)!); File.WriteAllText(p, json); return new Secrets(p); }
 
     /// <summary>#46: a command that fails and echoes its own argument list back (the usual shape
     /// of a usage error) must not publish the substituted secret where a text component could
