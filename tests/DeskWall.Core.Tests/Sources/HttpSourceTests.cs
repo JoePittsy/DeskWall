@@ -73,6 +73,36 @@ public class HttpSourceTests
         Assert.DoesNotContain("SECRET", ex.Message);
     }
 
+    /// <summary>#46, the success-path twin of the test above: a body that echoes the request (an
+    /// API's "you asked for ..." block, a feed whose self link carries the key) publishes the
+    /// template, never the secret it was sent with - from the url or a header.</summary>
+    [Fact]
+    public async Task Body_Echoing_The_Request_Publishes_Template_Not_Secret()
+    {
+        var h = new ScriptedHandler(r => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{ "echo": "{{r.RequestUri}}", "auth": "{{r.Headers.Authorization}}" }""", System.Text.Encoding.UTF8, "application/json"),
+        });
+        var src = HttpSource.FromDef(Def("https://api/z?key={secret:k}", ("header.Authorization", "Bearer {secret:tok}")),
+            new FixedClock(DateTimeOffset.UnixEpoch), SecretsWith("""{ "k": "SECRET", "tok": "T0KEN" }"""), h);
+        var json = (RecordValue)(await src.RefreshAsync(default)).Get("json")!;
+        Assert.Equal("https://api/z?key={secret:k}", ((TextValue)json.Get("echo")!).Text);
+        Assert.Equal("Bearer {secret:tok}", ((TextValue)json.Get("auth")!).Text);
+    }
+
+    [Fact]
+    public async Task Rss_Feed_Echoing_The_Request_Publishes_Template_Not_Secret()
+    {
+        var h = new ScriptedHandler(r => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($"<rss><channel><title>t</title><link>{System.Net.WebUtility.HtmlEncode(r.RequestUri!.ToString())}</link></channel></rss>"),
+        });
+        var def = new SourceDef { Name = "feed", Type = "rss" };
+        def.Settings["url"] = "https://feed/x?key={secret:k}";
+        var v = await RssSource.FromDef(def, SecretsWith("""{ "k": "SECRET" }"""), h).RefreshAsync(default);
+        Assert.Equal("https://feed/x?key={secret:k}", ((TextValue)v.Get("link")!).Text);
+    }
+
     [Fact]
     public async Task Text_Mode_Publishes_Body_As_Text()
     {

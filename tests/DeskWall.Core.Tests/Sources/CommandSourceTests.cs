@@ -68,6 +68,41 @@ public class CommandSourceTests
         Assert.Contains("oops", ((TextValue)v.Get("stderr")!).Text);
     }
 
+    private static Secrets SecretsWith(string json)
+    { var p = Path.Combine(Path.GetTempPath(), "deskwall-tests", "s-" + Guid.NewGuid().ToString("N")[..8] + ".json"); Directory.CreateDirectory(Path.GetDirectoryName(p)!); File.WriteAllText(p, json); return new Secrets(p); }
+
+    /// <summary>#46: a command that fails and echoes its own argument list back (the usual shape
+    /// of a usage error) must not publish the substituted secret where a text component could
+    /// draw it. The placeholder goes back in its place, as the http source's errors carry the
+    /// template rather than the secret.</summary>
+    [Fact]
+    public async Task Stderr_Carries_The_Placeholder_Not_The_Secret()
+    {
+        var v = await CommandSource.FromDef(Def("cmd.exe", "/c echo usage: tool --key {secret:k} 1>&2 & echo ok"),
+            new FixedClock(DateTimeOffset.UnixEpoch), SecretsWith("""{ "k": "S3CRETv4lue" }""")).RefreshAsync(default);
+        var err = ((TextValue)v.Get("stderr")!).Text;
+        Assert.Contains("usage: tool --key {secret:k}", err);
+        Assert.DoesNotContain("S3CRETv4lue", err);
+    }
+
+    /// <summary>Many programs print their usage to stdout, so the same echo reaches `text` (and the
+    /// strings of `json`) by the same route. A non-zero exit with stdout is still a success, so
+    /// this is published, not thrown.</summary>
+    [Fact]
+    public async Task Stdout_Text_And_Json_Strings_Carry_The_Placeholder_Not_The_Secret()
+    {
+        var secrets = SecretsWith("""{ "k": "S3CRETv4lue" }""");
+        var clock = new FixedClock(DateTimeOffset.UnixEpoch);
+
+        var text = await CommandSource.FromDef(Def("cmd.exe", "/c echo bad key {secret:k} & exit 2"), clock, secrets).RefreshAsync(default);
+        Assert.Equal("bad key {secret:k}", ((TextValue)text.Get("text")!).Text.Trim());
+
+        var json = await CommandSource.FromDef(Def("cmd.exe", "/c echo {\"error\": \"bad key {secret:k}\", \"list\": [{\"k\": \"{secret:k}\"}]}"), clock, secrets).RefreshAsync(default);
+        var rec = (RecordValue)json.Get("json")!;
+        Assert.Equal("bad key {secret:k}", ((TextValue)rec.Get("error")!).Text);
+        Assert.Equal("{secret:k}", ((TextValue)((ListValue)rec.Get("list")!).Items[0].Get("k")!).Text);
+    }
+
     [Fact]
     public async Task Timeout_Kills_And_Throws()
     {

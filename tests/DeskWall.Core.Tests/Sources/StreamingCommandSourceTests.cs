@@ -42,6 +42,31 @@ public class StreamingCommandSourceTests
 
     private static Secrets NoSecrets() => new(Path.Combine(Path.GetTempPath(), "deskwall-tests", "no-such-secrets.json"));
 
+    /// <summary>#46, the resident shape of it: a producer that echoes its argument to stderr, and
+    /// a line to stdout, must publish the placeholder in both rather than the substituted secret.</summary>
+    [Fact]
+    public async Task Stderr_And_Lines_Carry_The_Placeholder_Not_The_Secret()
+    {
+        var dir = Dir();
+        var secretsPath = Path.Combine(dir, "secrets.json");
+        File.WriteAllText(secretsPath, """{ "k": "S3CRETv4lue" }""");
+        var def = Def(Resident(dir, "echo bad key %1 1>&2", "echo got %1"), parse: "text");
+        def.Settings["args"] += " {secret:k}";
+        var src = SourceFactory.Create(def, new FixedClock(DateTimeOffset.UnixEpoch), new Secrets(secretsPath));
+        using var disp = (IDisposable)src;
+        using var fired = new ManualResetEventSlim(false);
+        ((ISignalSource)src).Changed += _ => fired.Set();
+
+        await src.RefreshAsync(default);
+        Assert.True(fired.Wait(TimeSpan.FromSeconds(10)));
+        RecordValue v;
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        do { v = await src.RefreshAsync(default); } while (v.Get("stderr") is null && DateTime.UtcNow < deadline && await Task.Delay(50).ContinueWith(_ => true));
+
+        Assert.Equal("got {secret:k}", ((TextValue)v.Get("text")!).Text.Trim());
+        Assert.Equal("bad key {secret:k}", ((TextValue)v.Get("stderr")!).Text.Trim());
+    }
+
     /// <summary>A script that prints then stays up for a minute, so the source is exercised while
     /// its process is genuinely resident.</summary>
     private static string Resident(string dir, params string[] lines)

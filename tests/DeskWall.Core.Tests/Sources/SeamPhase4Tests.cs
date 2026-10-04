@@ -153,6 +153,25 @@ public class SecretsTests
         Assert.DoesNotContain("ABC123", ex.Message);
     }
 
+    /// <summary>#46: Redact is Substitute run backwards over whatever came back, for only the
+    /// secrets the template named. The longer value goes first, so a secret that contains another
+    /// is not half-replaced; an empty or undefined secret is left alone rather than matching
+    /// everywhere or throwing.</summary>
+    [Fact]
+    public void Redact_Puts_The_Placeholders_Of_The_Template_Back()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        Directory.CreateDirectory(dir);
+        var p = Path.Combine(dir, "secrets-" + Guid.NewGuid().ToString("N")[..8] + ".json");
+        File.WriteAllText(p, """{ "short": "abc", "long": "abc123", "empty": "", "other": "zzz" }""");
+        var s = new Secrets(p);
+
+        Assert.Equal("--a {secret:short} --b {secret:long} zzz",
+            s.Redact("--a abc --b abc123 zzz", "--a {secret:short} --b {secret:long} {secret:empty} {secret:nope}"));
+        Assert.Equal("untouched abc", s.Redact("untouched abc", null));
+        Assert.Equal("untouched abc", s.Redact("untouched abc", "no placeholders"));
+    }
+
     [Fact]
     public void Missing_File_Means_No_Secrets()
     {

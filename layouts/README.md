@@ -109,11 +109,11 @@ slot is a layout error.
 
 ## Command source stderr
 
-A `command` source publishes its `stderr` verbatim. A CLI that fails and echoes its own argument
-list back - the usual shape of a usage error - therefore publishes the *substituted* value of any
-`{secret:...}` in `args` into a value a text component can draw on the wallpaper. Nothing else in
-DeskWall does that: logs and exceptions carry the template. If a command takes a secret, do not bind
-a component to its `stderr`.
+A CLI that fails and echoes its own argument list back - the usual shape of a usage error - would
+put the substituted value of a `{secret:...}` in `args` into its output. A `command` source puts the
+`{secret:name}` placeholder back in its place in `stderr`, `text` and every string in `json` before
+publishing, so binding a component to them shows the template, never the secret. A secret the
+command re-encodes (URL-escaped, base64) before printing is not recognised; see `docs/sources.md`.
 
 ## Using a layout
 

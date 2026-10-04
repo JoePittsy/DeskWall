@@ -7,7 +7,8 @@ namespace DeskWall.Core.Sources;
 /// <summary>Settings: url (required, may contain {secret:x}); every (seconds, default 600); timeout (seconds, default 10);
 /// header.&lt;Name&gt; = value (may contain secrets); parse = "json" | "text" (default: json if Content-Type says so, else text);
 /// unixTimeFields = comma-separated field names. Publishes: json (RecordValue) or text (TextValue), status (NumberValue),
-/// fetchedAt (TimeValue), fromCache (BoolValue: 304 served the previous body).</summary>
+/// fetchedAt (TimeValue), fromCache (BoolValue: 304 served the previous body). A substituted secret never reaches a
+/// value or an error: the body's strings are redacted back to {secret:name}, and errors name the url template.</summary>
 public sealed class HttpSource(string name, TimeSpan every, TimeSpan timeout, string urlTemplate, IReadOnlyDictionary<string, string> headers,
     string? parse, IReadOnlySet<string> unixTimeFields, Secrets secrets, IClock clock, HttpMessageHandler? handler = null) : AsyncSource(name, every, timeout)
 {
@@ -16,6 +17,10 @@ public sealed class HttpSource(string name, TimeSpan every, TimeSpan timeout, st
     private TimeSpan HardCeiling => Timeout * 6;
     private static readonly HttpClient s_shared = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(10), PooledConnectionLifetime = TimeSpan.FromMinutes(5) }) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     private readonly HttpClient _client = handler is null ? s_shared : new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+
+    /// <summary>Everything a secret is substituted into, for Secrets.Redact: a body that echoes the
+    /// request publishes the template, as the error path below does (#46).</summary>
+    private readonly string _sent = string.Join('\n', headers.Values.Prepend(urlTemplate));
 
     private string? _etag, _lastModified;
     private RecordValue? _lastBody;
@@ -62,7 +67,7 @@ public sealed class HttpSource(string name, TimeSpan every, TimeSpan timeout, st
         var payload = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase);
         if (mode == "json") payload["json"] = JsonValues.Parse(body, unixTimeFields);
         else payload["text"] = new TextValue(body);
-        _lastBody = new RecordValue(payload);
+        _lastBody = secrets.Redact(new RecordValue(payload), _sent);
         return Publish(_lastBody, (int)res.StatusCode, fromCache: false);
     }
 

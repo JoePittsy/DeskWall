@@ -173,7 +173,7 @@ public sealed class StreamingCommandSource : ISource, ISignalSource, IDisposable
                 // A command that cannot be started at all is the same case as one that exits at
                 // once: back off and try again, rather than throwing out of a refresh and pinning
                 // the source on the scheduler's failure path where its signals cannot reach it.
-                _stderr = Trim(ex.Message);
+                _stderr = Trim(_secrets.Redact(ex.Message, _args));
                 _exits++;
                 ScheduleRestart();
                 return;
@@ -226,7 +226,8 @@ public sealed class StreamingCommandSource : ISource, ISignalSource, IDisposable
         var mode = _parse ?? (_payloadKey ?? (trimmed.StartsWith('{') || trimmed.StartsWith('[') ? "json" : "text"));
         try
         {
-            var value = mode == "json" ? JsonValues.Parse(line, _unixTimeFields) : (Value)new TextValue(line.TrimEnd('\r', '\n'));
+            var parsed = mode == "json" ? JsonValues.Parse(line, _unixTimeFields) : (Value)new TextValue(line.TrimEnd('\r', '\n'));
+            var value = _secrets.Redact(parsed, _args);   // #46: as CommandSource, the placeholder and never the secret
             lock (_lock)
             {
                 _payload = value;
@@ -254,7 +255,9 @@ public sealed class StreamingCommandSource : ISource, ISignalSource, IDisposable
     private void OnStderr(object sender, DataReceivedEventArgs e)
     {
         if (e.Data is null || string.IsNullOrWhiteSpace(e.Data)) return;
-        lock (_lock) _stderr = Trim(e.Data);
+        // Redacted before Trim: a cut through the middle of a secret would leave a prefix no match finds.
+        var redacted = _secrets.Redact(e.Data, _args);
+        lock (_lock) _stderr = Trim(redacted);
     }
 
     private static string Trim(string s) => s.Length <= MaxStderr ? s : string.Concat(s.AsSpan(0, MaxStderr), "...");
