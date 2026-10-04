@@ -30,6 +30,10 @@ public static class Verifier
 
     private const int SettleMs = 800;
 
+    /// <summary>Fatal, as <see cref="Calibrator.MinimizeFailed"/> is for calibrate: see
+    /// <see cref="CaptureDesktop"/>.</summary>
+    public const string MinimizeFailed = "could not minimise windows; verify would measure whatever is in front";
+
     /// <summary>How far the diff box may be from the calibrated arrow in each dimension and still be
     /// called an arrow. A pixel or two of JPEG ringing survives the threshold at a hard edge; half an
     /// icon does not.</summary>
@@ -136,17 +140,7 @@ public static class Verifier
                 $"{framePath} is {composed.Width}x{composed.Height} but the primary monitor is " +
                 $"{monitor.Bounds.W}x{monitor.Bounds.H}: run a tick at this resolution first");
 
-        Surface shot;
-        if (!ShellDesktop.MinimizeAll())
-            say("WARNING: MinimizeAll failed; the covers may be hidden behind a window");
-        try
-        {
-            Thread.Sleep(SettleMs);
-            shot = Screenshot.Capture(monitor.Bounds);
-        }
-        finally { ShellDesktop.UndoMinimizeAll(); }
-
-        using (shot)
+        using (var shot = CaptureDesktop(monitor.Bounds))
         {
             var checks = new List<SlotCheck>(shortcuts.Count);
             foreach (var s in shortcuts)
@@ -162,6 +156,26 @@ public static class Verifier
             return new VerifyReport(monitor.Signature, checks, columnPath, clockPath,
                 checks.Count > 0 && checks.All(c => c.Ok));
         }
+    }
+
+    /// <summary>Minimise every window, capture <paramref name="bounds"/>, and put the windows back.
+    /// A minimise that fails (returns false or throws) is fatal and nothing is captured: the shot
+    /// would be of whatever is in front, and every slot would be measured against a window. The
+    /// <c>verify</c> command turns the throw into exit 1, "cannot run", never 4, "mismatch".
+    /// The undo runs only once the minimise succeeded, and then always.</summary>
+    /// <param name="minimizeAll">Defaults to <see cref="ShellDesktop.MinimizeAll"/>; a test injects
+    /// one so the failure path runs without a shell, as <see cref="Calibrator.Run"/> does.</param>
+    public static Surface CaptureDesktop(Rect bounds, Func<bool>? minimizeAll = null,
+        Func<Rect, Surface>? capture = null, Action? undoMinimizeAll = null, int settleMs = SettleMs)
+    {
+        if (!Calibrator.TryMinimize(minimizeAll ?? ShellDesktop.MinimizeAll, out var error))
+            throw new InvalidOperationException(MinimizeFailed, error);
+        try
+        {
+            Thread.Sleep(settleMs);
+            return (capture ?? Screenshot.Capture)(bounds);
+        }
+        finally { (undoMinimizeAll ?? (() => ShellDesktop.UndoMinimizeAll()))(); }
     }
 
     /// <summary>The layout resolved against values read right now. The running daemon's registry is in

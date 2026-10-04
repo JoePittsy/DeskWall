@@ -213,8 +213,9 @@ deskwall verify [--pad N] [--threshold N] [--json]
 ```
 
 Exit 0 when every slot passes; 4 when any slot fails or the layout has no shortcut components;
-1 when verify cannot run (no `frame.raw` yet, the frame is not the monitor's size, or desktop
-icons are hidden). It writes `verify-desktop.png` (the right-hand 400 px column),
+1 when verify cannot run (no `frame.raw` yet, the frame is not the monitor's size, desktop
+icons are hidden, or the windows could not be minimised -- a screenshot of whatever is in front
+would be measured as if it were the desktop, so this fails exactly as `calibrate` does). It writes `verify-desktop.png` (the right-hand 400 px column),
 `clock-now.png` (the clock, 8x nearest-neighbour; the clock is the text component `clock` or
 the `clock` part of a widget copy, e.g. `clock-1.clock`) and `verify-log.txt` to the runtime
 dir, and changes nothing else. `deskwall calibrate` measures the arrow overlay once per icon

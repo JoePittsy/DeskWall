@@ -544,8 +544,10 @@ internal static partial class Program
 
     /// <summary>deskwall verify [--pad N] [--threshold N] [--json] - screenshot the live desktop, diff
     /// it against the frame the last tick composed and measure the shortcut-arrow padding for every
-    /// slot. Exit 0 when every slot is at the wanted pad, 4 when any is not. Read-only: it minimises the
-    /// windows for about a second and puts them back, and writes only into the runtime dir.</summary>
+    /// slot. Exit 0 when every slot is at the wanted pad, 4 when any is not, 1 when it cannot run
+    /// (including a minimise that fails: the shot would be of whatever is in front). Read-only: it
+    /// minimises the windows for about a second and puts them back, and writes only into the runtime
+    /// dir.</summary>
     private static int Verify(List<string> opts)
     {
         var json = opts.Contains("--json");

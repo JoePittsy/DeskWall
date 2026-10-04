@@ -9,7 +9,7 @@ namespace DeskWall.Core.Tests.Verify;
 
 /// <summary>The pure half of `deskwall verify`: everything that turns two surfaces into a padding
 /// measurement. The live half (minimise, capture, un-minimise) is exercised by the command itself on
-/// the reference machine, not here.</summary>
+/// the reference machine; only its ordering, with an injected minimiser and capture, is tested here.</summary>
 public class VerifierTests
 {
     private const int CoverW = 200, CoverH = 300, Arrow = 13, Pad = 5;
@@ -305,5 +305,44 @@ public class VerifierTests
     {
         Resolved[] resolved = [Text("date-1.date"), Text("clockwork"), Text("clock-1.clocks")];
         Assert.Null(Verifier.FindClock(resolved));
+    }
+
+    /// <summary>A screenshot of whatever window is in front is not a degraded verify, it is a wrong
+    /// one: every slot reads as "NO ICON FOUND" or, worse, as a pad measured against a window. So a
+    /// minimise that fails stops verify before the capture, exactly as it stops calibrate, and the
+    /// command turns the throw into exit 1 ("cannot run"), not 4 ("mismatch").
+    /// <para>
+    /// Nothing here goes near the live desktop: the minimiser and the capture are both injected.
+    /// </para></summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_Minimiser_That_Fails_Stops_Verify_Before_The_Capture(bool byThrowing)
+    {
+        var shell = new InvalidOperationException("the shell said no");
+        var minimise = byThrowing ? new Func<bool>(() => throw shell) : new Func<bool>(() => false);
+        var captures = 0;
+        var undos = 0;
+
+        var ex = Assert.Throws<InvalidOperationException>(() => Verifier.CaptureDesktop(
+            new Rect(0, 0, 800, 600), minimise, _ => { captures++; return Surface.Create(1, 1); }, () => undos++));
+
+        Assert.Equal("could not minimise windows; verify would measure whatever is in front", ex.Message);
+        if (byThrowing) Assert.Same(shell, ex.InnerException); else Assert.Null(ex.InnerException);
+        Assert.Equal(0, captures);
+        Assert.Equal(0, undos);   // nothing was minimised, so there is nothing to put back
+    }
+
+    [Fact]
+    public void A_Minimiser_That_Works_Captures_And_Always_Puts_The_Windows_Back()
+    {
+        var undos = 0;
+        using (var shot = Verifier.CaptureDesktop(new Rect(0, 0, 4, 3), () => true, r => Surface.Create(r.W, r.H), () => undos++, settleMs: 0))
+            Assert.Equal((4, 3), (shot.Width, shot.Height));
+        Assert.Equal(1, undos);
+
+        Assert.Throws<IOException>(() => Verifier.CaptureDesktop(
+            new Rect(0, 0, 4, 3), () => true, _ => throw new IOException("capture failed"), () => undos++, settleMs: 0));
+        Assert.Equal(2, undos);
     }
 }
