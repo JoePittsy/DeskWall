@@ -63,12 +63,27 @@ public sealed class RemoteImageCache(string dir, HttpMessageHandler? handler = n
         if (_negative.Count > NegativeCap)
             foreach (var kv in _negative)
                 if (kv.Value <= DateTimeOffset.UtcNow) _negative.TryRemove(kv);
-        return _inFlight.GetOrAdd(url, u =>
-        {
-            var t = DoDownloadAsync(u, ct);
-            t.ContinueWith(_ => _inFlight.TryRemove(new KeyValuePair<string, Task>(u, t)), TaskScheduler.Default);
-            return t;
-        });
+        // The entry is a placeholder task registered before the download starts and removed by the
+        // download itself before the placeholder completes (#87). A detached ContinueWith used to do
+        // the removal later on the pool, so a caller that awaited one download and started the next
+        // could be handed the finished task and send nothing - and a download that completed
+        // synchronously inside GetOrAdd was removed before it was stored, so stayed "in flight" for good.
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entry = _inFlight.GetOrAdd(url, done.Task);
+        if (entry != done.Task) return entry;
+        _ = RunAsync(url, done, ct);
+        return done.Task;
+    }
+
+    private async Task RunAsync(string url, TaskCompletionSource done, CancellationToken ct)
+    {
+        Exception? error = null;
+        try { await DoDownloadAsync(url, ct); }
+        catch (Exception ex) { error = ex; }
+        _inFlight.TryRemove(new KeyValuePair<string, Task>(url, done.Task));
+        if (error is OperationCanceledException) done.SetCanceled(ct);
+        else if (error is not null) done.SetException(error);
+        else done.SetResult();
     }
 
     private async Task DoDownloadAsync(string url, CancellationToken ct)
