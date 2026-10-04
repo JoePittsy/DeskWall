@@ -15,7 +15,9 @@ namespace DeskWall.Core.Tick;
 /// <see cref="BoolValue"/> for true/false, otherwise a <see cref="TextValue"/>.
 /// <para>Time is pinned as a whole: <c>time.at=HH:mm</c> (or <c>time.now=HH:mm</c>, or a bare
 /// <c>time.dayFraction</c>) sets now, date, weekday, dayFraction, dayPercent and phase together,
-/// so a layer bound to the phase and one bound to the fraction agree. Explicit pins win over the
+/// so a layer bound to the phase and one bound to the fraction agree. The phase and sun fractions
+/// follow the live <c>time.sunrise</c>/<c>time.sunset</c>, or <c>time.sunrise=HH:mm</c> /
+/// <c>time.sunset=HH:mm</c> pins when given. Explicit pins win over the
 /// derived ones. Pinning <c>hardware.cpu</c>, <c>ram</c> or <c>gpu</c> also pins the matching
 /// history to a plausible curve that peaks at the pinned value, so a <c>line</c> has a shape.</para>
 /// </summary>
@@ -54,8 +56,15 @@ public sealed partial class PreviewOverrides
         var pinnedAt = TimePin();
         var timePinned = pinnedAt is not null;
         if (pinnedAt is { } at)
-            foreach (var (name, value) in TimeSource.Fields(at))
+        {
+            // The sun the live tick resolved (present only when the time source has sun settings),
+            // unless a pin moves it: without it the phase falls back to the fixed thresholds and a
+            // preview shows a different phase from the one the desktop would at that time.
+            var rise = SunPin("sunrise") ?? LiveSun(tree, "sunrise", at);
+            var set = SunPin("sunset") ?? LiveSun(tree, "sunset", at);
+            foreach (var (name, value) in TimeSource.Fields(at, rise, set))
                 root = Set(root, ["time", name], value);
+        }
         foreach (var metric in new[] { "cpu", "ram", "gpu" })
             if (Find("hardware", metric) is { } raw && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var peak))
                 root = Set(root, ["hardware", metric + "History"], Curve(peak, metric.Length * 7 + metric[0]));
@@ -65,6 +74,8 @@ public sealed partial class PreviewOverrides
             if (path is ["time", var n] && n.Equals("now", StringComparison.OrdinalIgnoreCase) && ParseClock(raw) is not null) continue;
             // Already derived from whichever time pin came last.
             if (timePinned && path is ["time", var d] && d.Equals("dayFraction", StringComparison.OrdinalIgnoreCase)) continue;
+            // Already published as a TimeValue by the derivation, which it also moved.
+            if (timePinned && path is ["time", var s] && IsSunKey(s) && ParseClock(raw) is not null) continue;
             root = Set(root, path, Typed(raw));
         }
         return root;
@@ -72,6 +83,17 @@ public sealed partial class PreviewOverrides
 
     private string? Find(params string[] path)
         => _pins.LastOrDefault(p => p.Path.Length == path.Length && p.Path.Zip(path).All(z => z.First.Equals(z.Second, StringComparison.OrdinalIgnoreCase))).Raw;
+
+    private static bool IsSunKey(string s)
+        => s.Equals("sunrise", StringComparison.OrdinalIgnoreCase) || s.Equals("sunset", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary><c>time.sunrise=HH:mm</c> / <c>time.sunset=HH:mm</c>, the last of each.</summary>
+    private TimeSpan? SunPin(string name) => Find("time", name) is { } raw ? ParseClock(raw) : null;
+
+    /// <summary>The time source's own <c>time.sunrise</c>/<c>time.sunset</c>, as a local time of
+    /// day in the pinned instant's offset.</summary>
+    private static TimeSpan? LiveSun(RecordValue tree, string name, DateTimeOffset at)
+        => tree.Get("time") is RecordValue time && time.Get(name) is TimeValue tv ? tv.Time.ToOffset(at.Offset).TimeOfDay : null;
 
     private DateTimeOffset? TimePin()
     {

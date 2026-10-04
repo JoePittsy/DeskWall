@@ -95,9 +95,12 @@ and point the time source at the first day:
   "settings": { "sunrise": "weather.json.daily.sunrise[0]", "sunset": "weather.json.daily.sunset[0]" } }
 ```
 
-`deskwall tick --preview time.at=HH:mm` pins the time fields without the sun settings
-(`TimeSource.Fields(now)`), so under a preview `phase` falls back to the fixed thresholds and
-`sunFraction` to 06:00 to 18:00.
+`deskwall tick --preview time.at=HH:mm` pins the time fields with the sun the live tick resolved
+(`time.sunrise`/`time.sunset`, present when the settings are given), so `phase`, `sunFraction` and
+`nightFraction` are what the desktop would show at that time today. `time.sunrise=HH:mm` and
+`time.sunset=HH:mm` pins move the sun as well (and give one to a layout without the settings);
+`scripts/gallery.ps1` pins 06:00 and 18:00 so its dawn and dusk scenes do not depend on the season.
+Without either, `phase` keeps the fixed thresholds and `sunFraction` runs 06:00 to 18:00.
 
 ## `disks`
 
