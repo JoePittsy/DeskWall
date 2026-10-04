@@ -213,12 +213,13 @@ There is no third form; a property is either fixed at authoring time or fully dr
 A binding is a path into a source's published value tree, optionally followed by `| "<format>"`
 (the quotes are optional if the format has no spaces or pipes). Grammar (`BindingParser.cs`):
 
-    path       := name (('.' name) | '[' index ']' | '[' key ']')*
+    path       := name (('.' name) | '[' index ']' | '[' slice ']' | '[' key ']')*
     name       := (letter | '_') (letter | digit | '_' | '-')*
     index      := non-negative integer literal
+    slice      := [index] '..' [index]     at least one side; start <= end
     key        := any text without ']'; looked up by the list's key field, case-insensitively as text
 
-Twelve examples, each valid against the value trees the built-in sources publish:
+Thirteen examples, each valid against the value trees the built-in sources publish:
 
 1. `time.now` -- the raw `TimeValue`, no format (falls back to `"o"` round-trip formatting).
 2. `time.now | HH:mm` -- a plain .NET format string applied to the resolved value's own type.
@@ -240,6 +241,9 @@ Twelve examples, each valid against the value trees the built-in sources publish
     names a per-user absolute path. The token is a prefix rather than `{runtime}` because a
     composite format would swallow the braces. See `assets/weather/README.md` for the icon set this recipe
     expects at that path.
+13. `hearth.json.games[..4]` -- a **slice**: the first four items of the list, still a list (so it
+    is what a repeater's `items` binds), keeping the list's key field so `[..4][<id>]` and
+    `[..4][0]` work on the slice. See "Slices" below.
 
 Three format rules matter (`Value.ToText`, spec 4.2):
 
@@ -251,6 +255,38 @@ Three format rules matter (`Value.ToText`, spec 4.2):
 - A malformed format (an argument index the value does not supply, an unbalanced brace, an
   unknown type specifier) falls back to the unformatted text rather than throwing. A layout
   authoring mistake must never abort a tick.
+
+### Slices: the first N items of a list
+
+`[start..end]` takes the items from `start` (inclusive, default 0) to `end` (exclusive, default the
+end of the list), counted as a C# range counts: `[..4]` is the first four, `[2..]` everything after
+the first two, `[1..3]` the second and third. Bounds past the end clamp rather than fail, so
+`[..8]` of a three-item list is those three and `[5..]` of it is an empty list (a repeater over it
+draws nothing). Slicing anything that is not a list resolves to `null`, like any other wrong-shaped
+step. `[..]`, a reversed `[3..1]` and a negative bound are parse errors or (negative) a key, as
+`[-1]` already is.
+
+A slice is how a "how many" knob trims a list. `layouts/widgets/recent-games.json` binds its
+repeater to `hearth.json.games[..{count}]` and its Count knob substitutes the number with the
+`:{token}` form ("Knobs and the `sets` grammar"):
+
+```json
+"items": { "bind": "hearth.json.games[..{count}]" },
+...
+{ "id": "count", "type": "choice", "default": "4||4||504",
+  "choices": [ "1||1||120", "2||2||248", "3||3||376", "4||4||504", ... ],
+  "sets": [ "components.games.items:{count}", "components.games.w" ] }
+```
+
+The count no longer depends on the repeater's width: widening the part (an override, or a drag in
+the designer) leaves the same four covers and the same shortcut slots. The knob still sets the
+width too, because that is the widget's footprint. Until slices existed the knob set *only* the
+width and let "Overflow stops" drop the rest. A template's `[..{count}]` parses as a key until
+the knob substitutes a number, so an unsubstituted placeholder resolves to nothing rather than
+failing the layout.
+
+`..` and not Python's `:` because a key is free text and `12:30` is a plausible one; neither
+`..` nor a bare number on each side of it is a plausible key.
 
 ### A number that arrived as JSON text
 

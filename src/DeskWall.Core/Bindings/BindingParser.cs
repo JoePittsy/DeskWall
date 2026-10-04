@@ -35,12 +35,35 @@ public static class BindingParser
                 if (close < 0) throw new FormatException("unclosed [");
                 var body = s[(i + 1)..close];
                 if (body.Length == 0) throw new FormatException("empty []");
-                segs.Add(int.TryParse(body, out var n) && n >= 0 ? new IndexSegment(n) : new KeySegment(body));
+                segs.Add(int.TryParse(body, out var n) && n >= 0 ? new IndexSegment(n) : (PathSegment?)TrySlice(body) ?? new KeySegment(body));
                 i = close + 1;
             }
             else throw new FormatException($"unexpected '{s[i]}' at {i}");
         }
         return segs;
+    }
+
+    /// <summary><c>a..b</c> with each side empty or a plain non-negative integer is a slice; any
+    /// other text with <c>..</c> in it (<c>..{count}</c>, a knob placeholder) stays a key, exactly as
+    /// <c>[-1]</c> does. <c>..</c> rather than Python's <c>:</c> because a key may be a time.</summary>
+    private static SliceSegment? TrySlice(string body)
+    {
+        var dots = body.IndexOf("..", StringComparison.Ordinal);
+        if (dots < 0) return null;
+        if (!TryBound(body[..dots], out var start) || !TryBound(body[(dots + 2)..], out var end)) return null;
+        if (start is null && end is null) throw new FormatException("[..] needs a start or an end");
+        if (start > end) throw new FormatException($"slice [{body}] ends before it starts");
+        return new SliceSegment(start, end);
+    }
+
+    private static bool TryBound(string s, out int? bound)
+    {
+        bound = null;
+        if (s.Length == 0) return true;
+        // NumberStyles.None: digits only, so "-1" and " 2" are not bounds.
+        if (!int.TryParse(s, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)) return false;
+        bound = n;
+        return true;
     }
 
     private static string ReadName(string s, ref int i)

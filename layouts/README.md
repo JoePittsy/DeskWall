@@ -80,10 +80,9 @@ add-on) has been playing, with no Steam key needed: a `file` source reading
 `runtime:feeds/hearth-recent.json` (`docs/sources.md` "Recipe: Hearth recently-played games") into
 a horizontal repeater of 120x180 covers (8 px corner radius), each a click-to-launch shortcut
 claiming slots 8 upward. Its one knob, **Count** (default 4, 1..8), sets how many of Hearth's up
-to 8 entries draw, by setting the repeater's width so the extra items fall past
-`Overflow stops, it does not wrap or shrink` (`docs/layout-format.md` "Repeater semantics") rather
-than by trimming the bound list -- there is no list-slicing in the binding language, so this is
-the mechanism every widget with a count-like knob has available.
+to 8 entries draw by slicing the bound list (`hearth.json.games[..{count}]`,
+`docs/layout-format.md` "Slices"), and sets the repeater's width to fit that many, so resizing
+the part never changes the count.
 
 It lives in `layouts/widgets/`, not the shipped `widgets/` folder beside the exe (#36). To try
 it, copy the file into `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the

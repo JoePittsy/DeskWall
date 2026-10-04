@@ -32,4 +32,44 @@ public class BindingResolverTests
     [InlineData("nope.now")]
     [InlineData("time.now.hour")]
     public void Missing_Returns_Null(string s) => Assert.Null(BindingResolver.Resolve(Binding.Parse(s), Root()));
+
+    private static RecordValue Games(int n)
+    {
+        var items = Enumerable.Range(0, n)
+            .Select(i => new RecordValue(new Dictionary<string, Value> { ["id"] = new TextValue("g" + i) }))
+            .ToList();
+        return ValueTree.Of(("hearth", new RecordValue(new Dictionary<string, Value> { ["games"] = new ListValue(items, "id") })));
+    }
+
+    private static string[] Ids(Value? v)
+        => ((ListValue)v!).Items.Select(r => r.Get("id")!.ToText(null)).ToArray();
+
+    [Fact]
+    public void Take_Keeps_The_First_N()
+        => Assert.Equal(["g0", "g1", "g2"], Ids(BindingResolver.Resolve(Binding.Parse("hearth.games[..3]"), Games(6))));
+
+    [Fact]
+    public void Take_More_Than_There_Are_Keeps_Them_All()
+        => Assert.Equal(["g0", "g1"], Ids(BindingResolver.Resolve(Binding.Parse("hearth.games[..8]"), Games(2))));
+
+    [Fact]
+    public void Skip_And_Range()
+    {
+        Assert.Equal(["g4", "g5"], Ids(BindingResolver.Resolve(Binding.Parse("hearth.games[4..]"), Games(6))));
+        Assert.Equal(["g1", "g2"], Ids(BindingResolver.Resolve(Binding.Parse("hearth.games[1..3]"), Games(6))));
+        Assert.Empty(Ids(BindingResolver.Resolve(Binding.Parse("hearth.games[9..]"), Games(6))));
+        Assert.Empty(Ids(BindingResolver.Resolve(Binding.Parse("hearth.games[..0]"), Games(6))));
+    }
+
+    [Fact]
+    public void Slice_Keeps_Key_Lookup_And_Indexes_Into_The_Slice()
+    {
+        Assert.Equal("g2", BindingResolver.ResolveText(Binding.Parse("hearth.games[2..][0].id"), Games(6)));
+        Assert.Equal("g1", BindingResolver.ResolveText(Binding.Parse("hearth.games[..3][g1].id"), Games(6)));
+        Assert.Null(BindingResolver.Resolve(Binding.Parse("hearth.games[..3][g4]"), Games(6)));
+    }
+
+    [Fact]
+    public void Slice_Of_A_Non_List_Is_Null()
+        => Assert.Null(BindingResolver.Resolve(Binding.Parse("time.now[..2]"), Root()));
 }

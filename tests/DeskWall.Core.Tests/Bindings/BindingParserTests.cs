@@ -33,6 +33,8 @@ public class BindingParserTests
     [InlineData("time[")]
     [InlineData("time..now")]
     [InlineData("9lives")]
+    [InlineData("games[..]")]
+    [InlineData("games[3..1]")]
     public void Rejects_Malformed(string text) => Assert.Throws<FormatException>(() => Binding.Parse(text));
 
     [Fact]
@@ -41,4 +43,24 @@ public class BindingParserTests
         const string s = "disks.drives[C].free | \"{0:N0} GB free\"";
         Assert.Equal(s, Binding.Parse(s).ToString());
     }
+
+    [Theory]
+    [InlineData("games[..4]", null, 4)]
+    [InlineData("games[2..]", 2, null)]
+    [InlineData("games[1..3]", 1, 3)]
+    [InlineData("games[0..0]", 0, 0)]
+    public void Parses_Slice(string text, int? start, int? end)
+        => Assert.Equal(new SliceSegment(start, end), Binding.Parse(text).Path[1]);
+
+    [Theory]
+    [InlineData("games[a..b]")]
+    [InlineData("games[-1..2]")]
+    [InlineData("games[..{count}]")]
+    public void Not_A_Slice_Stays_A_Key(string text) => Assert.IsType<KeySegment>(Binding.Parse(text).Path[1]);
+
+    [Theory]
+    [InlineData("hearth.json.games[..4]")]
+    [InlineData("hearth.json.games[1..][0].cover | \"{0}\"")]
+    [InlineData("hearth.json.games[..{count}]")]
+    public void Slice_ToString_RoundTrips(string s) => Assert.Equal(s, Binding.Parse(s).ToString());
 }
