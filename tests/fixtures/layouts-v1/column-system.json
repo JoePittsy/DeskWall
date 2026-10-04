@@ -16,7 +16,7 @@
       "type": "http",
       "every": 900,
       "settings": {
-        "url": "https://api.open-meteo.com/v1/forecast?latitude=53.8008&longitude=-1.5491&current=temperature_2m,weather_code,is_day&timezone=auto"
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=53.8008&longitude=-1.5491&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&forecast_days=1&timezone=auto"
       }
     },
     {
@@ -96,8 +96,30 @@
       },
       "fit": "contain",
       "radius": "0",
-      "opacity": "1",
+      "opacity": {
+        "bind": "weather.json.current.is_day | \"?0=0,*=1\""
+      },
       "id": "weather-1.sky",
+      "rect": [
+        3336,
+        134,
+        56,
+        56
+      ],
+      "z": 1,
+      "widget": "weather-1"
+    },
+    {
+      "type": "image",
+      "source": {
+        "bind": "weather.json.current.weather_code | \"runtime:assets/weather/{0}-night.png\""
+      },
+      "fit": "contain",
+      "radius": "0",
+      "opacity": {
+        "bind": "weather.json.current.is_day | \"?0=1,*=0\""
+      },
+      "id": "weather-1.sky-night",
       "rect": [
         3336,
         134,
