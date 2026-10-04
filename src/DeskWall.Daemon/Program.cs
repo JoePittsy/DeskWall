@@ -450,6 +450,12 @@ internal static partial class Program
                 Bounds = new Rect(0, 0, cw, ch),
             };
         }
+        // The same start-up step as `run`: shipped assets the runtime dir lacks are copied in, never
+        // overwriting, so a scratch --home or a fresh install draws the icons it names (#90).
+        var assetsTimer = System.Diagnostics.Stopwatch.StartNew();
+        var assets = RuntimeAssets.CopyMissing(RuntimeAssets.ShippedDir);
+        assetsTimer.Stop();
+        foreach (var failure in assets.Failed) Console.Error.WriteLine($"assets: {failure}");
         // Read, expand and scale: what a v2 layout adds to activation, which the daemon pays on a
         // layout edit or display change, never per tick (plan D4).
         var load = System.Diagnostics.Stopwatch.StartNew();
@@ -472,7 +478,7 @@ internal static partial class Program
                 if (t.Warning is { } warning) Console.Error.WriteLine($"warning: {warning}");
                 // "load" is not a row of the tick's own table, and must not start with "total", which
                 // is what the budget test's ^total regex reads.
-                if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick){t.LayerTable()}");
+                if (opts.Contains("--measure")) Console.WriteLine($"{t.ToTable()}\nload       {load.ElapsedMilliseconds}   (read + expand + scale, before the tick)\nassets     {assetsTimer.ElapsedMilliseconds}   ({assets.Copied} copied from {RuntimeAssets.ShippedDir}, once per process){t.LayerTable()}");
                 else Console.WriteLine($"{DateTime.Now:HH:mm:ss} total={t.TotalMs} ms cpu={t.CpuMs:N0} ms redrawn={t.Redrawn}{(t.Skipped ? " skipped" : "")}");
                 if (runner.LastShortcutOutcome is { } o)
                 {

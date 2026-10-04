@@ -4,10 +4,11 @@
 `<code>-night.png` for night. Bound from a layout as
 `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"` (and `{0}-night.png`); the
 `weather` widget draws both parts on one spot and shows one by an opacity Step on
-`current.is_day` (`docs/layout-format.md` binding example 12); the `runtime:` prefix resolves against the runtime
-directory (`Paths.InRuntime`), not the repo, so this folder must be copied to
-`%LOCALAPPDATA%\DeskWall\assets\weather` before a layout that uses it renders correctly
-(`layouts/README.md`).
+`current.is_day` (`docs/layout-format.md` binding example 12). The `runtime:` prefix resolves
+against the runtime directory (`Paths.InRuntime`), not the repo. The build ships this folder beside
+the exe (`DeskWall.Core.csproj`), and the daemon (at start, and at the start of a one-shot `tick`)
+and the designer (when it opens) copy every file missing from `%LOCALAPPDATA%\DeskWall\assets\weather`,
+never overwriting one already there (`RuntimeAssets.CopyMissing`, `docs/architecture.md`).
 
 ## Source
 
