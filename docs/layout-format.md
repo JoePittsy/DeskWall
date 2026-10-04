@@ -8,7 +8,7 @@ placed on the canvas in physical pixels. Source of truth for this document: `Lay
 
 A file DeskWall writes (the designer's Save, `deskwall migrate`) leaves out every property that
 still holds its default, except `version` and the required ones, and escapes only what JSON
-requires: `"{0:N0}°"` stays readable, not `"{0:N0}°"`. A property left out
+requires: `"{0:N0}°"` stays readable, not `"{0:N0}\u00B0"`. A property left out
 therefore follows its default, so changing a default in the code reaches every file that never set
 it, exactly as a knob at its default does for a copy.
 
@@ -723,8 +723,9 @@ Display scaling and designer zoom apply after binding resolution through retaine
 The designer geometry rows accept bindings just like colour and size.
 
 
-An unresolved bound bar fill is transparent, so absent weather or temperature data cannot
-turn a conditional full-screen overlay opaque. Literal fill defaults are unchanged.
+An unresolved bound bar or dial fill is transparent, so absent weather or temperature data cannot
+turn a conditional full-screen overlay opaque, nor paint a dial in its healthy colour. Literal
+fill defaults are unchanged.
 
 ## Drawing outlines
 

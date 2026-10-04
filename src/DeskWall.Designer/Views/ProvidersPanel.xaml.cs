@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using DeskWall.Core;
 using DeskWall.Core.Events;
 using DeskWall.Core.Sources;
 using DeskWall.Designer.Model;
@@ -47,6 +48,8 @@ public partial class ProvidersPanel : UserControl
         _model = model;
         _bus = bus;
         InitializeComponent();
+        // The pipe is per runtime dir (RuntimeInstance.EventPipeName); name the one this home's daemon owns.
+        EmptyNote.Text = $@"Nothing has been pushed yet. Write one JSON line to \\.\pipe\{RuntimeInstance.EventPipeName(Paths.RuntimeDir)} and it shows up here.";
         _debounce = new System.Threading.Timer(_ => Dispatcher.BeginInvoke(new Action(Reload)), null, Timeout.Infinite, Timeout.Infinite);
         Loaded += (_, _) => { StartWatching(); Reload(); };
         Unloaded += (_, _) => Stop();

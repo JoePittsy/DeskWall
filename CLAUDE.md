@@ -163,8 +163,8 @@ list and not a work log.
   "already running; asked it to refresh" and measured nothing.
 - **The event pipe is per runtime dir too, because Windows would let two daemons share one.** A
   second process may create another instance of an existing named pipe when the ACL allows it,
-  so before #28 two daemons on two homes both listened on `DeskWall.Events` and a producer landed
-  on whichever was next. Now `RuntimeInstance.EventPipeName` gives it the lock's suffix:
+  so with one shared name two daemons on two homes would both listen and a producer would land
+  on whichever was next. `RuntimeInstance.EventPipeName` therefore gives it the lock's suffix:
   `DeskWall.Events` for the default home (every script and doc one-liner unchanged),
   `DeskWall.Events.<hash>` for any `--home`; `deskwall --home <dir> pipe` prints it. A test or a
   scratch daemon must never construct `EventPipeServer` with an explicit `DeskWall.Events` -- on

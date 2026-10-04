@@ -100,7 +100,7 @@ public class PreviewRendererTests
         Assert.Equal(new Rect(40, 120, 200, 8), frame.Resolved.Single(c => c.Id == "bar").Rect);
     }
 
-    /// <summary>The widget editor's canvas: no photograph on purpose, so no error plate either.</summary>
+    /// <summary>A widget-depth canvas: no photograph on purpose, so no error plate either.</summary>
     [Fact]
     public void No_Base_Image_Renders_On_Flat_Grey_Without_An_Error()
     {
