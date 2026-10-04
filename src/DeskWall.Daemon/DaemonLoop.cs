@@ -76,6 +76,13 @@ public sealed class DaemonLoop(RollingLog log, LayoutStore store, IClock clock, 
         // widget is what creates a file here; without the folder that first fork would never repaint.
         Directory.CreateDirectory(WidgetCatalog.UserDir);
 
+        // What a new build ships under assets\ (the weather night icons) reaches the runtime dir
+        // here, not only when the designer is opened; an existing file is never overwritten (#90).
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var assets = RuntimeAssets.CopyMissing(RuntimeAssets.ShippedDir);
+        if (assets.Copied > 0) log.Info($"assets: copied {assets.Copied} missing file(s) from {RuntimeAssets.ShippedDir} ({started.ElapsedMilliseconds} ms)");
+        foreach (var failure in assets.Failed) log.Warn($"assets: {failure}");
+
         using var win = new HostWindow();
         using var timer = new WaitableTimer();
         // Declared before the pipe so `using` disposes the pipe first: no line may reach a bus that

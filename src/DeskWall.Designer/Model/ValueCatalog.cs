@@ -148,6 +148,7 @@ public static partial class ValueCatalog
         ["time.phase"] = ("Phase of day", false),
         ["time.sunFraction"] = ("Sun progress", true),
         ["time.nightFraction"] = ("Night progress", true),
+        ["time.skyFraction"] = ("Day progress (real sun)", true),
         ["time.sunrise"] = ("Sunrise", false),
         ["time.sunset"] = ("Sunset", false),
 

@@ -48,7 +48,8 @@ path the resident daemon uses, useful for scripting and for this documentation's
 
 1. **Start.** Create the hidden host window, register the tray icon unless `--no-tray` (menu:
    Open designer, Refresh now, Pause, Exit), load the layout store, create the user widgets
-   folder (`%LOCALAPPDATA%\DeskWall\widgets\`), watch the user widget file of every key the
+   folder (`%LOCALAPPDATA%\DeskWall\widgets\`), copy every shipped asset the runtime dir lacks
+   (`RuntimeAssets.CopyMissing`, below), watch the user widget file of every key the
    layout references (to reactivate when a widget is edited; the shipped folder is not watched,
    because it changes only on install and `publish.ps1` restarts the daemon then), route the
    remote image cache's `Landed` event to a wake, sweep image-cache entries untouched for 30 days.
@@ -193,6 +194,7 @@ directory.
 | `desktop-flags.json` | `DesktopFlags` | The desktop's original auto-arrange and snap-to-grid flags, saved the first time placement turns them off (through `IFolderView2` folder flags, never Explorer's registry) and never overwritten after; `deskwall uninstall` restores them and deletes the file. |
 | `events.json` | `EventBus` / `EventStore` | Every pushed provider's last record (`docs/sources.md` "Pushed values: events"), written atomically at most every few seconds and on shutdown; the designer watches it, and so does the daemon, which takes a record that has gone from the file as the designer's Forget (`EventFile`). |
 | `widgets/<key>.json`, `providers/<name>.json` | the designer / the owner | User widget files (shadowing shipped ones by key) and provider manifests. |
+| `assets/**` | `RuntimeAssets.CopyMissing` | What layouts reach as `runtime:assets/...` (the weather icons, day and night). Shipped in `assets\` beside the exe (declared once, in `DeskWall.Core.csproj`, so the daemon, the designer and a publish all carry it). Every file missing here is copied in at daemon start (`run`), at the start of a one-shot `tick`, and when the designer opens; a file already here is never overwritten, so the owner's own art survives an upgrade. Without the daemon's copy, an upgrade that adds files (the `<code>-night.png` set) drew the missing-image plate until the designer was next opened (#90). Measured from a scratch publish into a scratch home (Release, JIT, 2026-10-04): 24 ms copying the 29 new files, 5 ms when all 57 are present. Paid once per process, never per tick; `tick --measure` prints it as `assets`. A file that cannot be copied is logged and the rest still are. |
 | `shortcuts-owned.json` | `ShortcutManager` | Slot -> hash of the spec last written there; the only slots `ShortcutManager` will ever delete. |
 | `frame-state.json` | `TickRunner` | Content keys, paint bounds, signature, base-image key, the last base photo drawn (and any missing one already warned about) and shortcuts fingerprint from the last tick -- the skip gate's input. |
 | `frame.raw` | `TickRunner` / `Surface.SaveRaw` | The full previous frame as raw PBGRA, loaded (not decoded) for incremental redraw. Deliberately never held in memory across ticks: at 3440x1440 it is ~19.8 MB, which alone would blow the 10 MB idle budget. |

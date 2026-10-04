@@ -52,13 +52,14 @@ source that shells out to Tailscale. Each has its own requirement:
   (`latitude=53.8008&longitude=-1.5491`, the `weather` widget's `town` knob default -
   `docs/layout-format.md` "Copies"). To point it at a different town, use the designer's Town
   knob, or give the `weather-1` copy a `"knobs": { "town": "<name>||<lat>||<lon>" }` by hand -
-  Open-Meteo needs no key and the request is unauthenticated. The weather icon (`sky` component) binds
-  `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"`; the `runtime:` prefix
-  resolves against the runtime directory, not the repo, so **`assets/weather` must be copied to
-  `%LOCALAPPDATA%\DeskWall\assets\weather`** before this layout renders icons (the designer does
-  this automatically whenever it copies a starter; a manual
-  `deskwall tick --layout layouts\column-system.json` needs the folder copied by hand first, or
-  the icon area draws the missing-image fallback plate).
+  Open-Meteo needs no key and the request is unauthenticated. The weather icon is two parts on one
+  spot: `sky` binds `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"` and
+  `sky-night` the same code to `{0}-night.png`, and an opacity Step on `current.is_day` shows one
+  of them (a copy that moves or resizes `sky` by override must do the same to `sky-night`). The
+  `runtime:` prefix
+  resolves against the runtime directory, not the repo. `deskwall` copies the icons it ships into
+  `%LOCALAPPDATA%\DeskWall\assets\weather` itself (any file missing there, at daemon start and at
+  the start of a one-shot `tick`, never overwriting), and so does the designer when it opens.
 - **Tailscale.** The `vpn` line needs Tailscale installed at its default path,
   `C:\Program Files\Tailscale\tailscale.exe`; if yours is elsewhere, give the `vpn-1` copy a
   `"knobs": { ... }` or `"overrides": { "sources.tailscale.settings.command": "<path>" }`. Without it the `command` source's own failure means the line falls back to its

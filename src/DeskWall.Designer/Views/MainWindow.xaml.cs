@@ -142,7 +142,7 @@ public partial class MainWindow : Window
         _model.Notice += SetStatus;
         _backupBeforeApply = target.Migrated;
 
-        ShellState.CopyAssets(Path.Combine(AppContext.BaseDirectory, "assets", "weather"));
+        RuntimeAssets.CopyMissing(RuntimeAssets.ShippedDir);
 
         Preview.Attach(_model, _renderer);
         Properties.Attach(_model);

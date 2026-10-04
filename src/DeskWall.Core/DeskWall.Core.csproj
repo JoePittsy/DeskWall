@@ -7,4 +7,10 @@
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.*" PrivateAssets="all" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="10.*" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- What layouts reach as runtime:assets/... (RuntimeAssets.ShippedDir). Declared here so it is
+         copied into the output of everything that references Core: the daemon copies what is
+         missing into the runtime dir at start, the designer when it opens. -->
+    <None Include="..\..\assets\weather\*.png;..\..\assets\weather\LICENSE" Link="assets\weather\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

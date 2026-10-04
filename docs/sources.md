@@ -49,12 +49,21 @@ Publishes: `now` (`TimeValue`), `date` (`TextValue`, `yyyy-MM-dd`), `weekday` (`
 | `phase` | `night`, `dawn`, `day` or `dusk`. Without sun settings, from `dayFraction`: dawn from 0.21, day from 0.29, dusk from 0.71, night from 0.83. With them, from the real sun: dawn is sunrise ±40 min, dusk is sunset ±40 min, day in between, night otherwise |
 | `sunFraction` | 0 at sunrise, 1 at sunset, clamped (0 before sunrise, 1 after sunset), 4 decimals: a sun bound to it rises and sets when the real one does. 06:00 to 18:00 without settings |
 | `nightFraction` | The same across the night: 0 at sunset, 1 at the next sunrise, 0 all day |
+| `skyFraction` | The day fraction on the sun's clock: 0 at midnight, 0.25 at sunrise, 0.75 at sunset, 1 at the next midnight, linear in each stretch, 4 decimals. Equal to `dayFraction` without settings (06:00 is 0.25 there too) |
 | `sunrise`, `sunset` | `TimeValue`s today, only when the settings are given (`time.sunset \| HH:mm`) |
 
 `phase` exists so a layer that only needs four colours is one Step rule
 (`time.phase | "?night=#..,dawn=#..,day=#..,dusk=#.."`), and the palette for that layer lives in
 that one place. Use a Blend on `dayFraction` where the change should be gradual (or on
-`sunFraction`/`nightFraction`, which follow the real sun).
+`sunFraction`/`nightFraction`/`skyFraction`, which follow the real sun).
+
+`skyFraction` exists for a sky that moves through the whole day. A sun that fades in below the
+horizon before sunrise, or a moon that crosses the night, needs a value that keeps moving outside
+the day, which the clamped `sunFraction` does not. Author the Blend stops as if the sun rose at
+06:00 and set at 18:00 (0.25 and 0.75), bind them to `skyFraction`, and the same stops follow the
+real sun all year; nothing changes until sun settings are given. The sky layouts
+(`alpine-rice`, `alpine-vision`, `alpine-vision-photos`, `vapor`) bind their sun, moon, stars and
+sky tints this way.
 
 Both forms exist because a `bar`'s `fraction` wants 0..1 and a `text` wants the percent, and a
 format string cannot multiply by 100. The **week starts on Monday** (`((int)DayOfWeek + 6) % 7`),
@@ -80,27 +89,35 @@ kept while the other source is failing or stale, so the sky does not jump back t
 with the sunset before the sunrise is ignored the same way. A setting that is neither `HH:mm` nor
 a parseable path fails when the layout is loaded.
 
-Open-Meteo gives both for free. Add `daily=sunrise,sunset` to the weather source's URL (the
-`weather` widget's `widgets/weather.json`, which `column-system.json` places). Keep
-`timezone=auto`, which it already has, so the times are the town's own local times:
+Open-Meteo gives both for free, and the `weather` widget (`widgets/weather.json`) asks for them:
+its URL carries `daily=sunrise,sunset` with `forecast_days=1` (only the first day is read) and
+`timezone=auto`, so the times are the town's own local times:
 
 ```
-...&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&timezone=auto
+...&current=temperature_2m,weather_code,is_day&daily=sunrise,sunset&forecast_days=1&timezone=auto
 ```
 
-and point the time source at the first day:
+A layout that places the widget points its time source at the first day:
 
 ```json
 { "name": "time", "type": "time",
   "settings": { "sunrise": "weather.json.daily.sunrise[0]", "sunset": "weather.json.daily.sunset[0]" } }
 ```
 
+The `clock` widget brings a `time` source of its own with no settings, which would then differ from
+the layout's and be split off as `time2` (layout-format.md, "Copies"). The sky layouts give their
+clock copy the same two settings as overrides (`sources.time.settings.sunrise`, `...sunset`), so
+the definitions match and there is one shared time source. `column-system.json` draws nothing on
+`phase` or the sun fractions and leaves its time source unset.
+
 `deskwall tick --preview time.at=HH:mm` pins the time fields with the sun the live tick resolved
-(`time.sunrise`/`time.sunset`, present when the settings are given), so `phase`, `sunFraction` and
-`nightFraction` are what the desktop would show at that time today. `time.sunrise=HH:mm` and
-`time.sunset=HH:mm` pins move the sun as well (and give one to a layout without the settings);
+(`time.sunrise`/`time.sunset`, present when the settings are given), so `phase`, `sunFraction`,
+`nightFraction` and `skyFraction` are what the desktop would show at that time today.
+`time.sunrise=HH:mm` and `time.sunset=HH:mm` pins move the sun as well (and give one to a layout
+without the settings);
 `scripts/gallery.ps1` pins 06:00 and 18:00 so its dawn and dusk scenes do not depend on the season.
-Without either, `phase` keeps the fixed thresholds and `sunFraction` runs 06:00 to 18:00.
+Without either, `phase` keeps the fixed thresholds, `sunFraction` runs 06:00 to 18:00 and
+`skyFraction` equals `dayFraction`.
 
 ## `disks`
 

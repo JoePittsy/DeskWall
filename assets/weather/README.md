@@ -1,11 +1,14 @@
 # Weather icons
 
-96x96 PNGs, white on transparent, one per Open-Meteo WMO weather code, named `<code>.png`. Bound
-from a layout as `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"`
-(`docs/layout-format.md` binding example 12); the `runtime:` prefix resolves against the runtime
-directory (`Paths.InRuntime`), not the repo, so this folder must be copied to
-`%LOCALAPPDATA%\DeskWall\assets\weather` before a layout that uses it renders correctly
-(`layouts/README.md`).
+96x96 PNGs, white on transparent, two per Open-Meteo WMO weather code: `<code>.png` for day and
+`<code>-night.png` for night. Bound from a layout as
+`weather.json.current.weather_code | "runtime:assets/weather/{0}.png"` (and `{0}-night.png`); the
+`weather` widget draws both parts on one spot and shows one by an opacity Step on
+`current.is_day` (`docs/layout-format.md` binding example 12). The `runtime:` prefix resolves
+against the runtime directory (`Paths.InRuntime`), not the repo. The build ships this folder beside
+the exe (`DeskWall.Core.csproj`), and the daemon (at start, and at the start of a one-shot `tick`)
+and the designer (when it opens) copy every file missing from `%LOCALAPPDATA%\DeskWall\assets\weather`,
+never overwriting one already there (`RuntimeAssets.CopyMissing`, `docs/architecture.md`).
 
 ## Source
 
@@ -13,31 +16,40 @@ Basmilius "Meteocons", https://github.com/basmilius/weather-icons, MIT licence (
 this folder, copied verbatim from the upstream repo). Icons are `production/line/svg/*.svg`
 fetched from the `dev` branch (`main` on that repo has no `production/` tree; the published set
 lives on `dev`), the line (single-colour, monochrome) set as required by the design spec so the
-icon reads on a photo. Fetched and rasterised 2026-09-21.
+icon reads on a photo. Day icons fetched and rasterised 2026-09-21; the two night icons
+(`clear-night`, `partly-cloudy-night`) from the same tree, same licence, on 2026-10-04.
 
 ## Mapping (WMO code -> Meteocons file)
 
-| WMO code(s) | Meteocons file | Note |
-|---|---|---|
-| 0 | `clear-day` | |
-| 1 | `partly-cloudy-day` | fallback: Meteocons has no `mostly-clear-day` in this set |
-| 2 | `partly-cloudy-day` | |
-| 3 | `overcast` | |
-| 45, 48 | `fog` | |
-| 51, 53, 55 | `drizzle` | |
-| 56, 57 | `sleet` | |
-| 61, 63, 65 | `rain` | |
-| 66, 67 | `sleet` | |
-| 71, 73, 75, 77 | `snow` | |
-| 80, 81 | `rain` | |
-| 82 | `extreme-rain` | present upstream, used as specified |
-| 85, 86 | `snow` | |
-| 95 | `thunderstorms` | |
-| 96, 99 | `thunderstorms-rain` | |
+| WMO code(s) | Day (`<code>.png`) | Night (`<code>-night.png`) | Note |
+|---|---|---|---|
+| 0 | `clear-day` | `clear-night` | |
+| 1 | `partly-cloudy-day` | `partly-cloudy-night` | fallback: Meteocons has no `mostly-clear-day` in this set |
+| 2 | `partly-cloudy-day` | `partly-cloudy-night` | |
+| 3 | `overcast` | `overcast` | |
+| 45, 48 | `fog` | `fog` | |
+| 51, 53, 55 | `drizzle` | `drizzle` | |
+| 56, 57 | `sleet` | `sleet` | |
+| 61, 63, 65 | `rain` | `rain` | |
+| 66, 67 | `sleet` | `sleet` | |
+| 71, 73, 75, 77 | `snow` | `snow` | |
+| 80, 81 | `rain` | `rain` | |
+| 82 | `extreme-rain` | `extreme-rain` | present upstream, used as specified |
+| 85, 86 | `snow` | `snow` | |
+| 95 | `thunderstorms` | `thunderstorms` | |
+| 96, 99 | `thunderstorms-rain` | `thunderstorms-rain` | |
 
-28 files total; codes that share an icon are duplicate copies of the same PNG, not symlinks (the
-designer/daemon only ever open one file per code, so a duplicate costs disk space, not behaviour).
-Every code above maps to the day icon regardless of `current.is_day` (night variants: #45).
+Only an icon that shows the sun has a night form here. The day icons for codes 3 and up are the
+time-neutral Meteocons files (no sun in them), so their night file is a copy of the day file.
+Meteocons does publish `overcast-night`, `fog-night`, `thunderstorms-night` and the like, but they
+are night forms of the `-day` variants (`overcast-day`, `fog-day`, ...) that this mapping does not
+use; switching to them would change the day icons too, so they are left out.
+
+56 files total (28 codes x day and night); codes that share an icon are duplicate copies of the
+same PNG, not symlinks (the designer/daemon only ever open one file per code, so a duplicate costs
+disk space, not behaviour). Every code needs a `-night` file even where it equals the day one: the
+night part draws `{0}-night.png` for whatever code is current, and a missing file draws the
+fallback plate.
 
 ## Rendering notes
 
@@ -67,7 +79,7 @@ instead of through the MCP tool wrappers:
 
 ## To regenerate
 
-1. Fetch the SVGs listed in the mapping table from
+1. Fetch the SVGs listed in both columns of the mapping table from
    `https://raw.githubusercontent.com/basmilius/weather-icons/dev/production/line/svg/<file>.svg`.
 2. Build the small `filter: brightness(0) invert(1)` HTML harness described above for each unique
    icon file (one HTML page per icon, not per code) and render it at 96x96 with a headless
@@ -76,6 +88,9 @@ instead of through the MCP tool wrappers:
    or chrome-devtools MCP browser tools launch cleanly in your session, `browser_navigate` +
    `browser_evaluate` drawing to a canvas and reading back a data URL is the originally intended
    path and produces the same pixels.
-3. Copy the rendered PNG to every WMO code in the mapping table that shares it.
+3. Copy the rendered PNG to every file name in the mapping table that uses it (`<code>.png` for
+   the day column, `<code>-night.png` for the night column). The SVGs are animated (SMIL); the
+   headless screenshot takes the first frame, so a re-render differs from the committed PNG by a
+   few levels of alpha on moving edges (measured on `clear-day`: max 8/255).
 4. Re-run the pixel check (96x96, RGBA, single RGB colour `(255,255,255)` wherever alpha > 0)
    before committing.
