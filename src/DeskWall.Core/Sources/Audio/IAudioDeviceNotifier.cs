@@ -20,8 +20,10 @@ public interface IAudioDeviceNotifier : IDisposable
     /// id. Raised for every endpoint, render or capture; the source keeps the ones that matter.</summary>
     event Action<string>? DeviceStateChanged;
 
-    /// <summary>Start listening. Idempotent; tick thread only, so COM is first touched on the
-    /// first refresh rather than when the layout is loaded. A failure leaves the notifier silent,
-    /// and the source's whole-minute schedule still catches a device change.</summary>
-    void Start();
+    /// <summary>Start listening, or retry a registration that failed. Idempotent; tick thread
+    /// only, so COM is first touched on the first refresh rather than when the layout is loaded.
+    /// Returns false, with the reason in <paramref name="error"/>, when not listening: the
+    /// notifier is then silent and only the source's whole-minute schedule catches a device
+    /// change, which the source reports rather than leaving it to be noticed.</summary>
+    bool TryStart(out string? error);
 }

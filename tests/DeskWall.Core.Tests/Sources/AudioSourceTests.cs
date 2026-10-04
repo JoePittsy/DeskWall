@@ -1,4 +1,4 @@
-using DeskWall.Core.Events;
+﻿using DeskWall.Core.Events;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Sources.Audio;
 using DeskWall.Core.Values;
@@ -394,6 +394,53 @@ public class AudioSourceTests
     }
 
     [Fact]
+    public void A_Notifier_That_Will_Not_Register_Is_One_Fault_And_One_Warning_Per_Outage()
+    {
+        // The source still works - on the minute - so this is not a failed refresh. It is counted
+        // and handed to the daemon for deskwall.log once, not every minute while it lasts.
+        using var reader = OneSpeaker(0.5);
+        var notifier = new FakeAudioDeviceNotifier { FailWith = "COMException: the service has not been started" };
+        using var src = new AudioSource("audio", reader, notifier);
+
+        var r = Refresh(src);
+
+        Assert.Equal(50, Num(r, "volumePct"));
+        Assert.Equal(1, src.ReaderFaults);
+        var warning = src.TakeWarning();
+        Assert.NotNull(warning);
+        Assert.Contains("the service has not been started", warning);
+        Assert.Contains("next whole minute", warning);
+        Assert.Null(src.TakeWarning());
+
+        // Still down: retried every refresh, but neither counted nor warned again.
+        Refresh(src);
+        Refresh(src);
+        Assert.Equal(3, notifier.Starts);
+        Assert.Equal(1, src.ReaderFaults);
+        Assert.Null(src.TakeWarning());
+
+        // Healed, then lost again: a new outage is a new fault and a new warning.
+        notifier.FailWith = null;
+        Refresh(src);
+        Assert.Null(src.TakeWarning());
+        notifier.FailWith = "COMException: gone again";
+        Refresh(src);
+        Assert.Equal(2, src.ReaderFaults);
+        Assert.Contains("gone again", src.TakeWarning());
+    }
+
+    [Fact]
+    public void A_Listening_Notifier_Has_Nothing_To_Warn_About()
+    {
+        var (_, _, src) = SpeakersWithHeadsetAvailable();
+        using var __ = src;
+        Refresh(src);
+
+        Assert.Null(src.TakeWarning());
+        Assert.Equal(0, src.ReaderFaults);
+    }
+
+    [Fact]
     public void A_Headset_Becoming_Default_Signals_At_Once_And_The_Refresh_Publishes_It()
     {
         // The bug in #26: before the notifier, this waited for the next whole minute.
@@ -605,7 +652,16 @@ internal sealed class FakeAudioDeviceNotifier : IAudioDeviceNotifier
     public int Starts { get; private set; }
     public int Disposals { get; private set; }
 
-    public void Start() => Starts++;
+    /// <summary>When set, registration fails with this reason, as CoreAudio's would with the
+    /// audio service stopped.</summary>
+    public string? FailWith { get; set; }
+
+    public bool TryStart(out string? error)
+    {
+        Starts++;
+        error = FailWith;
+        return FailWith is null;
+    }
     public void RaiseDefault(string? id) => DefaultDeviceChanged?.Invoke(id);
     public void RaiseState(string id) => DeviceStateChanged?.Invoke(id);
     public void Dispose() => Disposals++;

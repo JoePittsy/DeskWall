@@ -17,13 +17,18 @@ namespace DeskWall.Core.Sources.Audio;
 /// <para>Signalling: raises <c>Changed</c> when the published form actually differs. The host turns
 /// that into <c>EventBus.Signal(Name)</c>, which coalesces. Shape matches the shared
 /// <c>ISignalSource</c> interface.</para></summary>
-public sealed class AudioSource : ISource, ISignalSource, IDisposable
+public sealed class AudioSource : ISource, ISignalSource, IWarningSource, IDisposable
 {
     private readonly IAudioReader _reader;
     private readonly IAudioDeviceNotifier? _notifier;
     private readonly object _lock = new();
     private volatile bool _disposed;
     private int _readerFaults;
+
+    /// <summary>True while the notifier is known not to be listening; tick thread only. Makes a
+    /// failed registration one fault and one warning per outage, not one per refresh.</summary>
+    private bool _notifierDown;
+    private string? _warning;
 
     /// <summary>1 while a notification has been signalled but not yet published. Read from the
     /// scheduler thread and written from the audio thread, so it is an int under Volatile rather
@@ -63,8 +68,13 @@ public sealed class AudioSource : ISource, ISignalSource, IDisposable
 
     /// <summary>Notifications and refreshes lost to a reader or a subscriber that threw. The reader
     /// is written not to throw and the subscriber is the bus, which does not either; this counts
-    /// the times one did anyway, because Core sources have no logger to report it to.</summary>
+    /// the times one did anyway, because Core sources have no logger to report it to. Also counts
+    /// each outage of the device notifier (once, not once per refresh); that one also reaches
+    /// <c>deskwall.log</c> through <see cref="TakeWarning"/>.</summary>
     public int ReaderFaults => Volatile.Read(ref _readerFaults);
+
+    /// <inheritdoc />
+    public string? TakeWarning() => Interlocked.Exchange(ref _warning, null);
 
     /// <summary>Due now while a notification is waiting to be published, otherwise on the next
     /// whole minute, like <see cref="TimeSource"/>.
@@ -102,7 +112,17 @@ public sealed class AudioSource : ISource, ISignalSource, IDisposable
         try
         {
             // Listening starts before the first reading, so a change between the two is not lost.
-            _notifier?.Start();
+            // A registration that failed is retried here every refresh, so it heals on its own.
+            if (_notifier is not null)
+            {
+                if (_notifier.TryStart(out var why)) _notifierDown = false;
+                else if (!_notifierDown)
+                {
+                    _notifierDown = true;
+                    Interlocked.Increment(ref _readerFaults);
+                    Volatile.Write(ref _warning, $"device-change notifications unavailable ({why}); a new default playback device shows on the next whole minute");
+                }
+            }
             // The volume callback only ever fires for the endpoint it was registered on, so a
             // headset becoming default is silent on that path. This is where it is acted on.
             var current = _reader.DefaultDeviceId;

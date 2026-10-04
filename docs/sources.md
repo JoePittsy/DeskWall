@@ -224,7 +224,11 @@ takes that lock.
 **The schedule is the whole minute**, the same boundary `time` and `hardware` use, so the source
 shares the clock's existing wake and asks for none of its own. It takes the very first reading
 (which is also when both callbacks are registered, not when the layout loads) and is the
-backstop for a device notification that never came.
+backstop for a device notification that never came. If the notifier cannot register, the source
+still works on that minute schedule and retries the registration on every refresh; the outage is
+one count in `ReaderFaults` and one warning in `deskwall.log` (`source 'audio': device-change
+notifications unavailable (...)`), through `IWarningSource`, which the daemon drains after each
+tick.
 
 **No playback device publishes an empty record**, not zeros, so every bound property falls back to
 its own default rather than drawing a confident "0%". A `bar` or `dial` whose bound `fraction`
@@ -265,9 +269,11 @@ inside run-to-run noise; native AOT: resolve 13-16 ms, total 138-152 ms.
 **How the device path was verified.** The owner's audio device cannot be changed from a test, so
 the default-change logic (which notifications count, the pending flag, the re-registration, the
 empty record) is unit-tested with an injected `IAudioDeviceNotifier`; the real notifier is checked
-to register with and unregister from CoreAudio on this machine; and the hand-built vtable's slot
-order is pinned against CsWin32's generated `IMMNotificationClient.Vtbl` and
-`IAudioEndpointVolumeCallback.Vtbl`. Not yet observed: a real headset plug on JOES-PC end to end.
+to register with and unregister from CoreAudio on this machine (skipped where Audiosrv is
+stopped); and both hand-built vtables are read back and every slot checked to hold the callback
+named for it, in the slot order of CsWin32's generated `IMMNotificationClient.Vtbl` and
+`IAudioEndpointVolumeCallback.Vtbl` (swapping two slots fails the test). Not yet observed: a real
+headset plug on JOES-PC end to end.
 
 **Implementation notes.** `IAudioEndpointVolumeCallback` and `IMMNotificationClient` are
 implemented with hand-built vtables (`ComCallback`): `[UnmanagedCallersOnly(CallConvs =

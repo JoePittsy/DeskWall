@@ -33,11 +33,13 @@ public sealed unsafe class CoreAudioDeviceNotifier : IAudioDeviceNotifier
         get { lock (_com) return _registered; }
     }
 
-    public void Start()
+    public bool TryStart(out string? error)
     {
         lock (_com)
         {
-            if (_disposed || _registered) return;
+            error = null;
+            if (_registered) return true;
+            if (_disposed) { error = "disposed"; return false; }
             try
             {
                 if (_enumerator is null)
@@ -49,10 +51,13 @@ public sealed unsafe class CoreAudioDeviceNotifier : IAudioDeviceNotifier
                 _client = ComCallback.Create(Vtable(), IMMNotificationClient.IID_Guid, this);
                 _enumerator->RegisterEndpointNotificationCallback((IMMNotificationClient*)_client);
                 _registered = true;
+                return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 if (_client is not null) { ComCallback.ReleaseOwned(_client); _client = null; }
+                error = $"{ex.GetType().Name}: {ex.Message}";
+                return false;
             }
         }
     }

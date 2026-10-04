@@ -1,4 +1,4 @@
-using DeskWall.Core.Sources.Audio;
+﻿using DeskWall.Core.Sources.Audio;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -81,43 +81,86 @@ public class CoreAudioReaderTests(ITestOutputHelper output)
     [Fact]
     public void The_Device_Notifier_Registers_With_CoreAudio_And_Lets_Go_Twice()
     {
-        // Registering an IMMNotificationClient needs no playback device, so unlike the facts above
-        // this one holds on any Windows box with the audio service running. What it proves is the
-        // hand-built vtable: CoreAudio QueryInterfaces the client and AddRefs it on registration,
-        // and Releases it on unregistration, through slots 0-2.
+        // Registering an IMMNotificationClient needs no playback device, only the audio service,
+        // so this skips on a machine with Audiosrv stopped, as the facts above skip on one with no
+        // sound card. What it proves is the IUnknown half of the hand-built vtable: CoreAudio
+        // QueryInterfaces and AddRefs the client on registration and Releases it on
+        // unregistration, through slots 0-2.
         var n = new CoreAudioDeviceNotifier();
         Assert.False(n.IsListening);
 
-        n.Start();
-        n.Start();
-        output.WriteLine($"listening = {n.IsListening}");
+        var started = n.TryStart(out var error);
+        output.WriteLine($"listening = {started} {error}");
+        if (!started && !AudioServiceRunning())
+        {
+            output.WriteLine("Audiosrv is not running: skipped");
+            n.Dispose();
+            return;
+        }
+        Assert.True(started, error);
+        Assert.True(n.TryStart(out _));            // idempotent
         Assert.True(n.IsListening);
 
         n.Dispose();
         n.Dispose();
         Assert.False(n.IsListening);
-        n.Start();                                  // disposed: stays silent, does not throw
-        Assert.False(n.IsListening);
+        Assert.False(n.TryStart(out var afterDispose));   // disposed: reports why, does not throw
+        Assert.Equal("disposed", afterDispose);
+    }
+
+    private static bool AudioServiceRunning()
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("sc.exe", "query Audiosrv")
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var text = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        return text.Contains("RUNNING", StringComparison.Ordinal);
     }
 
     /// <summary>The hand-built vtables put each callback at a slot number written by hand. A
     /// default-device change cannot be provoked from a test without changing the machine's audio
     /// device, so a wrong slot would otherwise surface only as the wrong method running on the
-    /// audio service's thread. This pins the order against the Windows SDK metadata, through
-    /// CsWin32's own (internal) Vtbl structs.</summary>
+    /// audio service's thread. This reads the table each class actually builds and checks every
+    /// slot holds the method named for that slot in the interface - the slot order coming from the
+    /// Windows SDK metadata, through CsWin32's own (internal) Vtbl struct. Slots 0-2 are
+    /// <c>ComCallback</c>'s IUnknown; slot n &gt;= 3 named <c>X</c> must be the class's <c>CbX</c>,
+    /// except the two device notifications deliberately routed to one ignoring callback.</summary>
     [Theory]
-    [InlineData("Windows.Win32.Media.Audio.IMMNotificationClient",
+    [InlineData(typeof(CoreAudioDeviceNotifier), "Windows.Win32.Media.Audio.IMMNotificationClient",
         "QueryInterface,AddRef,Release,OnDeviceStateChanged,OnDeviceAdded,OnDeviceRemoved,OnDefaultDeviceChanged,OnPropertyValueChanged")]
-    [InlineData("Windows.Win32.Media.Audio.Endpoints.IAudioEndpointVolumeCallback",
+    [InlineData(typeof(CoreAudioReader), "Windows.Win32.Media.Audio.Endpoints.IAudioEndpointVolumeCallback",
         "QueryInterface,AddRef,Release,OnNotify")]
-    public void Hand_Built_Vtable_Slots_Match_The_Interface(string interfaceName, string expectedSlots)
+    public unsafe void Hand_Built_Vtable_Slots_Hold_The_Matching_Callbacks(Type owner, string interfaceName, string expectedSlots)
     {
-        var vtbl = typeof(CoreAudioReader).Assembly.GetType(interfaceName + "+Vtbl", throwOnError: true)!;
-        var slots = vtbl.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-            .OrderBy(f => (long)System.Runtime.InteropServices.Marshal.OffsetOf(vtbl, f.Name))
+        const System.Reflection.BindingFlags Any = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+        var core = typeof(CoreAudioReader).Assembly;
+
+        // The interface's slot order, from the SDK metadata.
+        var vtblType = core.GetType(interfaceName + "+Vtbl", throwOnError: true)!;
+        var slots = vtblType.GetFields(Any & ~System.Reflection.BindingFlags.Static)
+            .OrderBy(f => (long)System.Runtime.InteropServices.Marshal.OffsetOf(vtblType, f.Name))
             .Select(f => f.Name.Split('_')[0])
             .ToArray();
         output.WriteLine(string.Join(", ", slots));
         Assert.Equal(expectedSlots.Split(','), slots);
+
+        // The table the class hands to CoreAudio.
+        var built = (void**)System.Reflection.Pointer.Unbox(owner.GetMethod("Vtable", Any)!.Invoke(null, null)!);
+        var comCallback = core.GetType("DeskWall.Core.Sources.Audio.ComCallback", throwOnError: true)!;
+        for (var i = 0; i < slots.Length; i++)
+        {
+            var expected = i < 3
+                ? comCallback.GetMethod(slots[i], Any)
+                : owner.GetMethod(slots[i] is "OnDeviceAdded" or "OnDeviceRemoved" ? "CbIgnoreDevice" : "Cb" + slots[i], Any);
+            Assert.True(expected is not null, $"no callback for slot {i} ({slots[i]})");
+            Assert.True(expected!.MethodHandle.GetFunctionPointer() == (nint)built[i],
+                $"slot {i} ({slots[i]}) does not hold {expected.DeclaringType!.Name}.{expected.Name}");
+        }
     }
 }
