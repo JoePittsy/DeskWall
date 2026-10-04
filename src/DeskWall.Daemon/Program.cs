@@ -50,6 +50,8 @@ internal static partial class Program
                     return Stop();
                 case "layouts":
                     return Layouts(opts);
+                case "theme":
+                    return Layouts(["use", .. opts]);
                 case "trace":
                     return Trace(opts);
                 case "migrate":
@@ -118,6 +120,10 @@ internal static partial class Program
         w.WriteLine("  uninstall                  stop, remove the Run entry, restore the wallpaper");
         w.WriteLine("  layouts list               registered layouts, and what this display resolves to");
         w.WriteLine("  layouts set <path>         register a layout for this display");
+        w.WriteLine("  layouts use <name|path>    switch this display, and every display sharing its layout, to a");
+        w.WriteLine("                             layout in the library (a path from elsewhere is copied in first);");
+        w.WriteLine("                             the running daemon repaints from it");
+        w.WriteLine("  theme <name|path>          the same as layouts use");
         w.WriteLine("  migrate [--check] [<path>] convert v1 layouts (default: every file in layouts.json) to v2");
         w.WriteLine("                             linked copies; --check prints the result and writes nothing");
         w.WriteLine("  trace <image> <x> <y> <width> <height> [output.json]  trace a skyline band");
@@ -283,7 +289,7 @@ internal static partial class Program
         return 0;
     }
 
-    /// <summary>deskwall layouts list | layouts set &lt;path&gt;.</summary>
+    /// <summary>deskwall layouts list | layouts set &lt;path&gt; | layouts use &lt;name|path&gt; (also `deskwall theme`, #31).</summary>
     private static int Layouts(List<string> opts)
     {
         var store = LayoutStore.Default(Console.Error.WriteLine);
@@ -310,6 +316,29 @@ internal static partial class Program
                     Console.WriteLine(res is null ? "  resolves to: nothing"
                         : $"  resolves to: {res.SourcePath}{(res.Scaled ? $" (scaled from {res.SourceSignature.Key})" : "")}");
                 }
+                var inUse = monitor is null ? null : store.InUse(monitor.Signature);
+                Console.WriteLine($"library ({LayoutLibrary.DefaultDir}); deskwall layouts use <name> switches:");
+                foreach (var choice in LayoutLibrary.List(store, LayoutLibrary.DefaultDir))
+                {
+                    var mark = inUse is not null && LayoutStore.SameFile(choice.Path, inUse) ? "*" : " ";
+                    var where = LayoutStore.SameFile(Path.GetDirectoryName(choice.Path)!, LayoutLibrary.DefaultDir) ? "" : $"  ({choice.Path})";
+                    Console.WriteLine($"  {mark} {choice.Name}{where}");
+                }
+                return 0;
+            case "use":
+                if (opts.Count < 2) { Console.Error.WriteLine("usage: deskwall layouts use <name|path>"); return 2; }
+                if (monitor is null) { Console.Error.WriteLine("no primary monitor"); return 3; }
+                LayoutSwitch done;
+                try { done = LayoutLibrary.Use(store, monitor.Signature, opts[1], LayoutLibrary.DefaultDir); }
+                catch (LayoutSwitchException ex) { Console.Error.WriteLine(ex.Message); return 3; }
+                if (done.Imported) Console.WriteLine($"copied into the library: {done.To}");
+                if (!done.Changed) { Console.WriteLine($"{Path.GetFileName(done.To)} is already in use"); return 0; }
+                Console.WriteLine(done.From is null ? $"{Path.GetFileName(done.To)} is now in use for:"
+                    : $"{Path.GetFileName(done.To)} replaces {Path.GetFileName(done.From)} for:");
+                foreach (var key in done.Keys) Console.WriteLine($"  {key}");
+                Console.WriteLine(RuntimeInstance.FindDaemonWindow() != 0
+                    ? "the running daemon repaints from it within a couple of seconds"
+                    : "no daemon is running for this runtime dir; it paints when DeskWall next starts");
                 return 0;
             default:
                 Console.Error.WriteLine($"deskwall layouts: unknown subcommand '{sub}'");

@@ -64,4 +64,14 @@ is the hero and a flat silhouette shows every speckle. Derive with
 `scripts/rice-layout.ps1 -Theme vapor -Out layouts/vapor.json`; judge with
 `scripts/gallery.ps1 -Layout layouts/vapor.json` (`docs/images/vapor.png`).
 
-Switching themes is two copies (a `deskwall theme` subcommand is #31): back up `%LOCALAPPDATA%\DeskWall\column-system.json`, then copy `layouts/<theme>.json` over it.
+Switch worlds with `deskwall theme <path>`, which copies the file into the runtime library
+(`%LOCALAPPDATA%\DeskWall\layouts\`) the first time. A name works only once that copy exists, so
+each world is imported once by path, from the repo root:
+
+    deskwall theme layouts\vapor.json         # first time: copies vapor.json in, then switches
+    deskwall theme layouts\alpine-rice.json   # first time: copies alpine-rice.json in, then switches
+    deskwall theme vapor                      # after that, by name
+    deskwall theme alpine-rice
+
+The designer's layout name does the same (its "Other file..." is the import). See
+`docs/layout-format.md` "Switching layouts".

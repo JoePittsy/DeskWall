@@ -390,6 +390,34 @@ A display signature is `<monitor device path> @ <width>x<height> @ <scale>%`
 (`%LOCALAPPDATA%\DeskWall\layouts.json`); `deskwall layouts set <path>` registers one for the
 current display.
 
+### Switching layouts
+
+`deskwall layouts use <name|path>` (alias `deskwall theme`, #31) and the designer's layout picker
+(the layout name in its top bar, #73) are one switch, `LayoutLibrary.Use`:
+
+- **The library** is every `*.json` in `%LOCALAPPDATA%\DeskWall\layouts\` except `migrate`'s
+  `*.v1.json` backups, plus any file `layouts.json` already names from elsewhere. A name is the
+  file name, with or without `.json`.
+- **What moves:** the file this display draws from (its own entry, or the closest match's when it
+  has none) is replaced by the new one in *every* entry that names it, in one write of
+  `layouts.json`. Displays that share a layout (the console panel and Apollo's virtual display on
+  JOES-PC) keep sharing it; a display with a layout of its own is untouched; a display that
+  resolves by closest match still does, so it stays scaled. With an empty store, the entry is the
+  current display's. The chosen file's write time is set to now, because closest-match ties go to
+  the most recently written file and a library file (or an imported copy, which keeps its
+  source's time) can be months old. The store is re-read first, so a long-lived one (the
+  designer's) never writes back entries another process changed.
+- **A file from outside the library is copied in** under its own name first, so the repo's
+  `layouts\` stay templates. The same bytes already there are reused; a different file of that
+  name is never overwritten, and the switch is refused.
+- The file must parse and be a version this build reads, or nothing is written. Assets and
+  scripts it references (`runtime:assets/...`, `runtime:scripts/...`) are not installed by the
+  switch (#90).
+
+The daemon needs nothing new: its layout watcher already watches `layouts.json` and re-resolves
+on a write. Measured with the real `LayoutWatcher` on a scratch home: no callbacks while idle, one
+callback 425 ms after the switch (300 ms of it is the watcher's debounce).
+
 When the current display has no exact entry, the store picks the closest existing layout
 (`DisplaySignature.Similarity`: +3 for the same device path, +1 for aspect ratio within 1
 percent, +1 for the same resolution; ties broken by the most recently written file) and scales

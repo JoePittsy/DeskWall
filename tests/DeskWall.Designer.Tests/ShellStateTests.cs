@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -379,5 +379,43 @@ public class ShellStateTests
     {
         Assert.Equal(1440, ShellState.DefaultWidth);
         Assert.Equal(900, ShellState.DefaultHeight);
+    }
+    // ---- #73: the layout picker ----------------------------------------------------------------
+
+    [Fact]
+    public void The_Picker_Offers_Every_Library_Layout_But_The_One_Open()
+    {
+        var library = new List<LayoutChoice>
+        {
+            new("clock-disks.json", @"C:\home\layouts\clock-disks.json"),
+            new("column-system.json", @"C:\home\layouts\column-system.json"),
+            new("vapor.json", @"C:\home\layouts\vapor.json"),
+        };
+
+        var offered = ShellState.SwitchTargets(library, @"c:\HOME\layouts\Column-System.json");
+
+        Assert.Equal(["clock-disks.json", "vapor.json"], offered.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void A_New_Layout_With_No_File_Is_Offered_The_Whole_Library()
+    {
+        var library = new List<LayoutChoice> { new("vapor.json", @"C:\home\layouts\vapor.json") };
+        Assert.Single(ShellState.SwitchTargets(library, null));
+        Assert.Empty(ShellState.SwitchTargets([], null));
+    }
+
+    [Fact]
+    public void The_Status_After_A_Switch_Says_What_Changed_And_Whether_It_Paints_Now()
+    {
+        var two = new LayoutSwitch(@"C:\h\layouts\rice.json", @"C:\h\layouts\vapor.json", ["A", "B"], Imported: false, Changed: true);
+        Assert.Equal("Switched to vapor.json on 2 displays. The desktop repaints in a moment.", ShellState.SwitchedText(two, daemonRunning: true));
+
+        var one = two with { Keys = ["A"], Imported = true };
+        Assert.Equal("Copied vapor.json into the library and switched to it. It paints when DeskWall next starts.",
+            ShellState.SwitchedText(one, daemonRunning: false));
+
+        Assert.Equal("Switched to vapor.json. The desktop repaints in a moment.", ShellState.SwitchedText(two with { Keys = ["A"] }, daemonRunning: true));
+        Assert.Equal("vapor.json is already the layout in use.", ShellState.SwitchedText(two with { Changed = false }, daemonRunning: true));
     }
 }

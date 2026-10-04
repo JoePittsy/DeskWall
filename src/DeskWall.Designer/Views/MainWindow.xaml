@@ -19,10 +19,21 @@
     <Border Grid.Row="0" Padding="16,10" BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
       <DockPanel LastChildFill="False">
+        <!-- The name of the layout in use is also where another is chosen (#73): the fact and the
+             way to change it are one element, so the bar gains a chevron, not a control. -->
         <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-          <TextBlock x:Name="LayoutNameText" FontSize="14" FontWeight="SemiBold"
-                     MaxWidth="560" TextTrimming="CharacterEllipsis"
-                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+          <Button x:Name="LayoutPicker" Click="LayoutPicker_Click" HorizontalAlignment="Left"
+                  Padding="6,1" Margin="-7,-2,0,-1" BorderThickness="0" Background="Transparent"
+                  AutomationProperties.Name="Layout in use: choose another">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="LayoutNameText" FontSize="14" FontWeight="SemiBold"
+                         MaxWidth="560" TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+              <TextBlock Text="&#xE70D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10"
+                         Margin="8,2,0,0" VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+          </Button>
           <TextBlock x:Name="DisplayText" FontSize="12" Margin="0,1,0,0"
                      MaxWidth="560" TextTrimming="CharacterEllipsis"
                      Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
