@@ -32,6 +32,23 @@ These predate the rewrite and still hold, unchanged, for whatever is on screen:
   leave it.
 - Right-hand margin only. Windows sit centred on the ultrawide and leave ~440 px each side.
 
+## Backlog lives in GitHub issues
+
+`JoePittsy/DeskWall` issues are the backlog: bugs, deferred ideas, parity-gate items. Docs and
+lane reports record what was decided and verified; they are not a to-do list.
+
+- **Before starting work**, `gh issue list` (and `gh issue view <n>` for the one you are on).
+  Reference it in commits and PRs (`Fixes #n` closes it on merge to `main`).
+- **File an issue the moment you find something you are not fixing now** -- a bug seen in
+  passing, a concern in a lane report, an idea the owner mentions, a "deferred" decision.
+  Context collapses; issues do not. One issue per thing, imperative title, body says what was
+  observed (measured, with numbers) and where (`file:line`, doc, layout).
+- **Labels:** one type (`bug`, `feature`, `chore`, `parity-gate`) plus one or more `area:*`
+  (`core`, `daemon`, `designer`, `sources`, `layouts`, `poc`, `build`). Parity-gate items also
+  carry the "Phase 6 parity gate" milestone.
+- The repo is public: no machine secrets, API keys or personal paths beyond what the repo
+  already shows.
+
 ## Layout of the repo and runtime (v1)
 
 | Where | What |
@@ -272,18 +289,18 @@ Enable-ScheduledTask -TaskName "DeskWall Tick"
 
 - Playnite last-played not importing from Steam (see above). Check Add-ons > Steam for an
   authentication prompt. Moot for v1's Steam-`http`-source path; still relevant if/when a
-  Playnite-backed `file` source recipe is built (see "Widget ideas" below).
+  Playnite-backed `file` source recipe is built (see "Widget ideas" below). Tracked as #69.
 - Text over the photo has only a 1 px shadow; legibility on bright areas is marginal. (Reassessed
   for v1 on 2026-09-21 and fixed there: the cause was a *fixed* 6 px blur applied at every font
   size, which on a 13 px label is a crust rather than a shadow. v1's radius is now proportional --
   see "v1 gotchas". The POC keeps its 1 px shadow.)
 - Steam VDF is regex-parsed; a nested block before `LastPlayed` would break it.
 - The 37 pre-existing desktop icons (game .url files, tool shortcuts) were catalogued but
-  **not** deleted; owner was going to. Public-desktop ones need admin.
+  **not** deleted; owner was going to. Public-desktop ones need admin. Tracked as #70.
 - Widget ideas the owner liked but deferred: days-since-last-crash (event log 41/1001) --
-  **shipped in v1** as `system.daysSinceCrash` (`docs/sources.md`); Tailscale/Apollo state,
-  pending-reboot flag (also shipped: `system.pendingReboot`), downloads in flight, repo status
-  remain deferred.
+  **shipped in v1** as `system.daysSinceCrash` (`docs/sources.md`); pending-reboot flag (also
+  shipped: `system.pendingReboot`) and Tailscale (shipped in `column-system.json`). Still
+  deferred, each an issue: Apollo state #42, downloads in flight #43, repo status #44.
 - Hearth (`~/source/repos/Hearth`, the owner's Playnite add-on) shares the Playnite domain; v1's
   `file` source is the intended seam for it to feed through without any Playnite- or
-  LiteDB-specific code in DeskWall itself (spec 4.3, `docs/sources.md`).
+  LiteDB-specific code in DeskWall itself (spec 4.3, `docs/sources.md`). The feed plugin is #35.
