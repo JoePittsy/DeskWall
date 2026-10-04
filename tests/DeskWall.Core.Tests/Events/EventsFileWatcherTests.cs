@@ -8,7 +8,7 @@ namespace DeskWall.Core.Tests.Events;
 /// directory a live daemon may be watching.</summary>
 public class EventsFileWatcherTests : IDisposable
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "events-watch-" + Guid.NewGuid().ToString("N"));
+    private readonly string _dir = Path.Combine(TestRun.Root, "events-watch-" + Guid.NewGuid().ToString("N"));
 
     public EventsFileWatcherTests() => Directory.CreateDirectory(_dir);
 

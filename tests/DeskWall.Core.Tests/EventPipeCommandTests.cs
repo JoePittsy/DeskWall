@@ -16,7 +16,7 @@ public class EventPipeCommandTests
 
     private static string ScratchHome(string tag)
     {
-        var home = Path.Combine(Path.GetTempPath(), "deskwall-tests", tag + "-" + Guid.NewGuid().ToString("N"));
+        var home = Path.Combine(TestRun.Root, tag + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(home);
         return home;
     }
