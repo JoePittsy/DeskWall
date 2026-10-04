@@ -56,6 +56,17 @@ public sealed record LayerRow(
 /// same way inside their parent.</para></summary>
 public static class LayerTree
 {
+    /// <summary>An orphan row's <see cref="LayerRow.Detail"/>: what its name is a key of.</summary>
+    public const string OrphanKnob = "knob", OrphanOverride = "override";
+
+    /// <summary>Take the orphan <paramref name="row"/> names off its copy (<see cref="Lens.RemoveOrphan"/>).
+    /// False for any other row.</summary>
+    public static bool RemoveOrphan(DesignerModel model, LayerRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return row.Kind == LayerKind.Orphan && Lens.RemoveOrphan(model, row.SelectId, row.Name, knob: row.Detail == OrphanKnob);
+    }
+
     public static IReadOnlyList<LayerRow> Build(DesignerModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -130,10 +141,10 @@ public static class LayerTree
         var template = broken ? null : Copies.TryFind(find, copy.Widget);
         var orphans = problems
             .Where(p => p.Kind is ExpandProblemKind.OrphanOverride or ExpandProblemKind.OrphanKnob)
-            .Select(p => new LayerRow(LayerKind.Orphan, p.Detail, p.Kind == ExpandProblemKind.OrphanKnob ? "knob" : "override",
+            .Select(p => new LayerRow(LayerKind.Orphan, p.Detail, p.Kind == ExpandProblemKind.OrphanKnob ? OrphanKnob : OrphanOverride,
                 copy.Id, null, true, true, false, false, []))
             .ToList();
-        var orphanKeys = orphans.Where(o => o.Detail == "override").Select(o => o.Name).ToHashSet(StringComparer.Ordinal);
+        var orphanKeys = orphans.Where(o => o.Detail == OrphanOverride).Select(o => o.Name).ToHashSet(StringComparer.Ordinal);
         var live = copy.Overrides.Keys.Where(k => !orphanKeys.Contains(k)).ToList();
 
         var prefix = copy.Id + ".";

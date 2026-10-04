@@ -27,6 +27,21 @@ public class KnobSetsTests
     }
 
     [Fact]
+    public void Names_Reads_The_Path_Past_A_Bind_Or_Token_Suffix()
+    {
+        var dial = PartsOf(Shipped("dial"));
+        Assert.True(KnobSets.Names(dial, "components.dial.fraction=bind:hardware.cpu"));
+        Assert.True(KnobSets.Names(dial, "components.label.text"));
+        Assert.True(KnobSets.Names(dial, "components.label.hidden"));
+        Assert.False(KnobSets.Names(dial, "components.gone.text"));
+        Assert.False(KnobSets.Names(dial, "components.label.nonsense"));
+
+        var weather = PartsOf(Shipped("weather"));
+        Assert.True(KnobSets.Names(weather, "sources.weather.settings.url:{lat}"));
+        Assert.False(KnobSets.Names(weather, "sources.gone.settings.url:{lat}"));
+    }
+
+    [Fact]
     public void Town_Substitutes_Two_Tokens_Into_One_Url_From_The_Template_Every_Time()
     {
         var t = Shipped("weather");

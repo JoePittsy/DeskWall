@@ -507,10 +507,24 @@ then the overrides. Resetting an override deletes its key, and setting a value e
 widget and knobs already give also deletes it, so the file only ever holds real differences.
 
 **Orphans.** An override or knob naming a part, property or knob the widget no longer has stays in
-the file untouched. The expander skips it and reports it (`OrphanOverride`, `OrphanKnob`); the
-designer's Layers panel lists it under the copy as an "orphan" row; the daemon does not log it,
-because it is not an error on the wallpaper. If the part comes back under the same id (an undo, a restored widget file), the
+the file untouched. The expander skips it and reports it (`OrphanOverride`, `OrphanKnob`, the
+latter also for a widget knob whose `sets` entries name nothing); the designer lists it under the
+copy in Layers with Remove (or Delete on the row); the daemon does not log it, because it is not an
+error on the wallpaper. If the part comes back under the same id (a restored widget file), the
 override applies again. Nothing is deleted silently.
+
+The one exception is an orphan the designer itself would create. An edit to a widget in the
+designer (a part deleted at widget depth, a source removed) takes what it kills with it, in the
+same undo entry: each knob `sets` entry whose target went (a composite knob loses the matching
+`||` part from its default, its choices and every copy's value, so the entries left keep theirs),
+a knob left with no entries, and the copies' values and overrides that applied before the edit
+and name nothing after it. Removing a source takes the knobs that set its settings, and the
+copies' values for them, the same way. The status bar says what went; Ctrl+Z brings it all back.
+A knob the owner takes off on purpose (its targets are all still there) also takes every copy's
+value for it, without a notice. Remove on a widget knob orphan does the same as a widget edit for
+that knob: its dead entries come out of the widget, for every copy. When every target is there and
+what fails is a value that will not parse as a binding, Remove deletes the copy's own value, or,
+when the copy has none and so the widget's own default is at fault, takes the knob off the widget.
 
 **z.** Each part's z is `copy.z + part.z`, so the default of `0` keeps every part's z as the widget
 authored it.
@@ -685,7 +699,8 @@ or a double-click outside the open copy or widget, comes back up.
   refused. The frame hugs its parts: its `size` is their extent from `(0, 0)`, and a part moved
   above or left of the frame renormalises the parts and shifts every copy of the widget in the
   layout back by as much, so nothing on the canvas jumps. An edit that more than doubles the
-  frame's area says so.
+  frame's area says so. Deleting a part takes the knob entries that set it with it, and the copies'
+  values and overrides for it, in the same undo entry ("Orphans" under "Copies").
 
 **Knobs** are made at widget depth: **Expose as knob** in a property's row menu (offered only for a
 literal: a knob over a binding would replace it with a literal) or the **Knob** toggle on a source
