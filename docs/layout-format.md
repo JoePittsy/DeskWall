@@ -1,4 +1,4 @@
-# Layout file format
+﻿# Layout file format
 
 A layout is one JSON file. It names a base image, the sources it needs, and the components
 placed on the canvas in physical pixels. Source of truth for this document: `LayoutFile.cs`,
@@ -518,9 +518,13 @@ designer (a part deleted at widget depth, a source removed) takes what it kills 
 same undo entry: each knob `sets` entry whose target went (a composite knob loses the matching
 `||` part from its default, its choices and every copy's value, so the entries left keep theirs),
 a knob left with no entries, and the copies' values and overrides that applied before the edit
-and name nothing after it. The status bar says what went; Ctrl+Z brings it all back. Remove on a
-widget knob orphan does the same for that knob: its dead entries come out of the widget, for every
-copy.
+and name nothing after it. Removing a source takes the knobs that set its settings, and the
+copies' values for them, the same way. The status bar says what went; Ctrl+Z brings it all back.
+A knob the owner takes off on purpose (its targets are all still there) also takes every copy's
+value for it, without a notice. Remove on a widget knob orphan does the same as a widget edit for
+that knob: its dead entries come out of the widget, for every copy. When every target is there and
+what fails is a value that will not parse as a binding, Remove deletes the copy's own value, or,
+when the copy has none and so the widget's own default is at fault, takes the knob off the widget.
 
 **z.** Each part's z is `copy.z + part.z`, so the default of `0` keeps every part's z as the widget
 authored it.

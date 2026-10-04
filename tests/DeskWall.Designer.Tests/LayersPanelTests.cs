@@ -1,4 +1,4 @@
-using System.Runtime.ExceptionServices;
+﻿using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -37,6 +37,72 @@ public class LayersPanelTests
             Assert.Single(Descendants(panel).OfType<Button>());
 
             Button Button(string name) => Descendants(panel).OfType<Button>().Single(b => AutomationProperties.GetName(b) == name);
+        });
+    }
+
+    private static DesignerModel OneOrphan() => DesignerModelDepthTests.Model("""
+        { "id": "dial-1", "widget": "dial", "x": 100, "y": 50, "overrides": { "components.gone.color": "#FF000000" } }
+        """);
+
+    private static TreeViewItem Item(LayersPanel panel, Func<LayerRow, bool> pick) => Items(panel.Tree).First(i => i.Tag is LayerRow r && pick(r));
+
+    private static IEnumerable<TreeViewItem> Items(ItemsControl c)
+    {
+        foreach (var i in c.Items.OfType<TreeViewItem>())
+        {
+            yield return i;
+            foreach (var x in Items(i)) yield return x;
+        }
+    }
+
+    /// <summary>The window's Delete asks Layers first. With the focus elsewhere (the canvas), an
+    /// orphan row the tree still has selected must not take the key from the canvas.</summary>
+    [Fact]
+    public void Delete_Is_Not_Layers_When_Layers_Has_No_Focus()
+    {
+        OnStaThread(() =>
+        {
+            var m = OneOrphan();
+            var panel = new LayersPanel();
+            panel.Attach(m);
+            Item(panel, r => r.Kind == LayerKind.Orphan).IsSelected = true;
+            Assert.False(panel.RemoveFocusedOrphan());
+            Assert.Single(m.Layout.Copies![0].Overrides);
+        });
+    }
+
+    /// <summary>The bug #80 found on the way: Delete on a focused orphan row fell through to the
+    /// canvas selection, which an orphan row sets to its copy, and deleted the whole copy.</summary>
+    [Fact]
+    [Trait("Category", "Desktop")]
+    public void Delete_On_A_Focused_Orphan_Row_Removes_The_Orphan_And_Keeps_The_Copy()
+    {
+        OnStaThread(() =>
+        {
+            var m = OneOrphan();
+            var panel = new LayersPanel();
+            panel.Attach(m);
+            var window = new Window { Content = panel, Width = 360, Height = 300, ShowActivated = true, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000 };
+            window.Show();
+            try
+            {
+                window.Activate();
+                Item(panel, r => r.Kind == LayerKind.Copy).IsExpanded = true;
+                window.UpdateLayout();   // the children's containers exist only after a layout pass
+                var part = Item(panel, r => r.Kind == LayerKind.Part);
+                part.IsSelected = true;
+                Assert.True(part.Focus());
+                Assert.False(panel.RemoveFocusedOrphan());   // a part row: Delete is the canvas's
+
+                var orphan = Item(panel, r => r.Kind == LayerKind.Orphan);
+                orphan.IsSelected = true;
+                Assert.True(orphan.Focus());
+                Assert.True(panel.RemoveFocusedOrphan());
+                Assert.Single(m.Layout.Copies!);
+                Assert.Empty(m.Layout.Copies![0].Overrides);
+                Assert.True(panel.IsKeyboardFocusWithin);   // on the copy's row, not lost
+            }
+            finally { window.Close(); }
         });
     }
 

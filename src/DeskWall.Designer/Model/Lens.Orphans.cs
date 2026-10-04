@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Widgets;
 
 namespace DeskWall.Designer.Model;
@@ -22,8 +22,9 @@ public static partial class Lens
     /// <summary>Take an orphan the Layers panel lists off copy <paramref name="copyId"/>, as ONE undo
     /// entry: an override (<paramref name="knob"/> false) or a knob value by key. A knob the widget
     /// still has but whose <c>sets</c> name nothing in it is the widget's orphan, not the copy's, so
-    /// its dead entries come out of the widget and every copy's value follows. False when the copy
-    /// lists no such orphan.</summary>
+    /// its dead entries come out of the widget and every copy's value follows. One whose targets are
+    /// all there fails on a value instead: the copy's own value goes, or, when the copy has none, the
+    /// knob comes off the widget. False only when the copy lists no such orphan.</summary>
     public static bool RemoveOrphan(DesignerModel model, string copyId, string key, bool knob)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -43,7 +44,20 @@ public static partial class Lens
             return true;
         }
         var edited = CutDeadKnobs(null, template, k => k.Id == key, out var cuts);
-        if (cuts.Count == 0) return false;   // it fails on a value that will not parse, not on a target
+        if (cuts.Count == 0)
+        {
+            // Every target is there: what fails is a value (one that will not parse as a binding, or
+            // a binding written to a setting). The copy's own, when it has one; else the widget's
+            // default, which no copy can fix, so the knob comes off the widget.
+            if (copy.Knobs.ContainsKey(key))
+            {
+                model.Edit(Label, l => FindCopy(l, copyId)!.Knobs.Remove(key));
+                return true;
+            }
+            var dead = template.Knobs.First(k => k.Id == key);
+            cuts = [new KnobCut(dead, Enumerable.Range(0, dead.Sets.Count).ToList(), null)];
+            edited = WithKnobs(template, template.Knobs.Where(k => k.Id != key).ToList());
+        }
         model.Edit(Label, (l, edits) =>
         {
             edits[template.Key] = edited;
@@ -71,10 +85,14 @@ public static partial class Lens
         var total = dropped.Count + lost;
         if (total == 0) return;
         var said = new List<string>(2);
-        if (dropped.Count > 0) said.Add($"the {string.Join(" and ", dropped)} knob{(dropped.Count == 1 ? "" : "s")}");
+        if (dropped.Count > 0) said.Add($"the {Listed(dropped)} knob{(dropped.Count == 1 ? "" : "s")}");
         if (lost > 0) said.Add(lost == 1 ? "a value one copy had of its own" : $"{lost} values the copies had of their own");
         model.Notify($"Removed {string.Join(" and ", said)}: what {(total == 1 ? "it" : "they")} set went with your edit. Ctrl+Z brings {(total == 1 ? "it" : "them")} back.");
     }
+
+    /// <summary>"A", "A and B", "A, B and C".</summary>
+    private static string Listed(IReadOnlyList<string> items)
+        => items.Count < 3 ? string.Join(" and ", items) : string.Join(", ", items.Take(items.Count - 1)) + " and " + items[^1];
 
     /// <summary><paramref name="edited"/> with, for each knob <paramref name="which"/> picks, every
     /// <c>sets</c> entry that names nothing in it (and, given <paramref name="was"/>, named something
@@ -102,13 +120,25 @@ public static partial class Lens
             cuts.Add(new KnobCut(knob, gone, kept));
             if (kept is not null) knobs.Add(kept);
         }
-        if (cuts.Count == 0) return edited;
-        return new WidgetTemplate
-        {
-            Name = edited.Name, Key = edited.Key, Path = edited.Path, Description = edited.Description, Width = edited.Width, Height = edited.Height,
-            Anchor = edited.Anchor, Requires = edited.Requires, Knobs = knobs, Sources = edited.Sources, Components = edited.Components,
-        };
+        // A knob the edit itself took out because its targets went (WidgetDocument drops a source
+        // setting's knob with the source, before this sees it) is a cut too, so it is counted and
+        // said; one whose targets are all still there was taken out on purpose (SettleCopies).
+        if (then is not null)
+            foreach (var knob in was!.Knobs)
+            {
+                if (!which(knob) || edited.Knobs.Any(k => k.Id == knob.Id)) continue;
+                var named = Enumerable.Range(0, knob.Sets.Count).Where(i => KnobSets.Names(then, knob.Sets[i])).ToList();
+                if (named.Count > 0 && named.All(i => !KnobSets.Names(now, knob.Sets[i])))
+                    cuts.Add(new KnobCut(knob, Enumerable.Range(0, knob.Sets.Count).ToList(), null));
+            }
+        return cuts.Count == 0 ? edited : WithKnobs(edited, knobs);
     }
+
+    private static WidgetTemplate WithKnobs(WidgetTemplate t, IReadOnlyList<Knob> knobs) => new()
+    {
+        Name = t.Name, Key = t.Key, Path = t.Path, Description = t.Description, Width = t.Width, Height = t.Height,
+        Anchor = t.Anchor, Requires = t.Requires, Knobs = knobs, Sources = t.Sources, Components = t.Components,
+    };
 
     /// <summary>The copies of <paramref name="now"/> in <paramref name="l"/>, after the widget went
     /// from <paramref name="was"/> to it: a value for a knob that went is deleted, one for a trimmed

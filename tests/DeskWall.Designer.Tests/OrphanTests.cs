@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Widgets;
 using DeskWall.Designer.Model;
 using Xunit;
@@ -97,6 +97,80 @@ public class OrphanTests
         m.Move(["dial-1.label"], 0, 2);
         Assert.Equal(["metric", "warnAt"], m.WidgetEdits["dial"].Knobs.Select(k => k.Id));
         Assert.Null(said);
+    }
+
+    [Fact]
+    public void Removing_A_Source_Takes_The_Knobs_That_Set_It_And_The_Copies_Values_And_Says_So()
+    {
+        var m = DesignerModelDepthTests.Model("""
+            { "id": "command-1", "widget": "command", "x": 0, "y": 0, "knobs": { "args": "/c ver" } },
+            { "id": "command-2", "widget": "command", "x": 0, "y": 40, "knobs": { "args": "/c date /t", "timeout": "20" } }
+            """);
+        string? said = null;
+        m.Notice += s => said = s;
+        Assert.True(Lens.EditWidget(m, "command", "Remove command", d => d.RemoveSource("command")));
+
+        Assert.Empty(m.WidgetEdits["command"].Knobs);
+        Assert.Empty(Copy(m, "command-1").Knobs);
+        Assert.Empty(Copy(m, "command-2").Knobs);
+        Assert.Equal("Removed the Command, Arguments and Timeout (s) knobs and 3 values the copies had of their own: what they set went with your edit. Ctrl+Z brings them back.", said);
+
+        m.Undo();
+        Assert.Equal("/c ver", Copy(m, "command-1").Knobs["args"]);
+        Assert.Equal(2, Copy(m, "command-2").Knobs.Count);
+    }
+
+    [Fact]
+    public void A_Knob_Taken_Off_On_Purpose_Takes_The_Copies_Values_With_It_Quietly()
+    {
+        var m = TwoDials("""
+            , "knobs": { "warnAt": "0.5" }
+            """);
+        string? said = null;
+        m.Notice += s => said = s;
+        Assert.True(Lens.EditWidget(m, "dial", "Remove knob", d => d.RemoveAdjustable(d.Adjustables.Single(a => a.Id == "warnAt"))));
+
+        Assert.Equal(["metric"], m.WidgetEdits["dial"].Knobs.Select(k => k.Id));
+        Assert.Empty(Copy(m, "dial-1").Knobs);
+        Assert.Empty(Orphans(m));
+        Assert.Null(said);   // the owner took it off and knows
+
+        m.Undo();
+        Assert.Equal("0.5", Copy(m, "dial-1").Knobs["warnAt"]);
+    }
+
+    [Fact]
+    public void Remove_On_A_Knob_Whose_Value_Will_Not_Bind_Takes_The_Copys_Value_Off()
+    {
+        var m = TwoDials("""
+            , "knobs": { "metric": "Bad||((||((||bad" }
+            """);
+        Assert.Equal(["dial-1:metric"], Orphans(m).Select(p => $"{p.CopyId}:{p.Detail}"));
+        Assert.True(Lens.RemoveOrphan(m, "dial-1", "metric", knob: true));
+        Assert.Empty(Copy(m, "dial-1").Knobs);
+        Assert.Empty(m.WidgetEdits);
+        Assert.Empty(Orphans(m));
+    }
+
+    [Fact]
+    public void Remove_On_A_Knob_Whose_Own_Default_Will_Not_Bind_Takes_The_Knob_Off_The_Widget()
+    {
+        var m = TwoDials();
+        var t = m.Finder()("dial")!;
+        var broken = new WidgetTemplate
+        {
+            Name = t.Name, Key = t.Key, Description = t.Description, Width = t.Width, Height = t.Height, Anchor = t.Anchor,
+            Sources = t.Sources, Components = t.Components,
+            Knobs = t.Knobs.Select(k => k.Id == "metric" ? k with { Default = "Bad||((||((||bad" } : k).ToList(),
+        };
+        m.Edit("Hand edit", (_, edits) => edits["dial"] = broken);
+        Assert.Equal(["dial-1:metric", "dial-2:metric"], Orphans(m).Select(p => $"{p.CopyId}:{p.Detail}").Order());
+
+        Assert.True(Lens.RemoveOrphan(m, "dial-2", "metric", knob: true));
+        Assert.Equal(["warnAt"], m.WidgetEdits["dial"].Knobs.Select(k => k.Id));
+        Assert.Empty(Orphans(m));
+        m.Undo();
+        Assert.Equal(2, Orphans(m).Count());
     }
 
     [Fact]
