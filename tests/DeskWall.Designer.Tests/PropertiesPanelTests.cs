@@ -49,7 +49,6 @@ public class PropertiesPanelTests
     /// <summary>Review finding 3: a repeater whose "items" is a literal used to dereference a null
     /// Binding and take the designer down.</summary>
     [Fact]
-    [Trait("Category", "Desktop")]
     public void Selecting_A_Repeater_With_Literal_Items_Shows_The_Literal_And_A_Note()
     {
         OnStaThread(() =>
@@ -68,7 +67,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void Rows_Are_Grouped_With_Human_Labels_And_Every_Row_Control_Is_Named()
     {
         OnStaThread(() =>
@@ -93,7 +91,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void Percentage_Rows_Show_Percent_And_Write_The_Fraction_Back()
     {
         OnStaThread(() =>
@@ -124,7 +121,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void An_Overridden_Row_Is_Marked_And_Offers_Reset_And_Push_To_Widget()
     {
         OnStaThread(() =>
@@ -162,7 +158,6 @@ public class PropertiesPanelTests
     /// <summary>Found in the live pass: Reset from the row menu rebuilds the panel, and the old Size
     /// box, losing the focus afterwards, used to write its stale "14" straight back.</summary>
     [Fact]
-    [Trait("Category", "Desktop")]
     public void A_Box_The_Rebuild_Replaced_Does_Not_Commit_Its_Stale_Text()
     {
         OnStaThread(() =>
@@ -180,7 +175,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void A_Colour_From_The_Picker_Is_One_Undo_Entry_And_An_Override_At_Copy_Depth()
     {
         OnStaThread(() =>
@@ -212,7 +206,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void The_Chip_Offers_Only_Values_That_Fit_And_Binds_By_Label_With_A_Preset()
     {
         OnStaThread(() =>
@@ -265,7 +258,6 @@ public class PropertiesPanelTests
     /// binds like any other: Bind in the menu opens the chip, a pick binds the layout's baseImage
     /// (bringing the source along), and Unbind puts back a literal.</summary>
     [Fact]
-    [Trait("Category", "Desktop")]
     public void The_Layout_Photo_Row_Binds_And_Unbinds_Like_Any_Property()
     {
         OnStaThread(() =>
@@ -312,7 +304,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void Expose_As_Knob_At_Widget_Depth_Adds_A_Knob_To_The_Widget_And_Undoes()
     {
         OnStaThread(() =>
@@ -341,7 +332,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void A_Selected_Copy_Shows_Its_Knobs_First_And_Edit_Parts_Is_The_Details_Path()
     {
         OnStaThread(() =>
@@ -375,7 +365,6 @@ public class PropertiesPanelTests
     }
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void A_Template_Child_Shown_From_Layers_Edits_That_Child()
     {
         OnStaThread(() =>

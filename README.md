@@ -189,6 +189,22 @@ should read "meets budget" into the two open rows; they are findings, not a budg
 For comparison, the proof of concept it replaces measured about 370 ms wall / 190 ms CPU per
 tick and about 5 s cold start (spec 1.2, from the POC's own `compose.ps1` timing output).
 
+## Tests
+
+```powershell
+dotnet test                                                         # the safe default
+dotnet test tests/DeskWall.Core.Tests --filter Category=Desktop      # live desktop: only where you may disturb it
+dotnet test tests/DeskWall.Designer.Tests --filter Category=Desktop
+dotnet test tests/DeskWall.Core.Tests --filter Category=Budget       # needs a published AOT deskwall.exe
+```
+
+Every test runs under a scratch `DESKWALL_HOME`, never the real runtime dir. The default run
+(`tests/deskwall.runsettings`) leaves out two categories. `Desktop` tests act on the live
+interactive session: they write and position `.lnk` files on the real desktop, switch its folder
+flags, capture the screen, show windows, or start a resident `deskwall run`. `Budget` tests drive a
+published daemon for minutes and paint the real wallpaper. Ask for either by name, as above; a
+command-line `--filter` replaces the runsettings filter rather than adding to it.
+
 ## Verify
 
 `deskwall verify` is the pixel-diff half of "measured, not eyeballed". It resolves the layout

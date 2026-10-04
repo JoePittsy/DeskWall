@@ -6,7 +6,14 @@ namespace DeskWall.Core.Tests;
 /// <summary>`deskwall --home &lt;scratch&gt; stop` against a real daemon. The scratch home has no layout
 /// registered, so the daemon never paints the wallpaper, and --no-tray --no-shortcuts keeps it off
 /// the tray and the desktop. It runs the JIT deskwall.exe the project reference copies next to the
-/// test binaries, so it needs no publish.</summary>
+/// test binaries, so it needs no publish.
+/// <para>
+/// Category=Desktop all the same: it is a real resident `deskwall run` in the interactive session, and
+/// a second daemon opens another instance of the shared DeskWall.Events pipe, so for its lifetime a
+/// producer's event can land on it instead of the owner's live daemon (CLAUDE.md, "Two daemons can
+/// share one pipe name").
+/// </para></summary>
+[Trait("Category", "Desktop")]
 public class StopCommandTests
 {
     private static readonly string Exe = Path.Combine(AppContext.BaseDirectory, "deskwall.exe");

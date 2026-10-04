@@ -23,7 +23,6 @@ public class ProvidersPanelTests
             null, null, null, null, DateTimeOffset.UtcNow);
 
     [Fact]
-    [Trait("Category", "Desktop")]
     public void A_Remembered_Provider_Reaches_The_Rows_And_The_Test_Box()
     {
         OnStaThread(() =>

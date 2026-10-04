@@ -194,9 +194,21 @@ list and not a work log.
 
 ```powershell
 dotnet build                                      # AOT analyzer warnings are real even under JIT
+dotnet test                                       # excludes Category=Budget and Category=Desktop
 deskwall tick --layout layouts\clock-disks.json --force --measure --no-apply --no-shortcuts
 deskwall verify                                   # per-slot arrow padding + clock crop; exit 0 OK, 4 mismatch, 1 cannot run
 ```
+
+The default `dotnet test` leaves out two categories, via `tests/deskwall.runsettings` (both test
+projects use it): `Budget` and `Desktop`. `Desktop` is every test that acts on the live
+interactive session -- writes `.lnk` files into the real desktop folder, moves icons, switches the
+desktop folder flags, captures the screen, shows a window, or starts a resident `deskwall run`.
+Run them only on a desktop you may disturb, by name:
+`dotnet test tests/DeskWall.Core.Tests --filter Category=Desktop` (and the same for
+`tests/DeskWall.Designer.Tests`). Any command-line `--filter` replaces the runsettings filter
+rather than adding to it, so a hand-written filter must exclude `Desktop` itself
+(`--filter "FullyQualifiedName~Foo&Category!=Desktop"`). A new test that touches the live session
+without the trait is a defect, like one that writes the real runtime dir.
 
 `--no-apply --no-shortcuts` keeps a scratch tick from touching the live wallpaper or desktop
 icons; drop them (and use a scratch `--home`) only when actually exercising the real thing.
