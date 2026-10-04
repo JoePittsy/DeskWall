@@ -117,6 +117,7 @@ public sealed partial class TimeSource : ISource
         var night = TimeSpan.FromDays(1) - (set - rise);
         var intoNight = t >= set ? t - set : t < rise ? t + TimeSpan.FromDays(1) - set : TimeSpan.Zero;
         d["nightFraction"] = new NumberValue(Math.Round(Math.Clamp(intoNight / night, 0, 1), 4));
+        d["skyFraction"] = new NumberValue(Math.Round(SkyFraction(t, rise, set), 4));
         if (sun is not null)
         {
             d["sunrise"] = new TimeValue(At(now, rise));
@@ -133,6 +134,19 @@ public sealed partial class TimeSource : ISource
         if (timeOfDay >= sunrise - Twilight && timeOfDay < sunrise + Twilight) return "dawn";
         if (timeOfDay >= sunset - Twilight && timeOfDay < sunset + Twilight) return "dusk";
         return timeOfDay > sunrise && timeOfDay < sunset ? "day" : "night";
+    }
+
+    /// <summary>The day fraction on the sun's clock: midnight 0, <paramref name="sunrise"/> 0.25,
+    /// <paramref name="sunset"/> 0.75, linear between. A sky choreographed on <c>dayFraction</c> for a
+    /// 06:00 sunrise and 18:00 sunset (dawn, sun, moon and stars at their own stops) follows the real
+    /// sun by binding this instead, with no stop rewritten; with the 06:00/18:00 default it is
+    /// <c>dayFraction</c>.</summary>
+    public static double SkyFraction(TimeSpan timeOfDay, TimeSpan sunrise, TimeSpan sunset)
+    {
+        var day = TimeSpan.FromDays(1);
+        if (timeOfDay < sunrise) return 0.25 * (timeOfDay / sunrise);
+        if (timeOfDay < sunset) return 0.25 + 0.5 * ((timeOfDay - sunrise) / (sunset - sunrise));
+        return 0.75 + 0.25 * ((timeOfDay - sunset) / (day - sunset));
     }
 
     private static DateTimeOffset At(DateTimeOffset now, TimeSpan timeOfDay)

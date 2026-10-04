@@ -90,6 +90,7 @@ public class ValueCatalogTests
         Assert.Equal(ValueKind.Number, Entry(all, "time.dayPercent").Kind);
         Assert.Equal(ValueKind.Fraction, Entry(all, "time.sunFraction").Kind);
         Assert.Equal(ValueKind.Fraction, Entry(all, "time.nightFraction").Kind);
+        Assert.Equal(ValueKind.Fraction, Entry(all, "time.skyFraction").Kind);
         Assert.Equal(ValueKind.Timestamp, Entry(all, "time.sunset").Kind);
     }
 

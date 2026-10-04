@@ -142,6 +142,37 @@ public class TimeSourceTests
         Assert.Equal(night, Num(v, "nightFraction"), 4);
     }
 
+    /// <summary>skyFraction is the day fraction on the sun's clock: the real sunrise lands on 0.25
+    /// and sunset on 0.75, midnight stays 0, and each stretch between is linear. A sky drawn
+    /// against dayFraction for a 06:00 sunrise follows the real one by swapping the field.</summary>
+    [Theory]
+    [InlineData(0, 0, 0.0)]
+    [InlineData(3, 30, 0.125)]
+    [InlineData(7, 0, 0.25)]
+    [InlineData(13, 0, 0.5)]
+    [InlineData(19, 0, 0.75)]
+    [InlineData(21, 30, 0.875)]
+    [InlineData(23, 59, 0.9992)]
+    public async Task Sky_Fraction_Pins_The_Real_Sun_To_Six_And_Eighteen(int h, int m, double sky)
+    {
+        var v = await Sun(At(h, m), "07:00", "19:00").RefreshAsync(default);
+        Assert.Equal(sky, Num(v, "skyFraction"), 4);
+    }
+
+    /// <summary>Without sun settings skyFraction is dayFraction, so a layout that swaps one for the
+    /// other changes nothing until the sun is set, and a preview pinned by time.at behaves as before.</summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(5, 17)]
+    [InlineData(12, 0)]
+    [InlineData(18, 42)]
+    [InlineData(23, 59)]
+    public async Task Without_Sun_Settings_Sky_Fraction_Is_Day_Fraction(int h, int m)
+    {
+        var v = await new TimeSource("time", new FakeClock(At(h, m))).RefreshAsync(default);
+        Assert.Equal(Num(v, "dayFraction"), Num(v, "skyFraction"), 4);
+    }
+
     [Fact]
     public async Task Publishes_Sunrise_And_Sunset_As_Times_Today()
     {
