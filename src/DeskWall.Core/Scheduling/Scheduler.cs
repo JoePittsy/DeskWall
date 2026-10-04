@@ -16,6 +16,10 @@ public sealed class Scheduler(IReadOnlyList<ISource> sources, SourceRegistry reg
     /// so the loop cannot wake for a source the tick then declines to refresh.</summary>
     public static DateTimeOffset DueAt(ISource source, SourceSnapshot snapshot, DateTimeOffset now)
     {
+        // A fetch the tick did not wait for is still running (#20). Its landing raises Changed, which
+        // is the wake; until then neither the back-off nor NextDue (still measured from the previous
+        // LastRefresh, so "now") is the right answer, and "now" would pin the daemon at MinDelay.
+        if (source is AsyncSource { Fetching: true }) return DateTimeOffset.MaxValue;
         if (snapshot.ConsecutiveFailures == 0) return source.NextDue(snapshot.LastRefresh, now);
         // A push that has already happened is not a retry. Holding it back for the whole back-off
         // swallowed a volume change and a file save outright, which is what the push work found.

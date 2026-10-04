@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
@@ -54,7 +54,13 @@ public class HttpSourceTests
             return r;
         });
         var src = HttpSource.FromDef(Def("https://api/y"), new FixedClock(DateTimeOffset.UnixEpoch), SecretsWith("{}"), h);
+        var landed = new TaskCompletionSource();
+        src.Changed += _ => landed.TrySetResult();
         var a = await src.RefreshAsync(default);
+        // A second refresh does not wait for its fetch (#20); the landing's Changed is what the daemon
+        // ticks on to harvest it.
+        await Assert.ThrowsAsync<SourcePendingException>(async () => await src.RefreshAsync(default));
+        await landed.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var b = await src.RefreshAsync(default);
         Assert.Equal(2, calls);
         Assert.True(((BoolValue)b.Get("fromCache")!).Flag);

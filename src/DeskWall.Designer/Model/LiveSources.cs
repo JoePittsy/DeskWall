@@ -195,7 +195,7 @@ public sealed class LiveSources : IDisposable
             var now = _clock.Now;
             foreach (var entry in _entries)
             {
-                if (entry.Source is null) continue;
+                if (entry.Source is null or AsyncSource { Fetching: true }) continue;   // its landing signals
                 SourceSnapshot snap;
                 lock (_registryLock) snap = _registry.Get(entry.Def.Name);
                 if (entry.Source.NextDue(snap.LastRefresh, now) <= now)
@@ -233,6 +233,8 @@ public sealed class LiveSources : IDisposable
             if (entry.Retired) return;
             lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name).Succeeded(v, _clock.Now));
         }
+        // Still fetching: the panel keeps what it shows, and the landing's Changed brings it back here.
+        catch (SourcePendingException) { return; }
         catch (Exception ex)
         {
             if (entry.Retired) return;

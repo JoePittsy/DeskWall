@@ -116,7 +116,12 @@ public class LiveSourcesTests
         Assert.Null(first.LastError);
 
         File.Delete(exe);
+        // A second refresh does not wait for its fetch (#20): the panel keeps what it shows, and the
+        // landing's wake is what records the failure.
         await live.RefreshNowAsync("cmd");
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (live.Snapshots.Single(s => s.Name == "cmd").LastError is null && DateTime.UtcNow < deadline)
+            await Task.Delay(50);
         var second = live.Snapshots.Single(s => s.Name == "cmd");
         Assert.NotNull(second.Values);   // last good values are kept
         Assert.NotNull(second.LastError);

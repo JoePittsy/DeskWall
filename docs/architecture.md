@@ -129,7 +129,10 @@ The tick itself:
    before any is awaited, so two `command` sources that each spend a second starting
    `powershell.exe` cost one second of wall time, not two; results are still written to the
    registry in layout order. A source that throws is marked failed; its previous values keep
-   publishing.
+   publishing. An `AsyncSource` (http, rss, command) waits only on its first refresh; after that a
+   fetch still running answers "pending" at once and its snapshot is left exactly as it was, the
+   source is not due until the fetch lands, and the landing's wake is the tick that harvests it
+   (`docs/sources.md` "Failure and staleness"; #20).
 2. **Resolve and diff.** `LayoutResolver.Resolve` expands the layout (repeaters, after copies are
    already expanded) against the current value tree and computes each component's content key.
    This is compared against `frame-state.json`'s `KeysById` from the previous tick. If nothing
