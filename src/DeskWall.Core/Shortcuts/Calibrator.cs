@@ -174,7 +174,7 @@ public static class Calibrator
     /// <summary>True when the shell really was asked to minimise. A delegate that throws is a failure
     /// like any other, and the exception is handed back rather than swallowed so it can travel as the
     /// inner exception of the one the caller raises.</summary>
-    private static bool TryMinimize(Func<bool> minimize, out Exception? error)
+    internal static bool TryMinimize(Func<bool> minimize, out Exception? error)
     {
         error = null;
         try { return minimize(); }
