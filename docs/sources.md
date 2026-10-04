@@ -131,7 +131,7 @@ positive number; anything unparseable or <= 0 falls back to the default. `every`
 top-level `every` field.
 
 CPU, RAM and (when an NVIDIA GPU is present) GPU load, averaged over a rolling window. A
-`System.Threading.Timer` inside the source, started on the first `RefreshAsync` and stopped on
+timer inside the source (from `TimeProvider.System`; tests inject a fake), started on the first `RefreshAsync` and stopped on
 `Dispose`, takes its first reading **immediately** and one more every `sample` seconds after that,
 into a fixed ring of `window / sample` slots (at least 1). `RefreshAsync` itself only reads the
 rings, so the daemon's schedule is unchanged: the source is due every `every` seconds like any

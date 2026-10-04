@@ -18,7 +18,8 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     private readonly RollingWindow _cpu, _ram, _gpu, _gpuMem, _gpuTemp;
     private CpuTimes? _lastCpu;
     private MemoryReading? _lastMem;
-    private Timer? _timer;
+    private readonly TimeProvider _time;
+    private ITimer? _timer;
     private readonly bool _autoStart;
     private bool _disposed;
     private int _refreshes;
@@ -27,10 +28,13 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
     /// counts the times one did anyway; Core sources have no logger to report it to.</summary>
     public int ReaderFaults { get; private set; }
 
-    public HardwareSource(string name, TimeSpan every, TimeSpan sample, TimeSpan window, IHardwareReader reader, bool autoStart = true)
+    /// <param name="time">Where the sampler's timer comes from; <see cref="TimeProvider.System"/>
+    /// unless a test passes a fake to advance through samples instead of sleeping.</param>
+    public HardwareSource(string name, TimeSpan every, TimeSpan sample, TimeSpan window, IHardwareReader reader, bool autoStart = true, TimeProvider? time = null)
         : base(name, every)
     {
         _reader = reader;
+        _time = time ?? TimeProvider.System;
         _sample = sample <= TimeSpan.Zero ? TimeSpan.FromSeconds(10) : sample;
         _window = window <= TimeSpan.Zero ? TimeSpan.FromSeconds(300) : window;
         var slots = (int)Math.Max(1, Math.Round(_window.TotalSeconds / _sample.TotalSeconds));
@@ -51,7 +55,7 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
         => s.TryGetValue(key, out var v) && double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) && d > 0 ? d : fallback;
 
     /// <summary>Take one reading of every metric. Called by the timer; public so tests drive it.
-    /// <para>Nothing escapes: this runs on a <see cref="Timer"/> callback, and an exception out of a
+    /// <para>Nothing escapes: this runs on a timer callback, and an exception out of a
     /// timer callback takes the whole process down. The readers are written not to throw, but a
     /// driver reset under NVML, or a reader added later, must cost one sample and nothing more.</para></summary>
     public void SampleOnce()
@@ -101,7 +105,7 @@ public sealed class HardwareSource : PeriodicSource, IDisposable
             // The timer then carries on from a whole `sample` away. Due time zero here would only
             // duplicate the reading just taken, which skews the average and measures a CPU delta
             // across no time at all.
-            if (_autoStart && _timer is null && !_disposed) _timer = new Timer(_ => SampleOnce(), null, _sample, _sample);
+            if (_autoStart && _timer is null && !_disposed) _timer = _time.CreateTimer(_ => SampleOnce(), null, _sample, _sample);
             _refreshes++;
             var d = new Dictionary<string, Value>(StringComparer.OrdinalIgnoreCase)
             {
