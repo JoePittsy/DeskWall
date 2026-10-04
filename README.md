@@ -201,13 +201,14 @@ dotnet test tests/DeskWall.Core.Tests --filter Category=Budget       # needs a p
 ```
 
 Every test run gets its own scratch `DESKWALL_HOME` under `%TEMP%\deskwall-tests\`, never the real
-runtime dir, and deletes it on exit, so concurrent runs from several worktrees do not collide.
-The default run (`tests/deskwall.runsettings`) leaves out two categories. `Desktop` tests act on the live
-interactive session: they write and position `.lnk` files on the real desktop, switch its folder
-flags, show windows, or start a resident `deskwall run`. Tests that only read the session (monitors,
-the current wallpaper, a screen capture, icon spacing) are `Session` and run by default. `Budget` tests drive a
-published daemon for minutes and paint the real wallpaper. Ask for either by name, as above; a
-command-line `--filter` replaces the runsettings filter rather than adding to it.
+runtime dir, and deletes it on exit, so concurrent runs from several worktrees do not collide. The
+default run (`tests/deskwall.runsettings`) leaves out two categories. `Desktop` tests act on the
+live interactive session: they write and position `.lnk` files on the real desktop, switch its
+folder flags, capture the screen (which needs an unlocked session), show windows, or start a
+resident `deskwall run`. Tests that only read the session (monitors, the current wallpaper, icon
+spacing) are `Session` and run by default. `Budget` tests drive a published daemon for minutes and
+paint the real wallpaper. Ask for either by name, as above; a command-line `--filter` replaces the
+runsettings filter rather than adding to it.
 
 ## Verify
 
