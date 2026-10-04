@@ -39,6 +39,15 @@ public static class LayoutResolver
     public static string BaseImagePath(LayoutFile layout, RecordValue tree)
         => Paths.ExpandPath(PropertyReader.Text(layout.BaseImage, tree) ?? "");
 
+    /// <summary>The other photos a bound base image could pick: the values of its map
+    /// (<c>time.phase | "?night=...,day=..."</c>), expanded like <see cref="BaseImagePath"/>, in the
+    /// order written. Empty for a literal or a binding without a map. Whether they exist is the
+    /// caller's question.</summary>
+    public static IReadOnlyList<string> BaseImageAlternatives(LayoutFile layout)
+        => layout.BaseImage.IsBound
+            ? Value.MapValues(layout.BaseImage.Binding!.Format).Where(v => v.Length > 0).Select(Paths.ExpandPath).ToList()
+            : [];
+
     /// <param name="scope">record bindings resolve against (the tree, or a repeater item)</param>
     /// <param name="rect">absolute rect for this instance</param>
     private static void Emit(ComponentDef def, RecordValue scope, Rect rect, string id, int slotOffset, List<Resolved> result, Func<string, string?>? remote)
