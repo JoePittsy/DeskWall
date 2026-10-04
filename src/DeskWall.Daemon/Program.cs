@@ -321,7 +321,7 @@ internal static partial class Program
                 foreach (var choice in LayoutLibrary.List(store, LayoutLibrary.DefaultDir))
                 {
                     var mark = string.Equals(choice.Path, inUse, StringComparison.OrdinalIgnoreCase) ? "*" : " ";
-                    var where = string.Equals(Path.GetDirectoryName(choice.Path), LayoutLibrary.DefaultDir, StringComparison.OrdinalIgnoreCase) ? "" : $"  ({choice.Path})";
+                    var where = string.Equals(Path.GetDirectoryName(choice.Path), Path.GetFullPath(LayoutLibrary.DefaultDir), StringComparison.OrdinalIgnoreCase) ? "" : $"  ({choice.Path})";
                     Console.WriteLine($"  {mark} {choice.Name}{where}");
                 }
                 return 0;
