@@ -190,9 +190,9 @@ public partial class ProvidersPanel : UserControl
         try { _model.Forget(name); }
         catch (IOException ex) { Status?.Invoke($"Could not forget {name}: {ex.Message}"); return; }
         _bus.Forget(name);
-        // The daemon holds its own copy and rewrites this file on its next save, so say what has
-        // actually happened rather than implying the record is gone for good.
-        Status?.Invoke($"Forgot {name}. A running daemon will write it back if the producer sends again.");
+        // A running daemon reads the file back and drops its own copy (issue #17); what it cannot
+        // do is stop the producer, and a producer that sends again is remembered again.
+        Status?.Invoke($"Forgot {name}. It comes back if the producer sends again.");
         Reload();
     }
 

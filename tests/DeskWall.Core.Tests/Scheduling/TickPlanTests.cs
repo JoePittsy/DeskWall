@@ -114,4 +114,26 @@ public class TickPlanTests
         Assert.True(d.DelayForExplorer);
         Assert.True(d.Reactivate);
     }
+
+    [Fact]
+    public void An_Events_File_Change_Alone_Reads_The_File_But_Does_Not_Tick()
+    {
+        // The daemon's own save raises it too; only a Forget found in the file is worth a frame,
+        // and only the loop knows which it was once it has read the file.
+        var d = From(WakeKind.EventsFileChanged);
+        Assert.True(d.ReadEvents);
+        Assert.False(d.Tick);
+        Assert.False(d.Force);
+        Assert.False(d.Shutdown);
+    }
+
+    [Fact]
+    public void An_Events_File_Change_Rides_Along_With_A_Real_Wake()
+    {
+        var d = From(WakeKind.Timer, WakeKind.EventsFileChanged);
+        Assert.True(d.ReadEvents);
+        Assert.True(d.Tick);
+        Assert.False(d.Force);
+        Assert.False(From(WakeKind.Timer).ReadEvents);
+    }
 }

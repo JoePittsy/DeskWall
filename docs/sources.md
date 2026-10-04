@@ -593,8 +593,13 @@ has ever sent offered to the binding picker.
 
 Because events merge, the remembered record accumulates every field a producer has ever sent, not
 only the ones in its latest event. Nothing expires on its own; the designer's **Forget** drops a
-record. (A running daemon holds its own copy and writes the file back on its next save, so a
-Forget while the daemon is up is not durable: #17.)
+record, and that holds while the daemon runs. The daemon watches `events.json` too, and reads it
+back after any change and before each of its own saves: a provider it last wrote that is now
+missing from the file has been forgotten, and it drops its own copy and repaints without it. A
+provider that arrived since the daemon's last save is not missing, only not yet written, and is
+kept; so is one whose producer sent again after the Forget was written. A file that is missing or
+cannot be parsed forgets nothing. What Forget cannot do is stop the producer: one that sends again
+is remembered again.
 
 ### Describing a provider
 

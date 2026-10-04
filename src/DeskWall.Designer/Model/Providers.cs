@@ -76,11 +76,15 @@ public sealed class ProvidersModel(
     }
 
     /// <summary>Drop a remembered record. Silent about a name it does not have: the daemon may
-    /// have saved over the file between the panel's last read and this click.</summary>
+    /// have saved over the file between the panel's last read and this click.
+    /// <para>Re-reads the file rather than writing back what the panel last loaded: a running
+    /// daemon takes a record missing from events.json as forgotten (issue #17), so a stale list
+    /// would also forget every provider it had saved since.</para></summary>
     public void Forget(string name)
     {
-        var kept = _records.Where(r => !string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (kept.Count == _records.Count) return;
+        var current = readRecords().ToList();
+        var kept = current.Where(r => !string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (kept.Count == current.Count) { _records = current; return; }
         writeRecords(kept);
         _records = kept;
     }

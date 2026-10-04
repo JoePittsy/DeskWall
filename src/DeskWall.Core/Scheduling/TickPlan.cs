@@ -10,7 +10,10 @@ public static class TickPlan
     /// <param name="DelayForExplorer">Sleep before ticking so Explorer can finish re-laying the desktop (spec 3.1).</param>
     /// <param name="Reactivate">Rebuild the active layout/sources/scheduler set before ticking.</param>
     /// <param name="Shutdown">Leave the loop; nothing else in the decision applies.</param>
-    public sealed record Decision(bool Tick, bool Force, bool DelayForExplorer, bool Reactivate, bool Shutdown);
+    /// <param name="ReadEvents">events.json changed on disk: read it back for a Forget (issue #17)
+    /// before deciding about the tick. Not a tick by itself, because the daemon's own save raises
+    /// it too; the loop ticks only if the read actually forgot something.</param>
+    public sealed record Decision(bool Tick, bool Force, bool DelayForExplorer, bool Reactivate, bool Shutdown, bool ReadEvents = false);
 
     private static readonly Decision Stop = new(false, false, false, false, true);
     private static readonly Decision Nothing = new(false, false, false, false, false);
@@ -20,7 +23,8 @@ public static class TickPlan
         if (reasons.Any(r => r.Kind == WakeKind.Shutdown)) return Stop;
         // WaitAndPump returns an empty list whenever an unrelated window message woke the pump.
         // That is not a timer fire and must not redraw anything.
-        if (reasons.Count == 0) return Nothing;
+        var readEvents = reasons.Any(r => r.Kind == WakeKind.EventsFileChanged);
+        if (reasons.All(r => r.Kind == WakeKind.EventsFileChanged)) return readEvents ? Nothing with { ReadEvents = true } : Nothing;
         var display = reasons.Any(r => r.Kind == WakeKind.DisplayChange);
         var layout = reasons.Any(r => r.Kind == WakeKind.LayoutChanged);
         var manual = reasons.Any(r => r.Kind == WakeKind.Manual);
@@ -35,6 +39,6 @@ public static class TickPlan
         // re-populated; not reactivated, because the display is the same.
         var explorer = reasons.Any(r => r.Kind == WakeKind.ExplorerRestarted);
         return new Decision(Tick: true, Force: display || layout || manual || unlock || explorer,
-            DelayForExplorer: display || explorer, Reactivate: display || layout, Shutdown: false);
+            DelayForExplorer: display || explorer, Reactivate: display || layout, Shutdown: false, ReadEvents: readEvents);
     }
 }
