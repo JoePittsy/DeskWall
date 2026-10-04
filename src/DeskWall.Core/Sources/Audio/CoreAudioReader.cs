@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Media.Audio;
@@ -12,14 +12,7 @@ namespace DeskWall.Core.Sources.Audio;
 /// <summary>CoreAudio behind <see cref="IAudioReader"/>: the default render endpoint's master
 /// volume, pushed by <c>IAudioEndpointVolumeCallback</c> rather than polled.
 ///
-/// <para><b>Why the vtable is hand-built.</b> Implementing a COM interface from managed code needs
-/// a callee-side object, and CsWin32's <c>PopulateVTable</c>/<c>ComHelpers.UnwrapCCW</c> path is
-/// built on <c>ComWrappers.ComInterfaceDispatch</c> - which means writing a <c>ComWrappers</c>
-/// subclass with its own <c>ComputeVtables</c>, and keeping a process-wide instance of it alive,
-/// for one interface with one method. Four <c>[UnmanagedCallersOnly]</c> statics over a struct
-/// whose first field is the vtable pointer is less code, has no ambient state, and is exactly the
-/// shape native AOT wants. CLAUDE.md's callback rule applies: the statics are stdcall, and nothing
-/// may escape them.</para>
+/// <para><b>The vtable is hand-built</b> on <see cref="ComCallback"/>, which says why.</para>
 ///
 /// <para><b>Two locks, deliberately.</b> <c>_com</c> guards the COM pointers and every call into
 /// them; <c>_state</c> guards the four fields the notification writes and <see cref="Current"/>
@@ -36,7 +29,7 @@ public sealed unsafe class CoreAudioReader : IAudioReader
 
     private IMMDeviceEnumerator* _enumerator;
     private IAudioEndpointVolume* _volume;
-    private Shim* _shim;
+    private ComCallbackObject* _shim;
     private bool _disposed;
 
     private string? _registeredId;
@@ -48,7 +41,7 @@ public sealed unsafe class CoreAudioReader : IAudioReader
 
     /// <summary>eMultimedia, not eConsole: it is the role the Windows volume flyout and the
     /// keyboard volume keys move, so this is the number the owner sees change on screen.</summary>
-    private const ERole Role = ERole.eMultimedia;
+    internal const ERole Role = ERole.eMultimedia;
 
     public string? DefaultDeviceId
     {
@@ -243,57 +236,27 @@ public sealed unsafe class CoreAudioReader : IAudioReader
 
     // ---- the hand-built IAudioEndpointVolumeCallback ----------------------------------------
 
-    /// <summary>A COM object whose first field is its vtable pointer, so a <c>Shim*</c> is a valid
-    /// <c>IAudioEndpointVolumeCallback*</c>. <c>Owner</c> is a GCHandle back to the reader; it is
-    /// what keeps the reader alive while CoreAudio can still call in, and what makes disposing the
-    /// reader necessary rather than optional.</summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Shim
-    {
-        public void** Vtbl;
-        public nint Owner;
-        public int RefCount;
-    }
-
     private static void** s_vtbl;
     private static readonly object s_vtblLock = new();
 
-    private static readonly Guid IidIUnknown = new(0x00000000, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
-
-    private const int S_OK = 0;
-    private const int E_POINTER = unchecked((int)0x80004003);
-    private const int E_NOINTERFACE = unchecked((int)0x80004002);
-
-    /// <summary>One vtable for the whole process: it is four function pointers and it never
-    /// changes, so allocating one per reader would be waste with an extra free to get wrong.</summary>
+    /// <summary>One vtable for the whole process: IUnknown plus OnNotify.</summary>
     private static void** Vtable()
     {
         lock (s_vtblLock)
         {
             if (s_vtbl is not null) return s_vtbl;
-            var v = (void**)NativeMemory.Alloc(4, (nuint)sizeof(void*));
-            v[0] = (void*)(delegate* unmanaged[Stdcall]<Shim*, Guid*, void**, int>)&CbQueryInterface;
-            v[1] = (void*)(delegate* unmanaged[Stdcall]<Shim*, uint>)&CbAddRef;
-            v[2] = (void*)(delegate* unmanaged[Stdcall]<Shim*, uint>)&CbRelease;
-            v[3] = (void*)(delegate* unmanaged[Stdcall]<Shim*, AUDIO_VOLUME_NOTIFICATION_DATA*, int>)&CbOnNotify;
+            var v = ComCallback.NewVtable(4);
+            v[3] = (void*)(delegate* unmanaged[Stdcall]<ComCallbackObject*, AUDIO_VOLUME_NOTIFICATION_DATA*, int>)&CbOnNotify;
             s_vtbl = v;
             return v;
         }
     }
 
-    /// <summary>Caller holds <c>_com</c>. One shim per reader, made on first registration and
-    /// reused across every re-registration, so plugging a headset in and out does not churn
-    /// native allocations.</summary>
-    private Shim* EnsureShim()
-    {
-        if (_shim is not null) return _shim;
-        var shim = (Shim*)NativeMemory.AllocZeroed(1, (nuint)sizeof(Shim));
-        shim->Vtbl = Vtable();
-        shim->Owner = GCHandle.ToIntPtr(GCHandle.Alloc(this, GCHandleType.Normal));
-        shim->RefCount = 1;                              // the reference this reader itself holds
-        _shim = shim;
-        return shim;
-    }
+    /// <summary>Caller holds <c>_com</c>. One callback object per reader, made on first
+    /// registration and reused across every re-registration, so plugging a headset in and out
+    /// does not churn native allocations.</summary>
+    private ComCallbackObject* EnsureShim()
+        => _shim is not null ? _shim : _shim = ComCallback.Create(Vtable(), IAudioEndpointVolumeCallback.IID_Guid, this);
 
     /// <summary>Caller holds <c>_com</c>, and has already unregistered.</summary>
     private void ReleaseShim()
@@ -301,38 +264,7 @@ public sealed unsafe class CoreAudioReader : IAudioReader
         if (_shim is null) return;
         var shim = _shim;
         _shim = null;
-        if (Interlocked.Decrement(ref shim->RefCount) == 0) FreeShim(shim);
-    }
-
-    private static void FreeShim(Shim* shim)
-    {
-        if (shim->Owner != 0) GCHandle.FromIntPtr(shim->Owner).Free();
-        NativeMemory.Free(shim);
-    }
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
-    private static int CbQueryInterface(Shim* self, Guid* iid, void** ppv)
-    {
-        if (ppv is null) return E_POINTER;
-        if (self is not null && iid is not null && (*iid == IidIUnknown || *iid == IAudioEndpointVolumeCallback.IID_Guid))
-        {
-            Interlocked.Increment(ref self->RefCount);
-            *ppv = self;
-            return S_OK;
-        }
-        *ppv = null;
-        return E_NOINTERFACE;
-    }
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
-    private static uint CbAddRef(Shim* self) => (uint)Interlocked.Increment(ref self->RefCount);
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
-    private static uint CbRelease(Shim* self)
-    {
-        var n = Interlocked.Decrement(ref self->RefCount);
-        if (n == 0) FreeShim(self);
-        return (uint)n;
+        ComCallback.ReleaseOwned(shim);
     }
 
     /// <summary>The one that matters. It runs on an audio service thread inside native code's own
@@ -341,17 +273,16 @@ public sealed unsafe class CoreAudioReader : IAudioReader
     /// into COM - the notification already carries the new scalar and mute flag, which is the
     /// whole reason this source needs no poll.</summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
-    private static int CbOnNotify(Shim* self, AUDIO_VOLUME_NOTIFICATION_DATA* data)
+    private static int CbOnNotify(ComCallbackObject* self, AUDIO_VOLUME_NOTIFICATION_DATA* data)
     {
         try
         {
-            if (self is null || data is null || self->Owner == 0) return S_OK;
-            if (GCHandle.FromIntPtr(self->Owner).Target is CoreAudioReader reader)
+            if (data is not null && ComCallback.OwnerOf<CoreAudioReader>(self) is { } reader)
                 reader.Publish(data->fMasterVolume, data->bMuted);
         }
         catch (Exception)
         {
         }
-        return S_OK;
+        return ComCallback.S_OK;
     }
 }

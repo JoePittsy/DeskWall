@@ -100,13 +100,18 @@ public static class LayoutResolver
                 break;
 
             case BarDef b:
-                var frac = PropertyReader.Number(b.Fraction, scope) ?? 0;
+                // A bound fraction that does not resolve is "unknown", not 0: the gauge is hidden,
+                // as for an unresolved bound opacity. An empty track reads as a confident zero -
+                // a volume ring on a machine with no playback device said "muted at 0%".
+                var bfrac = PropertyReader.Number(b.Fraction, scope);
+                var frac = bfrac ?? 0;
                 var fill = ThresholdFill(frac, b.Threshold, b.ThresholdFill, b.Fill, b.Fill.IsBound ? Color.Transparent : Color.Parse("#EBFFFFFF"), scope);
                 var shapeText = PropertyReader.Text(b.Shape, scope) ?? "";
                 PathData? shape = null;
                 // An unreadable path draws the plain box rather than aborting the tick.
                 if (!string.IsNullOrWhiteSpace(shapeText)) try { shape = PathData.Parse(shapeText); } catch (FormatException) { }
-                var bopacity = Math.Clamp(PropertyReader.Number(b.Opacity, scope) ?? (b.Opacity.IsBound ? 0 : 1), 0, 1);
+                var bopacity = bfrac is null && b.Fraction.IsBound ? 0
+                    : Math.Clamp(PropertyReader.Number(b.Opacity, scope) ?? (b.Opacity.IsBound ? 0 : 1), 0, 1);
                 var btrack = PropertyReader.Color(b.Track, scope) ?? Color.Parse("#46FFFFFF");
                 var bglow = PropertyReader.Color(b.GlowColor, scope);
                 result.Add(new ResolvedBar(id, rect, def.Z, frac,
@@ -119,9 +124,12 @@ public static class LayoutResolver
                 break;
 
             case DialDef dl:
-                var dfrac = Math.Clamp(PropertyReader.Number(dl.Fraction, scope) ?? 0, 0, 1);
+                var dbound = PropertyReader.Number(dl.Fraction, scope);
+                var dfrac = Math.Clamp(dbound ?? 0, 0, 1);
                 var dfill = ThresholdFill(dfrac, dl.Threshold, dl.ThresholdFill, dl.Fill, dl.Fill.IsBound ? Color.Transparent : Color.Parse("#EBFFFFFF"), scope);
-                var opacity = Math.Clamp(PropertyReader.Number(dl.Opacity, scope) ?? (dl.Opacity.IsBound ? 0 : 1), 0, 1);
+                // Unknown is not zero, exactly as for a bar.
+                var opacity = dbound is null && dl.Fraction.IsBound ? 0
+                    : Math.Clamp(PropertyReader.Number(dl.Opacity, scope) ?? (dl.Opacity.IsBound ? 0 : 1), 0, 1);
                 var dtrack = PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF");
                 result.Add(new ResolvedDial(id, rect, def.Z, dfrac,
                     dtrack with { A = (byte)(dtrack.A * opacity) }, dfill with { A = (byte)(dfill.A * opacity) },

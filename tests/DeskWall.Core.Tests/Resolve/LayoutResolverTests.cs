@@ -131,15 +131,33 @@ public class LayoutResolverTests
         Assert.Equal(Color.Parse("#FF112233"), d.Fill);
     }
 
+    /// <summary>#26: unknown is not zero. An empty track under a missing value reads as a confident
+    /// 0 - the volume ring on a machine with no playback device said "0%". The gauge is hidden
+    /// instead, the same rule as an unresolved bound opacity.</summary>
     [Fact]
-    public void Dial_Bound_Fraction_Missing_Falls_Back_To_Zero()
+    public void Dial_Bound_Fraction_Missing_Is_Hidden_Not_Zero()
     {
         var layout = LayoutFile.Parse("""
             { "version": 1, "baseImage": "x.jpg", "sources": [],
               "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": { "bind": "hw.cpu" } } ] }
             """);
         var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(0, d.Track.A);
+        Assert.Equal(0, d.Fill.A);
+    }
+
+    [Fact]
+    public void Dial_Bound_Fraction_Present_At_Zero_Is_Drawn()
+    {
+        // The other half: a real 0 is a value, and keeps its track.
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": { "bind": "hw.cpu" } } ] }
+            """);
+        var tree = ValueTree.Of(("hw", new RecordValue(new Dictionary<string, Value> { ["cpu"] = new NumberValue(0) })));
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, tree)));
         Assert.Equal(0.0, d.Fraction);
+        Assert.Equal(Color.Parse("#46FFFFFF"), d.Track);
         Assert.Equal(Color.Parse("#EBFFFFFF"), d.Fill);   // below the default threshold: the default fill
     }
 
@@ -153,6 +171,48 @@ public class LayoutResolverTests
             """);
         var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
         Assert.Equal(Color.Transparent, d.Fill);
+    }
+
+    [Fact]
+    public void Bar_Bound_Fraction_Missing_Is_Hidden_Not_Zero_Glow_Included()
+    {
+        // The ridge line in alpine-*.json and vapor.json is a shaped bar lit by audio.volume.
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "bar", "id": "b", "rect": [0, 0, 100, 10], "fraction": { "bind": "audio.volume" },
+                                "track": "#59D8DEE9", "fill": "#FF88C0D0", "glow": 12, "glowColor": "#FF88C0D0" } ] }
+            """);
+        var b = Assert.IsType<ResolvedBar>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(0, b.Track.A);
+        Assert.Equal(0, b.Fill.A);
+        Assert.Equal(0, b.GlowColor!.Value.A);
+
+        var tree = ValueTree.Of(("audio", new RecordValue(new Dictionary<string, Value> { ["volume"] = new NumberValue(0) })));
+        var lit = Assert.IsType<ResolvedBar>(Assert.Single(LayoutResolver.Resolve(layout, tree)));
+        Assert.Equal(Color.Parse("#59D8DEE9"), lit.Track);
+    }
+
+    [Fact]
+    public void The_Volume_Widget_With_No_Playback_Device_Draws_Nothing()
+    {
+        // widgets/volume.json against the empty record the audio source publishes with no device:
+        // no ring, no "0%", no "vol" label - absent, rather than a reading of zero.
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [
+                { "type": "dial", "id": "dial", "rect": [0, 0, 80, 80], "fraction": { "bind": "audio.volume" },
+                  "fill": { "bind": "audio.muted | \"?true=#FFD13438,*=#EBFFFFFF\"" } },
+                { "type": "text", "id": "value", "rect": [0, 26, 80, 28], "text": { "bind": "audio.volumePct | \"{0}%\"" } },
+                { "type": "text", "id": "label", "rect": [0, 62, 80, 16], "text": { "bind": "audio.muted | \"?true=muted,*=vol\"" } } ] }
+            """);
+        var tree = ValueTree.Of(("audio", new RecordValue(new Dictionary<string, Value>())));
+        var r = LayoutResolver.Resolve(layout, tree);
+
+        var dial = Assert.IsType<ResolvedDial>(r.Single(c => c.Id == "dial"));
+        Assert.Equal(0, dial.Track.A);
+        Assert.Equal(0, dial.Fill.A);
+        Assert.Equal("", ((ResolvedText)r.Single(c => c.Id == "value")).Text);
+        Assert.Equal("", ((ResolvedText)r.Single(c => c.Id == "label")).Text);
     }
 
     [Fact]

@@ -77,4 +77,47 @@ public class CoreAudioReaderTests(ITestOutputHelper output)
         Assert.Equal(["device", "muted", "volume", "volumePct"], r.Fields.Keys.Order(StringComparer.Ordinal).ToArray());
         Assert.InRange(((DeskWall.Core.Values.NumberValue)r.Fields["volume"]).Number, 0d, 1d);
     }
+
+    [Fact]
+    public void The_Device_Notifier_Registers_With_CoreAudio_And_Lets_Go_Twice()
+    {
+        // Registering an IMMNotificationClient needs no playback device, so unlike the facts above
+        // this one holds on any Windows box with the audio service running. What it proves is the
+        // hand-built vtable: CoreAudio QueryInterfaces the client and AddRefs it on registration,
+        // and Releases it on unregistration, through slots 0-2.
+        var n = new CoreAudioDeviceNotifier();
+        Assert.False(n.IsListening);
+
+        n.Start();
+        n.Start();
+        output.WriteLine($"listening = {n.IsListening}");
+        Assert.True(n.IsListening);
+
+        n.Dispose();
+        n.Dispose();
+        Assert.False(n.IsListening);
+        n.Start();                                  // disposed: stays silent, does not throw
+        Assert.False(n.IsListening);
+    }
+
+    /// <summary>The hand-built vtables put each callback at a slot number written by hand. A
+    /// default-device change cannot be provoked from a test without changing the machine's audio
+    /// device, so a wrong slot would otherwise surface only as the wrong method running on the
+    /// audio service's thread. This pins the order against the Windows SDK metadata, through
+    /// CsWin32's own (internal) Vtbl structs.</summary>
+    [Theory]
+    [InlineData("Windows.Win32.Media.Audio.IMMNotificationClient",
+        "QueryInterface,AddRef,Release,OnDeviceStateChanged,OnDeviceAdded,OnDeviceRemoved,OnDefaultDeviceChanged,OnPropertyValueChanged")]
+    [InlineData("Windows.Win32.Media.Audio.Endpoints.IAudioEndpointVolumeCallback",
+        "QueryInterface,AddRef,Release,OnNotify")]
+    public void Hand_Built_Vtable_Slots_Match_The_Interface(string interfaceName, string expectedSlots)
+    {
+        var vtbl = typeof(CoreAudioReader).Assembly.GetType(interfaceName + "+Vtbl", throwOnError: true)!;
+        var slots = vtbl.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+            .OrderBy(f => (long)System.Runtime.InteropServices.Marshal.OffsetOf(vtbl, f.Name))
+            .Select(f => f.Name.Split('_')[0])
+            .ToArray();
+        output.WriteLine(string.Join(", ", slots));
+        Assert.Equal(expectedSlots.Split(','), slots);
+    }
 }
