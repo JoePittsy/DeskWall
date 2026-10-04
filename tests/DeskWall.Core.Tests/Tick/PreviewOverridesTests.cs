@@ -95,6 +95,19 @@ public class PreviewOverridesTests
         Assert.Equal(18, ((TimeValue)At(t, "time", "sunset")!).Time.Hour);
     }
 
+    /// <summary>A sky on time.skyFraction previews where the real sun puts it: sunrise lands on
+    /// 0.25 and sunset on 0.75, whether the sun is the live one or pinned.</summary>
+    [Theory]
+    [InlineData("time.at=07:12", 0.25)]
+    [InlineData("time.at=18:41", 0.75)]
+    [InlineData("time.at=07:00,time.sunrise=07:00,time.sunset=19:00", 0.25)]
+    [InlineData("time.at=13:00,time.sunrise=07:00,time.sunset=19:00", 0.5)]
+    public void A_time_pin_puts_the_sky_fraction_on_the_sun(string pins, double sky)
+    {
+        var t = PreviewOverrides.Parse(pins).Apply(SunTree());
+        Assert.Equal(sky, ((NumberValue)At(t, "time", "skyFraction")!).Number, 4);
+    }
+
     [Fact]
     public void Pinned_sunrise_and_sunset_drive_the_phase_too()
     {
