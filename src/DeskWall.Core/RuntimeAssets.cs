@@ -1,4 +1,4 @@
-namespace DeskWall.Core;
+﻿namespace DeskWall.Core;
 
 /// <summary>The assets a layout reaches through <c>runtime:assets/...</c> (the weather icons) ship
 /// in <c>assets\</c> beside the exe and are used from the runtime dir. The daemon copies what is

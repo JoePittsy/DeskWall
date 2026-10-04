@@ -1,4 +1,4 @@
-using DeskWall.Core;
+﻿using DeskWall.Core;
 using Xunit;
 
 /// <summary>The shipped assets/ beside the exe reach the runtime dir without the designer: the
@@ -9,7 +9,7 @@ public class RuntimeAssetsTests
     /// <summary>A scratch "install dir" holding an assets/ tree, deleted afterwards.</summary>
     private sealed class Install : IDisposable
     {
-        public string Root { get; } = Path.Combine(Path.GetTempPath(), "deskwall-tests", "runtime-assets", Guid.NewGuid().ToString("N"));
+        public string Root { get; } = Path.Combine(TestRun.Root, "runtime-assets", Guid.NewGuid().ToString("N"));
         public string Assets => Path.Combine(Root, "assets");
         public Install() => Directory.CreateDirectory(Assets);
 

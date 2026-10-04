@@ -1,4 +1,4 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Resolve;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
