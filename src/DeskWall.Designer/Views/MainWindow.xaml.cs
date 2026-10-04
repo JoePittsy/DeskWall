@@ -57,6 +57,9 @@ public partial class MainWindow : Window
         @"C:\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\DesktopSpotlight\Assets\Images\image_3.jpg";
 
     private readonly LayoutStore _store;
+    /// <summary>The display in front of the owner, which a switch moves (#73); the model's signature
+    /// can be another display's, when this one resolves by closest match.</summary>
+    private readonly DisplaySignature _display;
     private readonly PreviewRenderer _renderer;
     private readonly DispatcherTimer _status = new() { Interval = TimeSpan.FromSeconds(5) };
 
@@ -80,6 +83,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _store = store;
+        _display = signature;
         _settings = settings;
         _catalog = WidgetCatalog.Load(WidgetCatalog.ShippedDir, WidgetCatalog.UserDir);
         _renderer = new PreviewRenderer(() => _live?.Tree() ?? ValueTree.Empty);
@@ -196,7 +200,7 @@ public partial class MainWindow : Window
     private void RefreshChrome()
     {
         LayoutNameText.Text = LayoutLabel();
-        LayoutNameText.ToolTip = _model.Path;
+        LayoutPicker.ToolTip = _model.Path;
         DisplayText.Text = ShellState.DisplayLabel(_model.Signature.Key);
         UndoButton.IsEnabled = _model.CanUndo;
         RedoButton.IsEnabled = _model.CanRedo;
@@ -426,6 +430,63 @@ public partial class MainWindow : Window
         Remember(s => { s.LastSignatureKey = _model.Signature.Key; s.LastLayoutPath = _model.Path; });
         RefreshChrome();
         return true;
+    }
+
+    // ---- switching the layout in use (#73) -------------------------------------------------------
+
+    /// <summary>The layout name drops a menu: every other layout in the library
+    /// (<see cref="LayoutLibrary"/>), then "Other file..." for one that is not in it yet, such as the
+    /// repo's <c>layouts\vapor.json</c>. Built on every opening, so a file the owner has just copied
+    /// into the folder is there.</summary>
+    private void LayoutPicker_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            PlacementTarget = LayoutPicker,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(menu, "Switch layout");
+        foreach (var choice in ShellState.SwitchTargets(LayoutLibrary.List(_store, LayoutLibrary.DefaultDir), _model.Path))
+        {
+            // A TextBlock, not a string: a designer-made file is named after the display signature,
+            // which is 90 characters of underscores and GUID, and a string header turns its first
+            // underscore into an access key.
+            var item = new System.Windows.Controls.MenuItem
+            {
+                Header = new System.Windows.Controls.TextBlock { Text = choice.Name, MaxWidth = 480, TextTrimming = TextTrimming.CharacterEllipsis },
+                ToolTip = choice.Path,
+            };
+            System.Windows.Automation.AutomationProperties.SetName(item, choice.Name);
+            item.Click += (_, _) => SwitchTo(choice.Path);
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count > 0) menu.Items.Add(new System.Windows.Controls.Separator());
+        var other = new System.Windows.Controls.MenuItem { Header = "Other file..." };
+        other.Click += (_, _) => SwitchToOtherFile();
+        menu.Items.Add(other);
+        menu.IsOpen = true;
+    }
+
+    private void SwitchToOtherFile()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "Switch to a layout", Filter = "Layout (*.json)|*.json" };
+        if (dialog.ShowDialog(this) == true) SwitchTo(dialog.FileName);
+    }
+
+    /// <summary>The one switch the CLI uses too: every display sharing this one's layout moves to
+    /// <paramref name="path"/> in one write of layouts.json, which the daemon's watcher picks up.
+    /// The designer then opens what the daemon will now paint, as it does at start.</summary>
+    private void SwitchTo(string path)
+    {
+        if (!ConfirmDiscard($"Apply the changes to {LayoutLabel()} before switching?")) return;
+        LayoutSwitch done;
+        try { done = LayoutLibrary.Use(_store, _display, path, LayoutLibrary.DefaultDir); }
+        catch (LayoutSwitchException ex) { SetStatus(ex.Message); return; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { SetStatus($"Could not switch: {ex.Message}"); return; }
+        _appliedAt = null;
+        _scratchCopy = null;
+        Open(_display, _store.Resolve(_display));
+        SetStatus(ShellState.SwitchedText(done, RuntimeInstance.FindDaemonWindow() != 0));
     }
 
     // ---- the Insert panel's widget menu ---------------------------------------------------------
@@ -845,7 +906,7 @@ public partial class MainWindow : Window
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         base.OnClosing(e);
-        if (!_allowClose && !ConfirmDiscard()) { e.Cancel = true; return; }
+        if (!_allowClose && !ConfirmDiscard("Apply the changes before closing?")) { e.Cancel = true; return; }
         _allowClose = true;
         var bounds = RestoreBounds;
         Remember(s =>
@@ -859,11 +920,10 @@ public partial class MainWindow : Window
         });
     }
 
-    private bool ConfirmDiscard()
+    private bool ConfirmDiscard(string question)
     {
-        if (!_model.Dirty && _model.Path is not null) return true;
         if (!_model.Dirty) return true;
-        var answer = MessageBox.Show(this, "Apply the changes before closing?", "DeskWall",
+        var answer = MessageBox.Show(this, question, "DeskWall",
             MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         return answer switch
         {

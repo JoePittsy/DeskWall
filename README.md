@@ -137,7 +137,8 @@ deskwall tick --force --measure --no-apply --no-shortcuts --repeat 4   # four ti
 deskwall tick --force --no-apply --no-shortcuts --preview time.at=23:30,weather.json.current.weather_code=65   # pin source values after the refresh: render a scene that is not happening
 deskwall tick --layout layouts\alpine-vision.json --force --no-apply --no-shortcuts --canvas 3440x1440   # draw at the authored size whatever the display (RDP reports 1920x1200)
 scripts\gallery.ps1 -Layout layouts\alpine-vision.json               # ten pinned scenes plus a montage, to %TEMP%\dw-gallery-out\
-deskwall layouts list                                                # what is registered, and what this display resolves to
+deskwall layouts list                                                # what is registered, what this display resolves to, and the library
+deskwall layouts use vapor                                           # switch the running daemon to another layout (alias: deskwall theme vapor)
 deskwall shortcuts                                                   # read-only: planned vs actual desktop-icon positions
 deskwall migrate [--check] [<path>...]                               # convert v1 stamped layouts to v2 linked copies (default: all in layouts.json)
 ```

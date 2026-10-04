@@ -389,7 +389,6 @@ public partial class SettingsPage : Window
             .Select(kv => new LayoutEntryRow(kv.Key, kv.Value))
             .OrderBy(r => r.SignatureKey, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        UseForCurrentButton.IsEnabled = _model?.Path is not null;
     }
 
     private void RemoveLayout_Click(object sender, RoutedEventArgs e)
@@ -406,13 +405,6 @@ public partial class SettingsPage : Window
             return;
         }
         _store.Remove(signature);
-        LoadLayoutsGrid();
-    }
-
-    private void UseForCurrent_Click(object sender, RoutedEventArgs e)
-    {
-        if (_model?.Path is not { } path) return;
-        _store.Set(_signature, path);
         LoadLayoutsGrid();
     }
 }

@@ -122,8 +122,6 @@
                             </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
-                    <Button x:Name="UseForCurrentButton" Content="Use this layout for the current display"
-                            Click="UseForCurrent_Click" Padding="10,4" HorizontalAlignment="Left" />
                 </StackPanel>
             </Border>
 

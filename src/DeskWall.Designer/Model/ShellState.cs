@@ -61,6 +61,25 @@ public static class ShellState
         return new OpenTarget(authored, resolution.SourceSignature, resolution.SourcePath);
     }
 
+    /// <summary>What the layout picker (#73) offers: the library less the layout already open, which
+    /// the top bar names. The open one is not listed with a check beside it: the button it drops
+    /// from already says which it is, and picking it would do nothing.</summary>
+    public static IReadOnlyList<LayoutChoice> SwitchTargets(IReadOnlyList<LayoutChoice> library, string? openPath)
+        => openPath is null ? library
+        : library.Where(c => !string.Equals(Path.GetFullPath(c.Path), Path.GetFullPath(openPath), StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The status line after a switch: what is in use now, on how many displays when more
+    /// than this one moved, and whether the desktop changes now or at the daemon's next start.</summary>
+    public static string SwitchedText(LayoutSwitch done, bool daemonRunning)
+    {
+        var name = Path.GetFileName(done.To);
+        if (!done.Changed) return $"{name} is already the layout in use.";
+        var what = done.Imported ? $"Copied {name} into the library and switched to it"
+            : done.Keys.Count > 1 ? $"Switched to {name} on {done.Keys.Count} displays"
+            : $"Switched to {name}";
+        return what + (daemonRunning ? ". The desktop repaints in a moment." : ". It paints when DeskWall next starts.");
+    }
+
     /// <summary>Where <see cref="BackupV1"/> puts the v1 file: <c>column-system.v1.json</c> beside
     /// <c>column-system.json</c>, the same name <c>deskwall migrate</c> uses, so one refuses to
     /// overwrite the other's backup.</summary>
