@@ -52,8 +52,11 @@ source that shells out to Tailscale. Each has its own requirement:
   (`latitude=53.8008&longitude=-1.5491`, the `weather` widget's `town` knob default -
   `docs/layout-format.md` "Copies"). To point it at a different town, use the designer's Town
   knob, or give the `weather-1` copy a `"knobs": { "town": "<name>||<lat>||<lon>" }` by hand -
-  Open-Meteo needs no key and the request is unauthenticated. The weather icon (`sky` component) binds
-  `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"`; the `runtime:` prefix
+  Open-Meteo needs no key and the request is unauthenticated. The weather icon is two parts on one
+  spot: `sky` binds `weather.json.current.weather_code | "runtime:assets/weather/{0}.png"` and
+  `sky-night` the same code to `{0}-night.png`, and an opacity Step on `current.is_day` shows one
+  of them (a copy that moves or resizes `sky` by override must do the same to `sky-night`). The
+  `runtime:` prefix
   resolves against the runtime directory, not the repo, so **`assets/weather` must be copied to
   `%LOCALAPPDATA%\DeskWall\assets\weather`** before this layout renders icons (the designer does
   this automatically whenever it copies a starter; a manual

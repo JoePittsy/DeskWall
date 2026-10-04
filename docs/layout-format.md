@@ -239,7 +239,11 @@ Thirteen examples, each valid against the value trees the built-in sources publi
     building a path instead of a URL; the leading `runtime:` is a token `LayoutResolver` expands
     against the runtime directory (not the repo) after formatting, so a committed layout never
     names a per-user absolute path. The token is a prefix rather than `{runtime}` because a
-    composite format would swallow the braces. See `assets/weather/README.md` for the icon set this recipe
+    composite format would swallow the braces. The `weather` widget draws the night icon as a
+    second part bound to `"runtime:assets/weather/{0}-night.png"`, and picks between the two with
+    an opacity Step on `weather.json.current.is_day` (`"?0=0,*=1"` and `"?0=1,*=0"`): a binding
+    reads one path, so a suffix chosen by a second value is two parts, not one format. See
+    `assets/weather/README.md` for the icon set this recipe
     expects at that path.
 13. `hearth.json.games[..4]` -- a **slice**: the first four items of the list, still a list (so it
     is what a repeater's `items` binds), keeping the list's key field so `[..4][<id>]` and
