@@ -127,6 +127,7 @@ public partial class LayersPanel : UserControl
         if (row.IsBroken) markers.Children.Add(Badge("broken", "SystemFillColorCriticalBackgroundBrush", $"Widget '{row.Name}' is missing or fails to load"));
         if (row.IsOrphan) markers.Children.Add(Badge("orphan", "SystemFillColorCautionBackgroundBrush",
             row.Kind == LayerKind.Orphan ? "The widget no longer has what this names; it is kept, and applies again if it comes back" : "Has an override the widget no longer matches"));
+        if (row.Kind == LayerKind.Orphan) markers.Children.Add(RemoveButton(row));
 
         line.Margin = new Thickness(2, 1, 6, 1);
         var item = new TreeViewItem { Header = line, Tag = row, IsExpanded = _expanded.Contains(row.Key) };
@@ -176,6 +177,51 @@ public partial class LayersPanel : UserControl
             pill.SetResourceReference(Border.BorderBrushProperty, "AccentFillColorDefaultBrush");
         }
         return pill;
+    }
+
+    /// <summary>The one thing to do with an orphan (#80), on its row: text, not an icon, because it is
+    /// the row's only action and orphans are rare. Not a tab stop: Delete on the focused row does the
+    /// same (<see cref="RemoveFocusedOrphan"/>).</summary>
+    private Button RemoveButton(LayerRow row)
+    {
+        var button = new Button
+        {
+            Content = "Remove", FontSize = 12, Padding = new Thickness(6, 0, 6, 1), Margin = new Thickness(6, 0, 0, 0), MinHeight = 0, MinWidth = 0,
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0), IsTabStop = false, VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = RemoveTip(row),
+        };
+        button.SetResourceReference(Control.ForegroundProperty, "AccentTextFillColorPrimaryBrush");
+        AutomationProperties.SetName(button, $"Remove orphan {row.Detail} {row.Name}");
+        button.Click += (_, e) => { e.Handled = true; Remove(row); };
+        return button;
+    }
+
+    internal static string RemoveTip(LayerRow row) => row.Detail == LayerTree.OrphanKnob
+        ? "Take this knob off. If the widget itself still lists it, what it sets that has gone comes out of the widget, for every copy. Ctrl+Z puts it back."
+        : "Delete this override from the copy. Ctrl+Z puts it back.";
+
+    /// <summary>Delete in Layers on an orphan row removes that orphan, not the copy the canvas has
+    /// selected for it. False when the focused row is not an orphan; true for one even when nothing
+    /// could be removed, so the key never falls through to deleting the copy.</summary>
+    public bool RemoveFocusedOrphan()
+    {
+        if (!IsKeyboardFocusWithin || (Tree.SelectedItem as TreeViewItem)?.Tag is not LayerRow { Kind: LayerKind.Orphan } row) return false;
+        Remove(row);
+        return true;
+    }
+
+    private bool Remove(LayerRow row)
+    {
+        if (_model is null) return false;
+        // The copy's row takes the tree's selection first, so the rebuild lands there, not nowhere.
+        if (_rows.TryGetValue(row.Key, out var e) && ItemsControl.ItemsControlFromItemContainer(e.Item) is TreeViewItem copy)
+        {
+            _syncing = true;
+            try { copy.IsSelected = true; }
+            finally { _syncing = false; }
+            if (IsKeyboardFocusWithin) copy.Focus();
+        }
+        return LayerTree.RemoveOrphan(_model, row);
     }
 
     /// <summary>What a screen reader says for a row: the name, what kind of thing it is, then each marker.</summary>

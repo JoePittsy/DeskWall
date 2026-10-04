@@ -53,7 +53,9 @@ public static partial class Lens
     /// knob-applied baseline, so a value put back to the baseline loses its override. Overrides the
     /// diff cannot see are kept: orphans (plan D1: never deleted silently) and those on a part the
     /// copy hides.</item>
-    /// <item>Widget depth: the parts and sources, minus the origin, become the overlay template.</item>
+    /// <item>Widget depth: the parts and sources, minus the origin, become the overlay template; a
+    /// knob entry, override or copy's knob value the edit left naming nothing goes with it
+    /// (<see cref="CommitWidget"/>, #78).</item>
     /// </list></summary>
     public static void Commit(DesignerModel model, LayoutFile before, LayoutFile after, string label = "Edit")
     {
@@ -85,9 +87,8 @@ public static partial class Lens
                 // from the rest; every copy grows with it, so it is said, not just done.
                 if (template.Components.Count > 0 && (long)edited.Width * edited.Height > 2L * template.Width * template.Height)
                     model.Notify($"The {template.Name} widget grew from {template.Width}x{template.Height} to {edited.Width}x{edited.Height}, and every copy with it. Ctrl+Z takes it back.");
-                model.Edit(label, (l, edits) =>
+                CommitWidget(model, label, template, edited, l =>
                 {
-                    edits[key] = edited;
                     // A part dragged above or left of the frame moved the frame's origin, not the
                     // part: every copy of this widget shifts back by as much, so nothing on the
                     // canvas jumps.
@@ -238,7 +239,7 @@ public static partial class Lens
         change(doc);
         var edited = doc.ToTemplate();
         if (WidgetTemplateWriter.ToJson(edited) == WidgetTemplateWriter.ToJson(template)) return false;
-        model.Edit(label, (_, edits) => edits[template.Key] = edited);
+        CommitWidget(model, label, template, edited);
         return true;
     }
 

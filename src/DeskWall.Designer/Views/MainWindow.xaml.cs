@@ -627,7 +627,9 @@ public partial class MainWindow : Window
         {
             case Key.Z when ctrl: _model.Undo(); break;
             case Key.Y when ctrl: _model.Redo(); break;
-            case Key.Delete when mods == ModifierKeys.None: RemoveSelection(); break;
+            case Key.Delete when mods == ModifierKeys.None:
+                if (!Layers.RemoveFocusedOrphan()) RemoveSelection();
+                break;
             case Key.Escape when mods == ModifierKeys.None && !dragging:
                 if (!_model.Climb()) _model.ClearSelection();
                 break;

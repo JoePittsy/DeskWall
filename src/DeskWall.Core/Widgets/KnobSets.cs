@@ -62,6 +62,17 @@ public static partial class KnobSets
         _ => null,
     };
 
+    /// <summary>Whether one <c>sets</c> entry names something <paramref name="parts"/> has: its
+    /// path, without a <c>=bind:</c> or <c>:{token}</c> suffix, resolves. A knob entry that does
+    /// not is what the expander reports as <see cref="ExpandProblemKind.OrphanKnob"/>.</summary>
+    public static bool Names(LayoutFile parts, string set)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        var bindAt = set.IndexOf(BindMarker, StringComparison.Ordinal);
+        var path = bindAt >= 0 ? set[..bindAt] : TokenSuffix().Match(set) is { Success: true } token ? set[..token.Index] : set;
+        return Resolve(parts, path) is not null;
+    }
+
     /// <summary>Applies one knob's <c>sets</c> for <paramref name="value"/> (plain, or a composite
     /// joined by <c>||</c>: the i-th entry takes part i + 1, else part 0). A <c>:{token}</c> entry
     /// substitutes into <paramref name="template"/>'s own, still-placeholder-bearing value, and every
