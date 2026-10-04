@@ -32,7 +32,7 @@ public class TickRunnerImagesTests
 
     private static (string Dir, LayoutFile Layout) Scene()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "tickimg-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "tickimg-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "base.png");
         using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 30, 30, 30)); b.SavePng(basePng); }

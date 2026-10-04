@@ -5,7 +5,7 @@ using Xunit;
 
 public class ShortcutFilesTests
 {
-    private static string TempLnk() { var d = Path.Combine(Path.GetTempPath(), "deskwall-tests", "lnk-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return Path.Combine(d, "\u00A0.lnk"); }
+    private static string TempLnk() { var d = Path.Combine(TestRun.Root, "lnk-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return Path.Combine(d, "\u00A0.lnk"); }
 
     [Theory]
     [InlineData("steam://rungameid/620", "steam://rungameid/620", "", "")]

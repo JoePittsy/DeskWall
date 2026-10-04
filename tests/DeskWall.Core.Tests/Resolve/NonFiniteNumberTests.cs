@@ -52,7 +52,7 @@ public class NonFiniteNumberTests
         Assert.Equal(0f, bar.Glow);
         Assert.Equal(0.12f, bar.GlowStrength);
 
-        var png = Path.Combine(Path.GetTempPath(), "deskwall-tests", "nonfinite-base.png");
+        var png = Path.Combine(TestRun.Root, "nonfinite-base.png");
         Directory.CreateDirectory(Path.GetDirectoryName(png)!);
         using (var b = Surface.Create(40, 40)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(png); }
         using var frame = new FrameRenderer(40, 40).RenderAll(BaseCache.Ensure(png, 40, 40, Fit.Cover), resolved);

@@ -7,7 +7,7 @@ using Xunit;
 
 /// <summary>The Task 2.2 seam: the expansion follows edits and undo, and depth is not an edit.
 /// Uses "dial" because ShippedEditingTests leaves a user-dir clock.json (with no parts) under the
-/// shared test DESKWALL_HOME.</summary>
+/// run's test DESKWALL_HOME.</summary>
 public class DesignerModelSeamTests
 {
     private static DesignerModel Model() => new(LayoutFile.Parse("""

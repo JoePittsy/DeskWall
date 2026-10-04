@@ -115,7 +115,7 @@ public class LayoutScalerTests
         """);
         var scaled = LayoutScaler.Scale(layout, new DisplaySignature("A", 344, 144, 100), new DisplaySignature("B", 192, 120, 100));
         var resolved = DeskWall.Core.Resolve.LayoutResolver.Resolve(scaled, DeskWall.Core.Values.ValueTree.Of());
-        var png = Path.Combine(Path.GetTempPath(), "deskwall-tests", "scaled-shape-base.png");
+        var png = Path.Combine(TestRun.Root, "scaled-shape-base.png");
         Directory.CreateDirectory(Path.GetDirectoryName(png)!);
         using (var b = DeskWall.Core.Render.Surface.Create(192, 120)) { b.Clear(new DeskWall.Core.Render.Color(255, 0, 0, 255)); b.SavePng(png); }
         using var frame = new DeskWall.Core.Render.FrameRenderer(192, 120).RenderAll(DeskWall.Core.Render.BaseCache.Ensure(png, 192, 120, Fit.Cover), resolved);

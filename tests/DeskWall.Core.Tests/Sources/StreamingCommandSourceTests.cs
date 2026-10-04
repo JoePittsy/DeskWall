@@ -15,7 +15,7 @@ public class StreamingCommandSourceTests
 
     private static string Dir()
     {
-        var d = Path.Combine(Path.GetTempPath(), "deskwall-tests", "stream-" + Guid.NewGuid().ToString("N")[..8]);
+        var d = Path.Combine(TestRun.Root, "stream-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(d);
         return d;
     }
@@ -40,7 +40,7 @@ public class StreamingCommandSourceTests
 
     private static ISource Build(SourceDef def) => SourceFactory.Create(def, new FixedClock(DateTimeOffset.UnixEpoch), NoSecrets());
 
-    private static Secrets NoSecrets() => new(Path.Combine(Path.GetTempPath(), "deskwall-tests", "no-such-secrets.json"));
+    private static Secrets NoSecrets() => new(Path.Combine(TestRun.Root, "no-such-secrets.json"));
 
     /// <summary>#46, the resident shape of it: a producer that echoes its argument to stderr, and
     /// a line to stdout, must publish the placeholder in both rather than the substituted secret.</summary>

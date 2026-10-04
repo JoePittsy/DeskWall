@@ -11,7 +11,7 @@ public class LoudRenderTests
 {
     private static string Dir()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         return dir;
     }

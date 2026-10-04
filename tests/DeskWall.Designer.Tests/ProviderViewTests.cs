@@ -26,7 +26,7 @@ public class ProviderViewTests
 
     private sealed class Harness : System.IDisposable
     {
-        public readonly string Dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "providers-" + System.Guid.NewGuid().ToString("N"));
+        public readonly string Dir = Path.Combine(TestRun.Root, "providers-" + System.Guid.NewGuid().ToString("N"));
         public List<ProviderRecord> Records = [];
         public List<ProviderManifest> Manifests = [];
         public List<ProviderRecord>? Saved;

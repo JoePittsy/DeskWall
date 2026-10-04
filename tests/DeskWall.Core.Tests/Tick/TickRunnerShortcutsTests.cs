@@ -18,7 +18,7 @@ public class TickRunnerShortcutsTests
 {
     private static (LayoutFile Layout, string Dir) Scene(string componentsJson)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "scut-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "scut-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "base.png");
         using (var b = Surface.Create(320, 180)) { b.Clear(new Color(255, 30, 30, 30)); b.SavePng(basePng); }

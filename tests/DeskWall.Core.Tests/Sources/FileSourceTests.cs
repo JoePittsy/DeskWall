@@ -7,7 +7,7 @@ file sealed class FixedClock(DateTimeOffset now) : IClock { public DateTimeOffse
 
 public class FileSourceTests
 {
-    private static string Temp(string name) { var d = Path.Combine(Path.GetTempPath(), "deskwall-tests", "file-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return Path.Combine(d, name); }
+    private static string Temp(string name) { var d = Path.Combine(TestRun.Root, "file-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return Path.Combine(d, name); }
 
     private static SourceDef Def(string path, string? parse = null)
     {
@@ -130,7 +130,7 @@ public class FileSourceTests
     [Fact]
     public async Task A_Watcher_That_Cannot_Be_Created_Leaves_The_Source_Working()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "later-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "later-" + Guid.NewGuid().ToString("N")[..8]);
         var p = Path.Combine(dir, "x.json");
         using var src = FileSource.FromDef(Def(p), Clock());   // no directory: must not throw
         await Assert.ThrowsAsync<FileNotFoundException>(async () => await src.RefreshAsync(default));

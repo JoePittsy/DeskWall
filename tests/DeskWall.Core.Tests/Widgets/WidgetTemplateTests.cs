@@ -23,7 +23,7 @@ internal static class Repo
     /// <summary>A fresh, empty folder under the temp dir (never the runtime dir).</summary>
     public static string TempDir(string name)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "core-widgets", name);
+        var dir = Path.Combine(TestRun.Root, "core-widgets", name);
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         Directory.CreateDirectory(dir);
         return dir;

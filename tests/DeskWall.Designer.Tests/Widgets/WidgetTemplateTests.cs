@@ -11,7 +11,7 @@ public class WidgetTemplateTests
 {
     private static string WriteTemp(string name, string json)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "widget-templates");
+        var dir = Path.Combine(TestRun.Root, "widget-templates");
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, name);
         File.WriteAllText(path, json);

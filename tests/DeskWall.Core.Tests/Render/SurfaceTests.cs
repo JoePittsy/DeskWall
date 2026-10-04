@@ -7,7 +7,7 @@ public class SurfaceTests
 {
     private static string TempDir()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -198,7 +198,7 @@ public class FrameRendererTests
     [Fact]
     public void RenderAll_Draws_Base_Then_Components_By_Z()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         var basePng = Path.Combine(dir, "base.png");
         using (var b = Surface.Create(20, 20)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(basePng); }
@@ -216,7 +216,7 @@ public class FrameRendererTests
 
     private static string BlueBase(string name)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         var png = Path.Combine(dir, name);
         using (var b = Surface.Create(40, 20)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(png); }
@@ -287,7 +287,7 @@ public class FrameRendererTests
     [Fact]
     public void RenderIncremental_Text_Leaves_No_Residue_Outside_The_Rect()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         var png = Path.Combine(dir, "base-textresidue.png");
         using (var b = Surface.Create(160, 60)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(png); }
@@ -335,7 +335,7 @@ public class FrameRendererLeakTests
 {
     private static string TempDir()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         return dir;
     }

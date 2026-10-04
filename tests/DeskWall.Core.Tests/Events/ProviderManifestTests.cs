@@ -10,7 +10,7 @@ public class ProviderManifestTests
 {
     private static string NewDir(string name)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "provider-catalog", name + "-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "provider-catalog", name + "-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -53,7 +53,7 @@ public class ProviderManifestTests
     [Fact]
     public void A_Missing_Directory_Is_Skipped_Not_An_Error()
     {
-        var missing = Path.Combine(Path.GetTempPath(), "deskwall-tests", "provider-catalog", "gone-" + Guid.NewGuid().ToString("N")[..8]);
+        var missing = Path.Combine(TestRun.Root, "provider-catalog", "gone-" + Guid.NewGuid().ToString("N")[..8]);
         Assert.Empty(ProviderCatalog.Load(missing));
     }
 

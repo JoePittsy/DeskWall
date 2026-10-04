@@ -116,7 +116,7 @@ public class TextMeasureTests
     [Fact]
     public void Text_That_Shrinks_Between_Ticks_Leaves_No_Residue()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         var png = Path.Combine(dir, "base-textshrink.png");
         using (var b = Surface.Create(W, H)) { b.Clear(new Color(255, 0, 0, 255)); b.SavePng(png); }

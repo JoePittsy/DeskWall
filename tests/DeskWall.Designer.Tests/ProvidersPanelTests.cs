@@ -27,7 +27,7 @@ public class ProvidersPanelTests
     {
         OnStaThread(() =>
         {
-            var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "panel-" + Guid.NewGuid().ToString("N"));
+            var dir = Path.Combine(TestRun.Root, "panel-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
             try
             {

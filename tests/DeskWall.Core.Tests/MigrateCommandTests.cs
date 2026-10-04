@@ -28,7 +28,7 @@ public class MigrateCommandTests
     /// file" path is what runs.</summary>
     private static (string Home, string Layout) Scratch()
     {
-        var home = Path.Combine(Path.GetTempPath(), "deskwall-tests", "migrate-" + Guid.NewGuid().ToString("N")[..8]);
+        var home = Path.Combine(TestRun.Root, "migrate-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(home);
         var layout = Path.Combine(home, "clock-disks.json");
         File.Copy(RepoFile("tests", "fixtures", "layouts-v1", "clock-disks.json"), layout);

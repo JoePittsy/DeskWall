@@ -3,7 +3,7 @@ using Xunit;
 
 public class RollingLogTests
 {
-    private static string Temp(string name) { var d = Path.Combine(Path.GetTempPath(), "deskwall-tests", "log-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return Path.Combine(d, name); }
+    private static string Temp(string name) { var d = Path.Combine(TestRun.Root, "log-" + Guid.NewGuid().ToString("N")[..8]); Directory.CreateDirectory(d); return Path.Combine(d, name); }
 
     [Fact]
     public void Writes_Lines_With_Level_And_Tracks_LastError()

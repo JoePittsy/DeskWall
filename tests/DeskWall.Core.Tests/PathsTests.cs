@@ -6,7 +6,7 @@ public class PathsTests
     [Fact]
     public void RuntimeDir_HonoursDeskwallHome_AndExists()
     {
-        // AssemblyInfo's module initializer points DESKWALL_HOME at a temp folder for the whole test run.
+        // TestRun's module initializer points DESKWALL_HOME at this run's own temp folder.
         var dir = Paths.RuntimeDir;
         Assert.Equal(Environment.GetEnvironmentVariable("DESKWALL_HOME"), dir);
         Assert.True(Directory.Exists(dir));
@@ -17,7 +17,7 @@ public class PathsTests
     /// C:\Users\JosephPitts\AppData\Local\DeskWall inside it. `runtime:` is the portable way to
     /// name a per-user file; image paths already understood it, and now a command and a file do too.
     /// Paths caches RuntimeDir, so a test cannot set its own DESKWALL_HOME: the assembly-wide one
-    /// from AssemblyInfo is what these assert against.</summary>
+    /// from TestRun is what these assert against.</summary>
     [Fact]
     public void ExpandRuntime_Maps_The_Prefix_Into_The_Runtime_Dir()
     {

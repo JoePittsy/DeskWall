@@ -23,7 +23,7 @@ public sealed class ShippedEditingTests : IDisposable
 
     private static string NewDir(string name)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "shipped-editing", name + "-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "shipped-editing", name + "-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         return dir;
     }

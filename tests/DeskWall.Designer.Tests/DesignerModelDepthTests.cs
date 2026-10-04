@@ -82,7 +82,7 @@ public class DesignerModelDepthTests
     {
         var shipped = Path.Combine(WidgetCatalog.ShippedDir, "uptime.json");
         var fork = Path.Combine(WidgetCatalog.UserDir, "uptime.json");
-        var layoutPath = Path.Combine(Path.GetTempPath(), $"deskwall-depth-{Guid.NewGuid():N}.json");
+        var layoutPath = Path.Combine(TestRun.Root, $"deskwall-depth-{Guid.NewGuid():N}.json");
         var shippedBytes = File.ReadAllBytes(shipped);
         Assert.False(File.Exists(fork));
         try
@@ -117,7 +117,7 @@ public class DesignerModelDepthTests
     public void Save_Refuses_A_Widget_That_Would_Not_Load_And_Writes_Nothing()
     {
         var fork = Path.Combine(WidgetCatalog.UserDir, "uptime.json");
-        var layoutPath = Path.Combine(Path.GetTempPath(), $"deskwall-depth-{Guid.NewGuid():N}.json");
+        var layoutPath = Path.Combine(TestRun.Root, $"deskwall-depth-{Guid.NewGuid():N}.json");
         try
         {
             var m = Model("""{ "id": "uptime-1", "widget": "uptime", "x": 0, "y": 0 }""");
@@ -146,7 +146,7 @@ public class DesignerModelDepthTests
     public void ForgetWidget_After_A_Reset_Puts_The_Copies_Back_On_The_Shipped_Widget()
     {
         var fork = Path.Combine(WidgetCatalog.UserDir, "uptime.json");
-        var layoutPath = Path.Combine(Path.GetTempPath(), $"deskwall-depth-{Guid.NewGuid():N}.json");
+        var layoutPath = Path.Combine(TestRun.Root, $"deskwall-depth-{Guid.NewGuid():N}.json");
         try
         {
             var m = Model("""{ "id": "uptime-1", "widget": "uptime", "x": 0, "y": 0 }""");

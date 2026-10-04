@@ -8,7 +8,7 @@ public class LayoutStoreTests
 {
     private static (LayoutStore store, string dir) Fresh()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "store-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "store-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         return (new LayoutStore(Path.Combine(dir, "layouts.json")), dir);
     }

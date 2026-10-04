@@ -43,7 +43,7 @@ public class MediaSourceTests
 
     private static byte[] PngBytes()
     {
-        var png = Path.Combine(Path.GetTempPath(), "deskwall-tests", "media-art-source.png");
+        var png = Path.Combine(TestRun.Root, "media-art-source.png");
         Directory.CreateDirectory(Path.GetDirectoryName(png)!);
         using (var s = DeskWall.Core.Render.Surface.Create(8, 8)) { s.Clear(DeskWall.Core.Render.Color.White); s.SavePng(png); }
         return File.ReadAllBytes(png);

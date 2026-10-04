@@ -10,7 +10,7 @@ public class WidgetCatalogTests
 {
     private static string NewDir(string name)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests", "widget-catalog", name + "-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(TestRun.Root, "widget-catalog", name + "-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -51,7 +51,7 @@ public class WidgetCatalogTests
     [Fact]
     public void A_Missing_Directory_Is_Skipped_Not_An_Error()
     {
-        var missing = Path.Combine(Path.GetTempPath(), "deskwall-tests", "widget-catalog", "does-not-exist-" + Guid.NewGuid().ToString("N")[..8]);
+        var missing = Path.Combine(TestRun.Root, "widget-catalog", "does-not-exist-" + Guid.NewGuid().ToString("N")[..8]);
         var catalog = WidgetCatalog.Load(missing);
         Assert.Empty(catalog);
     }

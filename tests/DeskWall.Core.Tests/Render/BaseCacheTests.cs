@@ -8,7 +8,7 @@ public class BaseCacheTests
 {
     private static string TempDir()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "deskwall-tests");
+        var dir = TestRun.Root;
         Directory.CreateDirectory(dir);
         return dir;
     }

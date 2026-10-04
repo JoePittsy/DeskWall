@@ -251,7 +251,7 @@ public class RepeaterOverflowTests
             rows.Add(new RecordValue(new Dictionary<string, Value>
             {
                 ["name"] = new TextValue("row" + i),
-                ["cover"] = new TextValue(Path.Combine(Path.GetTempPath(), "deskwall-tests", "no-such-cover.png")),
+                ["cover"] = new TextValue(Path.Combine(TestRun.Root, "no-such-cover.png")),
             }));
         return ValueTree.Of(("games", new RecordValue(new Dictionary<string, Value> { ["list"] = new ListValue(rows, "name") })));
     }
