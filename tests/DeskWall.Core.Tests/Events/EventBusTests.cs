@@ -1,6 +1,7 @@
-using DeskWall.Core.Events;
+﻿using DeskWall.Core.Events;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Values;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace DeskWall.Core.Tests.Events;
@@ -9,7 +10,11 @@ namespace DeskWall.Core.Tests.Events;
 // forbids for a file-local type.
 internal sealed class BusClock(DateTimeOffset now) : IClock { public DateTimeOffset Now { get; set; } = now; }
 
-/// <summary>autoWake is false throughout and the tests drive <see cref="EventBus.PumpWake"/>: a
+/// <summary>An IClock that reads a TimeProvider, so one fake drives both the bus's clock and its timer.</summary>
+internal sealed class TimeClock(TimeProvider time) : IClock { public DateTimeOffset Now => time.GetUtcNow(); }
+
+/// <summary>The coalescing tests run with autoWake false and drive <see cref="EventBus.PumpWake"/>;
+/// the timer tests run the real timer path on a <see cref="FakeTimeProvider"/> and advance it. A
 /// coalescing window verified by sleeping would be both slow and flaky.</summary>
 public class EventBusTests
 {
@@ -224,11 +229,110 @@ public class EventBusTests
         Assert.Equal(2, bus.Providers.Count);
     }
 
-    /// <summary>The one test that exercises the real coalescing timer rather than PumpWake. It
-    /// is the load-bearing bit: the wake has to arrive with nobody pumping, off the publishing
-    /// thread, and an exception out of that callback would take the daemon down.</summary>
+    /// <summary>The bus's timer on a fake time provider, with the clock reading the same fake, so
+    /// the timer tests advance time instead of sleeping on it.</summary>
+    private static (EventBus bus, FakeTimeProvider time) WithTimer()
+    {
+        var time = new FakeTimeProvider(T0);
+        return (new EventBus(new TimeClock(time), Window, time: time), time);
+    }
+
+    /// <summary>The load-bearing bit of autoWake: the trailing wake has to arrive with nobody
+    /// pumping, and never on the publishing call itself.</summary>
     [Fact]
-    public void With_AutoWake_The_Wake_Arrives_On_Another_Thread_Without_Anyone_Pumping()
+    public void With_AutoWake_The_Timer_Fires_The_Trailing_Wake_With_Nobody_Pumping()
+    {
+        var (bus, time) = WithTimer();
+        using var _d = bus;
+        var wakes = 0;
+        bus.WakeRequested += () => wakes++;
+
+        for (var i = 0; i < 20; i++) bus.Publish(Numbered(i));
+        Assert.Equal(0, wakes);                                                 // not raised by Publish
+
+        time.Advance(Window - TimeSpan.FromMilliseconds(1));
+        Assert.Equal(0, wakes);
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(1, wakes);                                                 // one wake for the burst
+        time.Advance(TimeSpan.FromHours(1));
+        Assert.Equal(1, wakes);                                                 // and the timer is one-shot
+        Assert.Equal(19, ((NumberValue)bus.Providers["a"].Data.Get("n")!).Number);
+    }
+
+    [Fact]
+    public void A_Signal_Rides_The_Same_Timer_As_An_Event()
+    {
+        var (bus, time) = WithTimer();
+        using var _d = bus;
+        var wakes = 0;
+        bus.WakeRequested += () => wakes++;
+
+        bus.Publish(Numbered(1));
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        bus.Signal("file1");                                                    // inside the open window
+        time.Advance(Window - TimeSpan.FromMilliseconds(100));
+        Assert.Equal(1, wakes);
+
+        bus.Signal("file1");                                                    // after it: a new window
+        time.Advance(Window);
+        Assert.Equal(2, wakes);
+    }
+
+    /// <summary>Windows timer resolution can fire the callback a millisecond before the clock reads
+    /// the deadline. The timer is the authority: a clock that lags it must not lose the wake.</summary>
+    [Fact]
+    public void The_Timer_Wakes_Even_When_The_Clock_Has_Not_Reached_The_Deadline()
+    {
+        var time = new FakeTimeProvider(T0);
+        var lagging = new BusClock(T0);                                         // never moves
+        using var bus = new EventBus(lagging, Window, time: time);
+        var wakes = 0;
+        bus.WakeRequested += () => wakes++;
+
+        bus.Publish(Numbered(1));
+        time.Advance(Window);
+
+        Assert.Equal(1, wakes);
+    }
+
+    /// <summary>A handler that throws must not reach the timer callback, which would end the
+    /// process, and the bus must still wake afterwards.</summary>
+    [Fact]
+    public void A_Throwing_Wake_Handler_Does_Not_Escape_The_Timer_Callback()
+    {
+        var (bus, time) = WithTimer();
+        using var _d = bus;
+        var tries = 0;
+        bus.WakeRequested += () => { tries++; throw new InvalidOperationException("the window has gone"); };
+
+        bus.Publish(Numbered(1));
+        time.Advance(Window);                                                   // the fake runs the callback here; an escape would throw
+
+        Assert.Equal(1, tries);
+        Assert.True(bus.Publish(Numbered(2)));
+        time.Advance(Window);
+        Assert.Equal(2, tries);
+    }
+
+    [Fact]
+    public void A_Disposed_Bus_Does_Not_Wake()
+    {
+        var (bus, time) = WithTimer();
+        var wakes = 0;
+        bus.WakeRequested += () => wakes++;
+
+        bus.Publish(Numbered(1));
+        bus.Dispose();
+        time.Advance(TimeSpan.FromHours(1));
+
+        Assert.Equal(0, wakes);
+    }
+
+    /// <summary>The one test on real time: the production default, TimeProvider.System, is what
+    /// the daemon runs, and its callback arrives on a pool thread rather than the publisher's. No
+    /// fixed sleep; the bound is only how long to wait before calling the wake lost.</summary>
+    [Fact]
+    public void On_The_System_Time_Provider_The_Wake_Arrives_On_Another_Thread()
     {
         using var bus = new EventBus(SystemClock.Instance, TimeSpan.FromMilliseconds(50));
         using var woke = new ManualResetEventSlim();
@@ -236,27 +340,10 @@ public class EventBusTests
         var wakeThread = 0;
         bus.WakeRequested += () => { wakeThread = Environment.CurrentManagedThreadId; woke.Set(); };
 
-        for (var i = 0; i < 20; i++) bus.Publish(Numbered(i));
+        bus.Publish(Numbered(1));
 
         Assert.True(woke.Wait(TimeSpan.FromSeconds(5)), "the coalesced wake never arrived");
         Assert.NotEqual(publishingThread, wakeThread);
-        Assert.Equal(19, ((NumberValue)bus.Providers["a"].Data.Get("n")!).Number);
-    }
-
-    /// <summary>A handler that throws must not reach the timer callback, which would end the
-    /// process, and the bus must still be usable afterwards.</summary>
-    [Fact]
-    public void A_Throwing_Wake_Handler_Does_Not_Escape_The_Timer_Callback()
-    {
-        using var bus = new EventBus(SystemClock.Instance, TimeSpan.FromMilliseconds(50));
-        using var tried = new ManualResetEventSlim();
-        bus.WakeRequested += () => { tried.Set(); throw new InvalidOperationException("the window has gone"); };
-
-        bus.Publish("""{"source":"a","data":{"n":1}}""");
-
-        Assert.True(tried.Wait(TimeSpan.FromSeconds(5)));
-        Thread.Sleep(50);                                                       // let the callback unwind
-        Assert.True(bus.Publish("""{"source":"a","data":{"n":2}}"""));
     }
 
     [Fact]

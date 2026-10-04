@@ -1,5 +1,6 @@
 ﻿using DeskWall.Core.Sources.Hardware;
 using DeskWall.Core.Values;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 public class HardwareSourceTests
@@ -165,11 +166,12 @@ public class HardwareSourceTests
     {
         var r = new FakeReader();
         for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
-        using var s = Make2(r, TimeSpan.FromMilliseconds(50), autoStart: true);
-        await s.RefreshAsync(default);               // starts the timer
-        await Task.Delay(300);
-        var rec = await s.RefreshAsync(default);
-        Assert.True(N(rec, "samples") >= 2, $"samples was {N(rec, "samples")}");
+        var time = new FakeTimeProvider();
+        using var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: true, time);
+        Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));   // the inline first reading; starts the timer
+        time.Advance(TimeSpan.FromSeconds(10));
+        time.Advance(TimeSpan.FromSeconds(10));
+        Assert.Equal(3, N(await s.RefreshAsync(default), "samples"));
     }
 
     /// <summary>Found rendering a verification layout with `deskwall tick`: the very first refresh
@@ -212,8 +214,8 @@ public class HardwareSourceTests
         Make(new FakeReader()).Dispose();            // a reader that holds nothing is simply left alone
     }
 
-    private static HardwareSource Make2(IHardwareReader r, TimeSpan sample, bool autoStart)
-        => new("hw", TimeSpan.FromSeconds(60), sample, TimeSpan.FromSeconds(300), r, autoStart);
+    private static HardwareSource Make2(IHardwareReader r, TimeSpan sample, bool autoStart, TimeProvider? time = null)
+        => new("hw", TimeSpan.FromSeconds(60), sample, TimeSpan.FromSeconds(300), r, autoStart, time);
 
     private sealed class BlockingReader : IHardwareReader, IDisposable
     {
@@ -279,10 +281,11 @@ public class HardwareSourceTests
     public async Task Dispose_Then_RefreshAsync_Never_Starts_The_Timer()
     {
         var r = new CountingReader();
-        var s = Make2(r, TimeSpan.FromMilliseconds(20), autoStart: true);
+        var time = new FakeTimeProvider();
+        var s = Make2(r, TimeSpan.FromSeconds(10), autoStart: true, time);
         s.Dispose();
         await s.RefreshAsync(default);
-        await Task.Delay(200);
+        time.Advance(TimeSpan.FromHours(1));
         Assert.Equal(0, r.Calls);
     }
 
@@ -369,15 +372,18 @@ public class HardwareSourceTests
 
     /// <summary>The first reading exists as soon as the source has been refreshed once, however
     /// long `sample` is; the refresh takes it inline. The sampler must not also take one of its own
-    /// at the same moment, so the count is still exactly 1 half a second later.</summary>
+    /// at the same moment, so the count is still exactly 1 until a whole `sample` has passed.</summary>
     [Fact]
     public async Task The_First_Reading_Is_Taken_Straight_Away_And_Only_Once()
     {
         var r = new FakeReader();
         for (var i = 0; i < 50; i++) r.Mem.Enqueue(new MemoryReading(1, 4));
-        using var s = Make2(r, TimeSpan.FromSeconds(30), autoStart: true);   // far longer than the wait
+        var time = new FakeTimeProvider();
+        using var s = Make2(r, TimeSpan.FromSeconds(30), autoStart: true, time);
         Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));
-        await Task.Delay(500);
+        time.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
         Assert.Equal(1, N(await s.RefreshAsync(default), "samples"));
+        time.Advance(TimeSpan.FromTicks(1));
+        Assert.Equal(2, N(await s.RefreshAsync(default), "samples"));
     }
 }

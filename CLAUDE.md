@@ -116,6 +116,11 @@ list and not a work log.
   xUnit's parallel classes silently drop tests; the test assembly also disables parallelisation.
 - **Tests run under `DESKWALL_HOME`** (set by `tests/.../AssemblyInfo.cs`) so they never write
   into the real `%LOCALAPPDATA%\DeskWall`. A test that does is a defect.
+- **Core's timers come from an injected `TimeProvider`** (`EventBus`, `HardwareSource`,
+  `NotificationSource`; `TimeProvider.System` by default). A test of a coalescing window, debounce
+  or sampler passes a `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`) and calls
+  `Advance`, which runs due callbacks synchronously on the test's thread: never verify a window by
+  sleeping through it. Only the timer moves to the provider; timestamps still come from `IClock`.
 - **Display signature changes under RDP.** JOES-PC over Remote Desktop reports one primary
   monitor at 1920x1200, not 3440x1440; a layout authored for the ultrawide renders off-canvas
   until the layout store scales it (`LayoutScaler`, `docs/layout-format.md`). Screenshots of the

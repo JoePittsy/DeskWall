@@ -26,18 +26,23 @@ public sealed class EventBus : IDisposable
     public static readonly TimeSpan DefaultCoalesce = TimeSpan.FromMilliseconds(400);
 
     private readonly IClock _clock;
+    private readonly TimeProvider _time;
     private readonly TimeSpan _coalesce;
     private readonly bool _autoWake;
     private readonly object _lock = new();
     private readonly Dictionary<string, ProviderRecord> _providers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<EventLogEntry> _ring = new(RingSize);
     private DateTimeOffset? _wakeDue;
-    private Timer? _timer;
+    private ITimer? _timer;
     private bool _disposed;
 
-    public EventBus(IClock clock, TimeSpan coalesce, bool autoWake = true)
+    /// <param name="time">Where the coalescing timer comes from; <see cref="TimeProvider.System"/>
+    /// unless a test passes a fake to advance the window instead of sleeping through it. Only the
+    /// timer: timestamps still come from <paramref name="clock"/>, like everywhere else in Core.</param>
+    public EventBus(IClock clock, TimeSpan coalesce, bool autoWake = true, TimeProvider? time = null)
     {
         _clock = clock;
+        _time = time ?? TimeProvider.System;
         _coalesce = coalesce < TimeSpan.Zero ? TimeSpan.Zero : coalesce;
         _autoWake = autoWake;
     }
@@ -171,7 +176,7 @@ public sealed class EventBus : IDisposable
         lock (_lock)
         {
             if (_disposed) return;
-            _timer ??= new Timer(static s => ((EventBus)s!).OnTimer(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            _timer ??= _time.CreateTimer(static s => ((EventBus)s!).OnTimer(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
             _timer.Change(_coalesce, Timeout.InfiniteTimeSpan);
         }
     }
@@ -194,7 +199,7 @@ public sealed class EventBus : IDisposable
 
     public void Dispose()
     {
-        Timer? timer;
+        ITimer? timer;
         lock (_lock)
         {
             if (_disposed) return;

@@ -34,7 +34,7 @@ public sealed class NotificationSource : ISource, ISignalSource, IDisposable
     private readonly string[] _include, _exclude;
     private readonly TimeSpan _every;
     private readonly SemaphoreSlim _readLock = new(1, 1);
-    private readonly Timer _debounce, _confirm;
+    private readonly ITimer _debounce, _confirm;
     private readonly Action _onReaderChanged;
     private volatile bool _disposed, _started;
     private volatile Published? _form;
@@ -46,8 +46,11 @@ public sealed class NotificationSource : ISource, ISignalSource, IDisposable
 
     public NotificationSource(string name, INotificationReader reader, IClock clock,
         IReadOnlyList<string>? include = null, IReadOnlyList<string>? exclude = null,
-        TimeSpan? every = null, TimeSpan? debounce = null, TimeSpan? confirm = null)
+        TimeSpan? every = null, TimeSpan? debounce = null, TimeSpan? confirm = null, TimeProvider? time = null)
     {
+        // Only the two timers come from `time` (System unless a test passes a fake to advance);
+        // timestamps still come from `clock`, like everywhere else in Core.
+        time ??= TimeProvider.System;
         Name = name;
         _reader = reader;
         _clock = clock;
@@ -56,8 +59,8 @@ public sealed class NotificationSource : ISource, ISignalSource, IDisposable
         _every = every ?? TimeSpan.FromSeconds(300);
         Debounce = debounce ?? DefaultDebounce;
         ConfirmDelay = confirm ?? DefaultConfirm;
-        _debounce = new Timer(static s => ((NotificationSource)s!).Fire(confirming: false), this, Timeout.Infinite, Timeout.Infinite);
-        _confirm = new Timer(static s => ((NotificationSource)s!).Fire(confirming: true), this, Timeout.Infinite, Timeout.Infinite);
+        _debounce = time.CreateTimer(static s => ((NotificationSource)s!).Fire(confirming: false), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _confirm = time.CreateTimer(static s => ((NotificationSource)s!).Fire(confirming: true), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _onReaderChanged = OnReaderChanged;
         _reader.Changed += _onReaderChanged;
     }

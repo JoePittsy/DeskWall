@@ -1,7 +1,8 @@
-using DeskWall.Core.Layout;
+﻿using DeskWall.Core.Layout;
 using DeskWall.Core.Sources;
 using DeskWall.Core.Sources.Notifications;
 using DeskWall.Core.Values;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 /// <summary>A reader whose centre is a list the test edits, and whose "the store was written" is a
@@ -49,27 +50,18 @@ public class NotificationSourceTests
 
     private sealed class Clock : IClock { public DateTimeOffset Now { get; set; } = T0; }
 
+    /// <summary>The timers always run on a fake: a test that wants them to fire passes its own and
+    /// advances it, so nothing here waits on real time.</summary>
     private static NotificationSource Make(FakeNotificationReader r, Clock? clock = null,
-        string[]? include = null, string[]? exclude = null, int debounceMs = 20, int confirmMs = 60)
+        string[]? include = null, string[]? exclude = null, int debounceMs = 20, int confirmMs = 60, FakeTimeProvider? time = null)
         => new("notifications", r, clock ?? new Clock(), include, exclude,
-            debounce: TimeSpan.FromMilliseconds(debounceMs), confirm: TimeSpan.FromMilliseconds(confirmMs));
+            debounce: TimeSpan.FromMilliseconds(debounceMs), confirm: TimeSpan.FromMilliseconds(confirmMs), time: time ?? new FakeTimeProvider(T0));
 
     private static RecordValue Refresh(NotificationSource s) => s.RefreshAsync(CancellationToken.None).AsTask().Result;
 
     private static string Text(RecordValue r, string f) => Assert.IsType<TextValue>(r.Fields[f]).Text;
 
     private static double Num(RecordValue r, string f) => Assert.IsType<NumberValue>(r.Fields[f]).Number;
-
-    private static async Task<bool> WaitFor(Func<bool> condition, int ms = 3000)
-    {
-        var until = Environment.TickCount64 + ms;
-        while (Environment.TickCount64 < until)
-        {
-            if (condition()) return true;
-            await Task.Delay(10);
-        }
-        return condition();
-    }
 
     [Fact]
     public void Construction_Reads_Nothing_And_Starts_Nothing()
@@ -230,23 +222,32 @@ public class NotificationSourceTests
     }
 
     [Fact]
-    public async Task A_Burst_Of_Store_Events_Is_One_Read_And_One_Signal()
+    public void A_Burst_Of_Store_Events_Is_One_Read_And_One_Signal()
     {
         var r = new FakeNotificationReader();
         var clock = new Clock();
-        using var s = Make(r, clock, debounceMs: 50);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, clock, debounceMs: 50, time: time);
         Refresh(s);
         var signals = 0;
-        s.Changed += _ => Interlocked.Increment(ref signals);
+        s.Changed += _ => signals++;
 
         r.Add("Teams", "Alex", "lunch?", T0);
         clock.Now = T0.AddSeconds(30);
-        for (var i = 0; i < 30; i++) r.Raise();
+        for (var i = 0; i < 30; i++)
+        {
+            r.Raise();                                       // each one restarts the debounce
+            time.Advance(TimeSpan.FromMilliseconds(1));
+        }
 
-        Assert.True(await WaitFor(() => Volatile.Read(ref signals) == 1));
-        await Task.Delay(150);
+        time.Advance(TimeSpan.FromMilliseconds(48));         // 49 ms after the last event
+        Assert.Equal(1, r.Reads);
+        time.Advance(TimeSpan.FromMilliseconds(1));
         Assert.Equal(2, r.Reads);
-        Assert.Equal(1, Volatile.Read(ref signals));
+        Assert.Equal(1, signals);
+        time.Advance(TimeSpan.FromHours(1));
+        Assert.Equal(2, r.Reads);
+        Assert.Equal(1, signals);
         Assert.True(s.HasPending);
         Assert.Equal(T0.AddMinutes(1), s.NextDue(T0, T0.AddMinutes(1)));
 
@@ -258,81 +259,93 @@ public class NotificationSourceTests
     }
 
     [Fact]
-    public async Task A_Store_Write_That_Changes_Nothing_Is_Not_A_Signal()
+    public void A_Store_Write_That_Changes_Nothing_Is_Not_A_Signal()
     {
         var r = new FakeNotificationReader();
         r.Add("Teams", "Alex", "lunch?", T0);
-        using var s = Make(r);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, time: time);
         Refresh(s);
         var signals = 0;
-        s.Changed += _ => Interlocked.Increment(ref signals);
+        s.Changed += _ => signals++;
 
         r.Raise();
+        time.Advance(TimeSpan.FromHours(1));
 
-        Assert.True(await WaitFor(() => r.Reads == 2));
-        await Task.Delay(50);
-        Assert.Equal(0, Volatile.Read(ref signals));
+        Assert.Equal(2, r.Reads);
+        Assert.Equal(0, signals);
         Assert.False(s.HasPending);
     }
 
     [Fact]
-    public async Task A_Dismissal_Is_A_Change()
+    public void A_Dismissal_Is_A_Change()
     {
         var r = new FakeNotificationReader();
         r.Add("Teams", "Alex", "lunch?", T0);
-        using var s = Make(r);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, time: time);
         Refresh(s);
         var signals = 0;
-        s.Changed += _ => Interlocked.Increment(ref signals);
+        s.Changed += _ => signals++;
 
         lock (r.Items) r.Items.Clear();
         r.Raise();
+        time.Advance(TimeSpan.FromMilliseconds(20));
 
-        Assert.True(await WaitFor(() => Volatile.Read(ref signals) == 1));
+        Assert.Equal(1, signals);
         Assert.Equal(0, Num(Refresh(s), "count"));
     }
 
     [Fact]
-    public async Task An_Echoing_Reader_Gets_One_Confirming_Read_And_No_More()
+    public void An_Echoing_Reader_Gets_One_Confirming_Read_And_No_More()
     {
         var r = new FakeNotificationReader { EchoesReads = true };
-        using var s = Make(r, debounceMs: 20, confirmMs: 80);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, debounceMs: 20, confirmMs: 80, time: time);
         Refresh(s);
         var signals = 0;
-        s.Changed += _ => Interlocked.Increment(ref signals);
+        s.Changed += _ => signals++;
 
         r.Raise();
-        Assert.True(await WaitFor(() => r.Reads == 2));
+        time.Advance(TimeSpan.FromMilliseconds(20));
+        Assert.Equal(2, r.Reads);
         // A toast that landed during the first read's suppressed echo: only the confirmation sees it.
         r.Add("Outlook", "Standup", "", T0);
-        Assert.True(await WaitFor(() => r.Reads == 3));
-        Assert.True(await WaitFor(() => Volatile.Read(ref signals) == 1));
-        await Task.Delay(250);
+        time.Advance(TimeSpan.FromMilliseconds(79));
+        Assert.Equal(2, r.Reads);
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(3, r.Reads);
+        Assert.Equal(1, signals);
+        time.Advance(TimeSpan.FromHours(1));
         Assert.Equal(3, r.Reads);
         Assert.Equal(1, Num(Refresh(s), "count"));
     }
 
     [Fact]
-    public async Task A_Reader_That_Does_Not_Echo_Gets_No_Confirming_Read()
+    public void A_Reader_That_Does_Not_Echo_Gets_No_Confirming_Read()
     {
         var r = new FakeNotificationReader { EchoesReads = false };
-        using var s = Make(r, debounceMs: 20, confirmMs: 40);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, debounceMs: 20, confirmMs: 40, time: time);
         Refresh(s);
         r.Raise();
-        Assert.True(await WaitFor(() => r.Reads == 2));
-        await Task.Delay(200);
+        time.Advance(TimeSpan.FromMilliseconds(20));
+        Assert.Equal(2, r.Reads);
+        time.Advance(TimeSpan.FromHours(1));
         Assert.Equal(2, r.Reads);
     }
 
     [Fact]
-    public async Task A_Background_Read_That_Throws_Is_Counted_Not_Thrown()
+    public void A_Background_Read_That_Throws_Is_Counted_Not_Thrown()
     {
         var r = new FakeNotificationReader();
-        using var s = Make(r);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, time: time);
         Refresh(s);
         r.ThrowOnRead = true;
         r.Raise();
-        Assert.True(await WaitFor(() => s.ReadFaults == 1));
+        time.Advance(TimeSpan.FromMilliseconds(20));         // the fake runs the callback here; an escape would throw
+        Assert.Equal(1, s.ReadFaults);
         Assert.False(s.HasPending);
     }
 
@@ -340,9 +353,10 @@ public class NotificationSourceTests
     public void Events_Before_The_First_Refresh_Are_Ignored()
     {
         var r = new FakeNotificationReader();
-        using var s = Make(r);
+        var time = new FakeTimeProvider(T0);
+        using var s = Make(r, time: time);
         r.Raise();
-        Thread.Sleep(100);
+        time.Advance(TimeSpan.FromHours(1));
         Assert.Equal(0, r.Reads);
     }
 
