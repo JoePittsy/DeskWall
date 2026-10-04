@@ -29,9 +29,7 @@ lane was rewriting on `main` at the same time.
   slicing the bound list -- there is no list-slicing in the binding language (`Binding.cs` is a
   path plus an optional format string, nothing else), so the repeater's own "overflow stops, it
   does not wrap or shrink" rule (`docs/layout-format.md` "Repeater semantics") is what actually
-  trims the extra items. This is the same mechanism every "how many rows" knob would have to use
-  until the binding language grows a `take`-style filter; it is not a workaround specific to this
-  widget.
+  trims the extra items. A `take`-style binding filter would replace this: #41.
 - **`layouts/README.md`**: a new "Recent games (Hearth)" section documenting the widget, why it
   currently lives outside `widgets/`, and how to try it before the lanes merge.
 - **`docs/superpowers/plans/2026-09-30-hearth-feed-spec.md`** (new): part 1, written for JOES-PC.
@@ -76,41 +74,20 @@ JOES-PC, once Hearth exists and has written a real feed, is below.
 
 ## What to install on JOES-PC
 
-**Hearth itself** (part 1, not built in this lane):
-
-1. Implement `docs/superpowers/plans/2026-09-30-hearth-feed-spec.md` in the Hearth repo, ideally
-   scaffolded with Playnite's own `Toolbox.exe new GenericPlugin "Hearth" <path>` so the manifest
-   and SDK reference match whatever Playnite version is installed there.
-2. Build it (`dotnet build` / the generated project's own build), producing `Hearth.dll` and
-   `extension.yaml` in the same output folder.
-3. **Where the extension goes:** either
-   - **Development**: Playnite Settings -> `For developers` -> `External extensions`, add the
-     build output folder (e.g. `...\Hearth\bin\Debug\`) directly -- no copying, Playnite loads it
-     from there every time it starts, and it survives Playnite updates untouched; or
-   - **Installed**: copy the whole output folder (containing `extension.yaml` and `Hearth.dll`)
-     into `%AppData%\Playnite\Extensions\Hearth\`. Playnite installation/update replaces extension
-     folders wholesale, so nothing else should be written inside this folder at runtime -- the
-     feed file itself correctly lives outside it, under `%LOCALAPPDATA%\DeskWall\feeds\`.
-4. Restart Playnite (or use its extension reload if the SDK version supports it) so the plugin
-   loads, then start and stop any game once to trigger the first write and confirm
-   `%LOCALAPPDATA%\DeskWall\feeds\hearth-recent.json` appears.
+**Hearth itself** (part 1, not built in this lane): build, install and first-write steps are in #35.
 
 **DeskWall's side** (already built in this lane, not yet on `main`):
 
-5. Once this lane (`spike/hearth-feed`) and the parallel `widgets/`-rewriting lane are both merged
-   to `main`, move `layouts/widgets/recent-games.json` into the shipped `widgets/` folder (or
-   confirm the merge already did, if the other lane's own generator picked it up) so it ships
-   beside the exe like every other widget, and drop the "lives outside `widgets/` for now" note
-   from `layouts/README.md`.
-6. Until then, on JOES-PC: copy `layouts/widgets/recent-games.json` to
+1. Ship `recent-games.json` in `widgets/` and drop the "for now" note: #36.
+2. Until then, on JOES-PC: copy `layouts/widgets/recent-games.json` to
    `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the ordinary user-widget-override
    location, `docs/layout-format.md` "Where widget files come from") so the daemon and designer
    both pick it up without a rebuild.
-7. Add a `copies` entry for it (`"widget": "recent-games"`) to whatever layout JOES-PC is running
+3. Add a `copies` entry for it (`"widget": "recent-games"`) to whatever layout JOES-PC is running
    -- most likely a slot next to or instead of `steam-covers` in `column-system.json`, since both
    claim shortcut slots 8 upward and a layout must not use both at once (`layouts/README.md`
    "Shortcut slots": a duplicate slot is a layout error).
-8. `deskwall layouts set <path to that layout>`.
+4. `deskwall layouts set <path to that layout>`.
 
 ## The exact `deskwall verify` run, once the above is done
 

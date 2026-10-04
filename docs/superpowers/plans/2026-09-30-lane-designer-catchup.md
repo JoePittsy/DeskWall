@@ -1,5 +1,7 @@
 # Lane: the designer catches up with the daemon
 
+Status: not merged -- `spike/designer-catchup` stopped at 4 commits plus WIP; tracked in #29.
+
 Worktree `D:\Source\Personal\DeskWall-designer`, branch `spike/designer-catchup`. Read
 `CLAUDE.md`, then `git log --oneline 6dc36bc..HEAD` and the spike reports
 (`docs/superpowers/plans/2026-09-30-spike-report.md`, `...-spike-loud-report.md`): the daemon

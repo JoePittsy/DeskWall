@@ -37,8 +37,7 @@ icon reads on a photo. Fetched and rasterised 2026-09-21.
 
 28 files total; codes that share an icon are duplicate copies of the same PNG, not symlinks (the
 designer/daemon only ever open one file per code, so a duplicate costs disk space, not behaviour).
-Day/night variants are out of scope (spec section 5): every code above maps to the day icon
-regardless of `current.is_day`.
+Every code above maps to the day icon regardless of `current.is_day` (night variants: #45).
 
 ## Rendering notes
 

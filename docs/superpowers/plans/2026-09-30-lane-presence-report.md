@@ -38,10 +38,8 @@ which both executables are. So the source watches the platform's own store
 back, reads go through a session-wide gate (`Local\DeskWall.NotificationReads`), so the daemon and
 the designer's Data panel cannot feed each other.
 
-**Dismissals are the weak spot.** A cleared centre is sometimes not written to disk until the next
-read, so a non-empty centre is also re-read every `every` s (default 300, on the minute tick).
-Worst case, a dismissal takes five minutes to leave the wallpaper. `docs/sources.md` has the full
-account and the remaining blind spot.
+**Dismissals are the weak spot**: up to `every` s (default 300) to leave the wallpaper;
+`docs/sources.md` has the full account, the fix is #40.
 
 **Calendar** (a `command` recipe, not a default source):
 
@@ -78,27 +76,15 @@ script.
 
 ## Needs the owner
 
-- **Sign in once:** `deskwall calendar login` (or `pwsh -File graph-next-event.ps1 -Login`) after
-  copying the script to `%LOCALAPPDATA%\DeskWall\scripts\`. `publish.ps1` does not ship `scripts/`.
-- **The silent path could not be proven here.** `Connect-MgGraph` from an agent shell failed
-  ("A window handle must be configured") even for the already-cached `Tasks.ReadWrite` scope, so
-  whether it refreshes silently after a real sign-in is still unmeasured. If it does not, the mg
-  flow needs an MSAL cache read without WAM.
-- **Decide whether the weather URL gains `&daily=sunrise,sunset`**
-  (`widgets/weather.json`, placed by `column-system.json`), and set the two time settings. Both
-  are in the docs; this lane did not edit layouts or widgets.
+- Ship `scripts/` with `publish.ps1` (the calendar script is a manual copy today): #63.
+- Prove the calendar's silent token refresh after a real sign-in: #38.
+- Sunrise/sunset in the weather URL and the two time settings: #37.
 
 ## Needs JOES-PC
 
-- The notification access check: the privacy setting may differ from this machine's.
-- Toast-to-signal latency and read cost on the i7-6700K.
-- Whether the work tenant blocks `-Flow devicecode` there, as the ms-todo skill says it does.
-- A look at the sun-driven phase on the ultrawide once a layout binds it.
+- Re-check notifications, toast latency, device-code block and sun phase there: #64.
 
 ## Left for other lanes
 
-- **Tick:** `deskwall tick --preview time.at=...` pins time with `TimeSource.Fields(now)`, which
-  knows nothing about the sun, so a preview shows the fixed thresholds.   The fix is a small change in `PreviewOverrides`: pass the live `time.sunrise`/`time.sunset` to
-  `Fields(now, rise, set)`.
-- **ValueCatalog:** it labels command values by type (`command.json.*`), so calendar paths
-  cannot be labelled without labelling every command script. They show as their paths.
+- `tick --preview time.at` ignores sunrise/sunset: #22.
+- ValueCatalog cannot label calendar paths: #39.

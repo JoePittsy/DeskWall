@@ -150,8 +150,8 @@ the v1 layout and ticked normally (PID 7708).
 | `frame-state.json` `keysById` | Same 10 ids before and after. Only `clock-1.clock` differs, because the minute changed between the snapshot and the reload. |
 | Render identity | `frame.raw` from forced `--no-apply` ticks in a scratch home, rendered v1 backup, then v2, then v1: `E04C9FC1E647` all three times. |
 | `deskwall verify` | Not run. Desktop icons are hidden on this machine, so there are no shortcut slots to measure. |
-| Designer shows copies in Layers | Left to the owner. An agent does not open the designer on the live runtime dir. |
+| Designer shows copies in Layers | Left to the owner (#55). An agent does not open the designer on the live runtime dir. |
 
 Rollback: `copy column-system.v1.json column-system.json`.
 
-JOES-PC: not migrated yet.
+JOES-PC: not migrated yet, #54.

@@ -84,14 +84,11 @@ to 8 entries draw, by setting the repeater's width so the extra items fall past
 than by trimming the bound list -- there is no list-slicing in the binding language, so this is
 the mechanism every widget with a count-like knob has available.
 
-It lives in `layouts/widgets/`, not the shipped `widgets/` folder beside the exe, because this
-recipe was built on a lane that could not touch `widgets/` (another lane was rewriting it on
-`main` at the same time -- `docs/superpowers/plans/2026-09-30-lane-hearth.md`). To try it before
-the lanes merge, copy the file into `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the
+It lives in `layouts/widgets/`, not the shipped `widgets/` folder beside the exe (#36). To try
+it, copy the file into `%LOCALAPPDATA%\DeskWall\widgets\recent-games.json` (the
 same user-override location `docs/layout-format.md` "Where widget files come from" describes) or
 a scratch `--home`'s `widgets\` folder, then add a version 2 `copies` entry with
-`"widget": "recent-games"` to any layout. Once merged it belongs beside the other shipped
-widgets and this note should go with it.
+`"widget": "recent-games"` to any layout.
 
 Needs Hearth installed and writing the feed file; see
 `docs/superpowers/plans/2026-09-30-hearth-feed-spec.md` for what Hearth itself has to do, and

@@ -1,5 +1,7 @@
 # DeskWall v1 Phase 4: Sources Implementation Plan
 
+Status: shipped (`e060a82`..`d7bb926` the five sources, image cache and wiring, `b00fb55` lane/p34-fix), except Task 9's live Steam proof (#16). Checkboxes below were not maintained; open follow-ups are GitHub issues.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The five remaining built-in sources from spec 4.1 (`http`, `rss`, `file`, `command`,

@@ -92,8 +92,7 @@ Also in this pass:
 the verifier refusing to pass zero slots, not a padding error: with Playnite absent the cairn
 repeater resolves no shortcuts. Separately, the daemon has logged `the desktop folder view is
 unavailable` on every tick all day, before and after this layout, so icon placement cannot be
-measured from this session either way. **Still to do on JOES-PC**, where Playnite and desktop
-icons both exist: run `deskwall verify` and expect `left pad 5, bottom pad 5` per cairn.
+measured from this session either way. Verifying the cairns on JOES-PC: #65.
 
 The verify screenshot of the right column (`%LOCALAPPDATA%\DeskWall\verify-desktop.png`) matches
 the composed frame pixel for pixel in the band checked, including the Part 1 CPU-history

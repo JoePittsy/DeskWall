@@ -1,5 +1,8 @@
 # Lane: multi-monitor and the lock screen
 
+Status: not merged -- `spike/multi-monitor` stopped at 8 commits plus WIP, no report; tracked in
+#30. Auto-switching the layout on a display change builds on it: #74.
+
 Worktree `D:\Source\Personal\DeskWall-monitors`, branch `spike/multi-monitor`. Read `CLAUDE.md`
 (all of it), `docs/architecture.md`, `src/DeskWall.Core/Tick/TickRunner.cs`,
 `src/DeskWall.Daemon/DaemonLoop.cs` and `Host/`, `Layout/LayoutStore.cs`, `DisplaySignature`,

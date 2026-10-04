@@ -442,7 +442,8 @@ overrides applied:
   `hardware` sampler.
 - Same name, different definition: the copy's source is renamed `<name>2`, `<name>3`, and so on,
   and that copy's bindings are rewritten to match. Two headline copies with different feeds
-  therefore no longer fight, which retires both "Known limitation" paragraphs under "Widgets".
+  therefore no longer fight, which retires both "Known limitation" paragraphs under "Widgets"
+(#71).
 
 **A missing or unparseable widget file.** The daemon skips that copy, paints the rest, and reports
 the problem through the log and tray (`MissingWidget`, `BrokenWidget`). The designer draws a
@@ -574,10 +575,8 @@ differently-shaped targets:
 
 **Known limitation (a renamed source):** `sources.<name>` in a `sets` path is resolved by the
 template-local name literally, not through the rename an `Add`-time source clash would have
-produced for that instance. None of the fourteen shipped widgets can actually clash (each uses a
-name no other shipped widget also uses, or the same name at the same type), so this only matters
-if a future widget's source name collides with another already-placed widget's differently-typed
-source of the same name; re-editing that knob would then write to the wrong (original) source.
+produced for that instance, so after a clash re-editing that knob writes to the original source.
+No two shipped widgets clash (#25). This paragraph and the next predate v2 copies (#71).
 
 **Known limitation (two instances, one source):** `MergeSources` *reuses* a source of the same
 name and the same type rather than adding a second one, so two instances of the same widget share

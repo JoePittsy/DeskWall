@@ -60,5 +60,4 @@ is the hero and a flat silhouette shows every speckle. Derive with
 `scripts/rice-layout.ps1 -Theme vapor -Out layouts/vapor.json`; judge with
 `scripts/gallery.ps1 -Layout layouts/vapor.json` (`docs/superpowers/plans/gallery-vapor/all.png`).
 
-Switching themes is two copies until `deskwall theme` exists (see the vaporwave lane brief):
-back up `%LOCALAPPDATA%\DeskWall\column-system.json`, then copy `layouts/<theme>.json` over it.
+Switching themes is two copies (a `deskwall theme` subcommand is #31): back up `%LOCALAPPDATA%\DeskWall\column-system.json`, then copy `layouts/<theme>.json` over it.

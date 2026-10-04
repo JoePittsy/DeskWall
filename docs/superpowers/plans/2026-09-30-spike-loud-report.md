@@ -93,30 +93,7 @@ rain strokes cost 5.5 ms.
 
 ## What I would dial back first, and why
 
-In order:
-
-1. **Full-canvas washes that change every minute.** `sky-grade`, `sky-top` and `sky-band` Blend
-   on `time.dayFraction`, so their content key changes every tick and the incremental renderer
-   repaints the whole canvas: the live log shows `redrawn 58` every minute, where round 1 showed
-   34. It is cheap in milliseconds (about 90 ms), but it means the JPEG is a new full image every
-   minute. Quantise the Blend input (a `Step` on dayFraction to 1/96 of a day, 15 minutes) and
-   most minutes go back to repainting the clock rectangle only.
-2. **Sky-band and dawn/dusk saturation.** The dawn rose band and dusk amber are the most
-   saturated things on the desktop, and they run straight through the ridge line. They are
-   right for a gallery and too much for a surface behind windows for eight hours. Halve the
-   sky-band's alpha before touching anything else.
-3. **The drive-warning red wash.** At 60 % it turns the photo into a red monochrome. That is what
-   the brief asked for ("must look wrong"), but a drive at 85 % is not an emergency. Start the
-   wash at 0.92 or cap it at 35 %, and let the red bar plus glow carry 0.85-0.92.
-4. **CPU foothills area and amplitude.** At `machine-on-fire` the foothills fill become a violet
-   mountain range that competes with the real one and covers the valley. Cap the height at
-   about half the current rect, and bring the area fill down from about 35 % to 20 %.
-5. **Rain density.** 600 strokes at 55 % reads well at half size; at full size on the
-   ultrawide it is busy. 350 strokes would still read as rain.
-6. **Moon and sun behind the clock at their apex.** Both arcs peak at x 1720, directly behind
-   the clock. The clock's shadow keeps it legible, but it is the one place where two loud
-   things fight. Moving the apex to x 1300 would separate them. (The owner keeps the clock where
-   it is.)
+The ordered list (sky washes, saturation, red wash, foothills, rain, sun/moon apex) is in #53.
 
 ## Notes
 

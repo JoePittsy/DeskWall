@@ -1,5 +1,8 @@
 # Lane: a second theme, vaporwave / pastel, new wallpaper and layout
 
+Status: the theme is on `main` (`layouts/vapor.json`, `DESIGN.md` "Second world: vapor"); not
+done: the `deskwall theme` subcommand (#31) and the lane report (#52).
+
 Repo `D:\Source\Personal\DeskWall`, branch from `main` (after the merge-day brief's merges).
 Read `CLAUDE.md`, `DESIGN.md` (the rice world: keep its *structure*, replace its *world*),
 `scripts/rice-layout.ps1` (the transform pattern: derive, never hand-edit 40 components),

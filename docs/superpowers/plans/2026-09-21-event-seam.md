@@ -1,5 +1,7 @@
 # Event seam (phase 1) Implementation Plan
 
+Status: shipped (`67f6355` lane/event-bus, `423ff12` lane/event-host, `d9d5039` lane/sources-push; `2026-09-21-event-seam-results.md`). Checkboxes below were not maintained; open follow-ups are GitHub issues.
+
 > **For agentic workers:** implement this plan task by task. Steps use checkbox (`- [ ]`) syntax
 > for tracking. Every code task is test-first: write the test, run it, *see it fail with a
 > wrong-value message*, then implement.

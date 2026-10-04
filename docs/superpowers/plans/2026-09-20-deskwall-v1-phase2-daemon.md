@@ -1,5 +1,7 @@
 # DeskWall v1 Phase 2: Resident Daemon Implementation Plan
 
+Status: shipped (`f0c9a39` lane/p2-plumbing, `d0852ab` lane/p2-host, `88b13f7` lane/p2-loop). Checkboxes below were not maintained; open follow-ups are GitHub issues.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `deskwall run` stays resident with a hidden window and a tray icon, wakes only when a

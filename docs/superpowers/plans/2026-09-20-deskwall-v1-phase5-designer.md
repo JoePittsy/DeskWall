@@ -1,5 +1,7 @@
 # DeskWall v1 Phase 5: Designer Implementation Plan
 
+Status: shipped (`c7fc131`, `018fd84`, `2127d1d`, `5838ada`, `47aa5e9` on main; later reworked by the widget-picker and canvas-authoring plans), except Task 9's daemon idle budget under AOT with the designer open (#62). Checkboxes below were not maintained; open follow-ups are GitHub issues.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `DeskWall.Designer.exe`, a WPF app that edits layout files on a live preview rendered by

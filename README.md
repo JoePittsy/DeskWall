@@ -7,7 +7,8 @@ shortcuts are placed over parts of the image to make them clickable.
 
 **Status:** v1 (C# on .NET 10) is the current implementation, in `src/`. It has not yet reached
 the parity gate against the PowerShell proof of concept it replaces (`poc/`, still running the
-desktop today) -- see "The proof of concept" below.
+desktop today) -- see "The proof of concept" below. Open work, the gate included (label
+`parity-gate`), is tracked in GitHub issues on `JoePittsy/DeskWall`, not in these docs.
 
 Full design: `docs/superpowers/specs/2026-09-20-deskwall-v1-design.md`. This file is the
 human-facing overview; `CLAUDE.md` is the agent hand-off notes (gotchas, conventions).
@@ -182,7 +183,7 @@ staging copies of the frame, a compacting collection after every tick) brought i
 62 ms CPU are not. The rows, the caveats and what each finding appears to be are in
 `docs/architecture.md`'s budget section and
 `docs/superpowers/plans/2026-09-20-phase1-spike-results.md` ("Phase 6 budget results"). Nobody
-should read "meets budget" into the two open rows; they are findings, not a budget to raise.
+should read "meets budget" into the two open rows; they are findings, not a budget to raise (#4).
 
 For comparison, the proof of concept it replaces measured about 370 ms wall / 190 ms CPU per
 tick and about 5 s cold start (spec 1.2, from the POC's own `compose.ps1` timing output).
@@ -237,7 +238,8 @@ install` ever ran. No admin rights needed.
 desktop today**, via a scheduled task (`DeskWall Tick`) ticking once a minute. It is not legacy
 code kept for reference; it is the thing currently painting JOES-PC's wallpaper, and it stays
 enabled until every item in the phase 6 parity gate (`docs/superpowers/plans/2026-09-20-deskwall-v1-phase6-parity.md`)
-is checked off, at which point the task is disabled and `poc/` is deleted in its own commit.
+is checked off, at which point the task is disabled and `poc/` is deleted in its own commit
+(#12, #13).
 
 Until then, v1 and the POC coexist deliberately on the same desktop:
 

@@ -256,7 +256,7 @@ Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` 
 - **Caveat:** `stderr` is published verbatim. A command that fails and echoes its own argument
   list back (the usual shape of a usage error) will publish the *substituted* value of any
   `{secret:...}` in `args` into a value a text component could draw on the wallpaper. Do not
-  bind a component to a command's `stderr` if its `args` carry a secret.
+  bind a component to a command's `stderr` if its `args` carry a secret. Redaction is #46.
 
 ### `stream: true`: a command that stays up and pushes
 
@@ -545,15 +545,15 @@ has ever sent offered to the binding picker.
 Because events merge, the remembered record accumulates every field a producer has ever sent, not
 only the ones in its latest event. Nothing expires on its own; the designer's **Forget** drops a
 record. (A running daemon holds its own copy and writes the file back on its next save, so a
-Forget while the daemon is up is not durable yet.)
+Forget while the daemon is up is not durable: #17.)
 
 ### Describing a provider
 
 `providers/<name>.json`, loaded from the directory beside `deskwall.exe` and then from
 `%LOCALAPPDATA%\DeskWall\providers`, the later winning on the same name. A manifest is only for
 what observation cannot supply: a provider that has never run here, per-field descriptions and
-examples so the binding picker reads as prose, and `expectEverySeconds` (carried and shown;
-enforcing staleness from it is phase 2). The designer's **Describe** writes one seeded from the
+examples so the binding picker reads as prose, and `expectEverySeconds` (carried and shown,
+not enforced: #32). The designer's **Describe** writes one seeded from the
 observed fields.
 
 ```json
@@ -685,7 +685,7 @@ takes `every` to disappear from the wallpaper.
 
 Known blind spot: a toast whose writes all land inside the echo window of a read the source did not
 follow up -- a confirming read, a sweep, or the other process's read -- is not seen until the next
-change, or the next sweep if the centre was not empty.
+change, or the next sweep if the centre was not empty (#40).
 
 ## Playnite recent games recipe
 

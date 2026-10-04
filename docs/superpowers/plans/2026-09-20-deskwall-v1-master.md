@@ -17,6 +17,8 @@ System.Text.Json source generation, WPF, xUnit.
 
 **Spec:** `docs/superpowers/specs/2026-09-20-deskwall-v1-design.md`
 
+Open gate items are tracked in the GitHub milestone "Phase 6 parity gate"; this file keeps the runbook and the evidence.
+
 ## Global Constraints
 
 Copied from the spec. Every task in every phase plan inherits these.
@@ -133,11 +135,10 @@ rewrite, `poc/` removal after the parity gate).
 
 All true on JOES-PC before `poc/` is deleted and the `DeskWall Tick` task removed:
 
-- [ ] Starter layout reproduces the current right-hand column; `deskwall verify` passes
-      (5/5 arrow padding on every cover).
-- [ ] Every line of the budget table passes via the budget tests.
-- [ ] Manual acceptance list in spec section 9 walked and ticked in the P6 plan.
-- [ ] Daemon has run for 24 hours with zero logged tick failures.
+- [ ] Starter reproduces the POC column; `deskwall verify` 5/5 on every cover -- #2
+- [ ] Every line of the budget table passes -- #4
+- [ ] Spec section 9 manual acceptance walked -- #6
+- [ ] 24 hours with zero logged tick failures -- #11
 
 Status 2026-09-30: all four open. Where each stands, and the JOES-PC runbook that closes them,
 is in the phase 6 plan (`2026-09-20-deskwall-v1-phase6-parity.md`, "Parity gate status").

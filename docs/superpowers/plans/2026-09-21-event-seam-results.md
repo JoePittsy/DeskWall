@@ -159,15 +159,7 @@ when armed ones are available.
 
 ## Known gaps, measured or found while measuring
 
-- **About +35 to +39 handles unattributed** (section 1), on top of a handle budget that was
-  already red before this lane.
-- **Two daemons share one pipe name.** Windows lets a second process create another instance of
-  an existing named pipe when the ACL allows it, so two daemons on two scratch homes both listen
-  on `DeskWall.Events` and a producer's connection goes to whichever instance is next. Only
-  reachable by deliberately running a second `--home`, but it means "which daemon got my event"
-  is undefined in that case.
-- **Forget is not durable while the daemon is running.** The daemon owns `events.json` and never
-  re-reads it, so a record the designer removes comes back at the daemon's next save. The panel
-  says so; closing it properly needs the daemon to watch the file, which is not in this phase.
-- **`expectEverySeconds` is carried and shown but does not yet make a provider go stale.** Phase
-  2, as the plan's self-review already noted.
+- About +35 to +39 handles unattributed (section 1): #61.
+- Two daemons on two homes share one pipe name: #28.
+- Forget is not durable while the daemon is running: #17.
+- `expectEverySeconds` does not yet make a provider go stale: #32.

@@ -1,5 +1,7 @@
 # Hearth feed spec: writing `hearth-recent.json` for DeskWall
 
+Status: not built -- tracked in #35.
+
 Implementation spec for part 1 of `docs/superpowers/plans/2026-09-30-lane-hearth.md`, written
 because the Hearth repo (`C:\Users\JosephPitts\source\repos\Hearth` or
 `D:\Source\Personal\Hearth`) is not present on this machine. Point an agent at this one file on

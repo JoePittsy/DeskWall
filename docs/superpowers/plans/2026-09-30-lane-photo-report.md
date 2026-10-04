@@ -179,23 +179,12 @@ What the numbers mean:
 
 ## Concerns
 
-- **The designer cannot author the map.** The chip binds `time.phase` in one click. The
-  `?night=...,dawn=...` map, one photo per value, has to be typed into the format field. A
-  per-value photo picker would be the natural next step and is not built.
-- **The photos are not in the repo.** They are derived from a file in `Downloads` whose licence I
-  do not know, so the layout depends on you running `phase-photos.ps1` into the runtime dir. The
-  README covers this, and the missing-file fallback keeps the wallpaper up if a grade is missing
-  after a first good tick. On a fresh runtime dir, though, the first tick fails until the photos
-  exist.
-- **The cut is hard.** The photo changes at a fixed phase boundary. The half-alpha sky layers
-  still ease through the minutes on either side, but the photo itself cuts. The boundaries are
-  fixed fractions, not sunrise and sunset for Leeds.
-- **Disk.** `base\` now holds up to four 19.8 MB raws per canvas size, about 79 MB at
-  3440x1440, instead of one.
-- **`gallery.ps1` reads the live `widgets\` folder.** It copies `%LOCALAPPDATA%\DeskWall\widgets`
-  into its scratch home. This is read-only, the behaviour already existed, and this layout uses
-  no copies, but it is the one place the lane's tooling looked at the live dir. I did not
-  change it.
+- The designer cannot author the phase-to-photo map: #33.
+- The photos are not in the repo and their licence is unknown; `base\` is about 79 MB at
+  3440x1440: #66.
+- On a fresh runtime dir the first tick fails until the photos exist: #21.
+- The photo cuts at fixed phase boundaries, not sunrise and sunset: #34.
+- `gallery.ps1` reads the live `widgets\` folder: #67.
 
 ## To try it live (not done here)
 

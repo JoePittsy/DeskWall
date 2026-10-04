@@ -1,5 +1,7 @@
 # DeskWall v1 Phase 1: Core Model, Renderer and `tick` Implementation Plan
 
+Status: shipped (`021644b` TickRunner and `tick`, `0df4b5d` lane/p1-sources; measured in `2026-09-20-phase1-spike-results.md`). Checkboxes below were not maintained; open follow-ups are GitHub issues.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A native-AOT `deskwall.exe tick` that reads a hand-written layout JSON, resolves

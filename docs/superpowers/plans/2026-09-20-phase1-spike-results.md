@@ -318,5 +318,4 @@ holding Direct3D/Direct2D/DirectWrite/WIC resident, which spec 3.1 chose. Meetin
 rendering in a short-lived child process per tick (costs a process start, ~100 ms, per tick) or
 unloading the stack between ticks; either is an architecture change. The alternative is to
 restate the two rows in spec 1.2 as measured (about 300 handles / 10 threads; ~80-150 ms per
-clock tick) and close the gate on that. Recorded for Joe's decision; the parity-gate box for the
-budget table stays unticked until he makes it.
+clock tick) and close the gate on that. Owner's decision: #4.

@@ -1,5 +1,7 @@
 # Widgets: hardware dials, weather, Tailscale — Implementation Plan
 
+Status: shipped (`66827a6`, `7caeb11`, `98169e2`, `b3c3015`, `fd6a29b` lane merges; live on JOES-PC per `d4e342c`). Checkboxes below were not maintained; open follow-ups are GitHub issues.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an in-process `hardware` source (CPU, RAM, NVML GPU, 5-minute averages), a `dial` component, a `runtime:` image path prefix, an Open-Meteo weather recipe with a WMO-code icon folder, a Tailscale state recipe, and a `column-system.json` starter that uses them, then register that starter live on JOES-PC and measure its cost.
