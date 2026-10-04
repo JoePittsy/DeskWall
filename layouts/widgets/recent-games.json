@@ -10,7 +10,7 @@
   ],
   "components": [
     { "type": "repeater", "id": "games", "rect": [0, 0, 504, 180], "z": 1,
-      "items": { "bind": "hearth.json.games" }, "axis": "horizontal", "gap": 8, "cellHeight": 120,
+      "items": { "bind": "hearth.json.games[..{count}]" }, "axis": "horizontal", "gap": 8, "cellHeight": 120,
       "template": [
         { "type": "image", "id": "cover", "rect": [0, 0, 120, 180], "radius": 8,
           "source": { "bind": "cover" } },
@@ -19,8 +19,8 @@
       ] }
   ],
   "knobs": [
-    { "id": "count", "label": "Count", "type": "choice", "default": "4||504",
-      "choices": [ "1||120", "2||248", "3||376", "4||504", "5||632", "6||760", "7||888", "8||1016" ],
-      "sets": [ "components.games.w" ] }
+    { "id": "count", "label": "Count", "type": "choice", "default": "4||4||504",
+      "choices": [ "1||1||120", "2||2||248", "3||3||376", "4||4||504", "5||5||632", "6||6||760", "7||7||888", "8||8||1016" ],
+      "sets": [ "components.games.items:{count}", "components.games.w" ] }
   ]
 }
