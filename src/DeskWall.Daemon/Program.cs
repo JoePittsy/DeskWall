@@ -320,8 +320,8 @@ internal static partial class Program
                 Console.WriteLine($"library ({LayoutLibrary.DefaultDir}); deskwall layouts use <name> switches:");
                 foreach (var choice in LayoutLibrary.List(store, LayoutLibrary.DefaultDir))
                 {
-                    var mark = string.Equals(choice.Path, inUse, StringComparison.OrdinalIgnoreCase) ? "*" : " ";
-                    var where = string.Equals(Path.GetDirectoryName(choice.Path), Path.GetFullPath(LayoutLibrary.DefaultDir), StringComparison.OrdinalIgnoreCase) ? "" : $"  ({choice.Path})";
+                    var mark = inUse is not null && LayoutStore.SameFile(choice.Path, inUse) ? "*" : " ";
+                    var where = LayoutStore.SameFile(Path.GetDirectoryName(choice.Path)!, LayoutLibrary.DefaultDir) ? "" : $"  ({choice.Path})";
                     Console.WriteLine($"  {mark} {choice.Name}{where}");
                 }
                 return 0;

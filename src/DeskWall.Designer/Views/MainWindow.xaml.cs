@@ -446,6 +446,8 @@ public partial class MainWindow : Window
             Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
         };
         System.Windows.Automation.AutomationProperties.SetName(menu, "Switch layout");
+        // The window's store was loaded at start; `deskwall theme` may have registered a file since.
+        _store.Reload();
         foreach (var choice in ShellState.SwitchTargets(LayoutLibrary.List(_store, LayoutLibrary.DefaultDir), _model.Path))
         {
             // A TextBlock, not a string: a designer-made file is named after the display signature,

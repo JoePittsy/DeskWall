@@ -54,6 +54,9 @@ public static class LayoutLibrary
     /// or its name is taken in the library by a different file.</summary>
     public static LayoutSwitch Use(LayoutStore store, DisplaySignature display, string nameOrPath, string libraryDir)
     {
+        // A store can be long-lived (the designer holds one for its whole life): what `deskwall theme`
+        // or `layouts set` wrote meanwhile must not be written back over.
+        store.Reload();
         var choices = List(store, libraryDir);
         var path = Locate(choices, nameOrPath, libraryDir);
         Check(path);

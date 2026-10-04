@@ -95,7 +95,8 @@ public sealed class LayoutStore
     /// the daemon's watcher picks up. Displays that share a layout keep sharing it, displays with
     /// their own are untouched, and a display resolving by closest match keeps doing so, so it is
     /// still scaled. With nothing in use (an empty store), the entry is this display's own.
-    /// Nothing is written when the file is already in use. Validating the file is the caller's
+    /// Nothing is written when the file is already in use; otherwise the file's write time is also
+    /// set to now, so it wins a closest-match tie. Validating the file is the caller's
     /// job (<see cref="LayoutLibrary.Use"/>).</summary>
     /// <returns>The file in use before, and the keys now naming <paramref name="layoutPath"/>.</returns>
     public (string? From, IReadOnlyList<string> Keys) Repoint(DisplaySignature sig, string layoutPath)
@@ -108,7 +109,15 @@ public sealed class LayoutStore
             foreach (var key in _entries.Where(kv => SameFile(Resolve(kv.Value), from)).Select(kv => kv.Key).ToList())
                 _entries[key] = to;
         var keys = _entries.Where(kv => SameFile(Resolve(kv.Value), to)).Select(kv => kv.Key).ToList();
-        if (changed) Save();
+        if (changed)
+        {
+            // Closest-match ties go to the most recently written file, and a library file (or one
+            // File.Copy imported, which keeps the source's time) can be months old: without this a
+            // display resolving by closest match can land on the other candidate. Touched before the
+            // store is written, so the daemon's watcher sees one burst.
+            File.SetLastWriteTimeUtc(to, DateTime.UtcNow);
+            Save();
+        }
         return (from, keys);
     }
 
@@ -198,7 +207,7 @@ public sealed class LayoutStore
     /// paths, but layouts.json is also written by hand, and an entry through %TEMP%'s
     /// C:\Users\JOSEPH~1\... was left on the old layout by a plain string compare on the first real
     /// run of `layouts use`. Path.GetFullPath expands a component with a '~' in it.</summary>
-    internal static bool SameFile(string a, string b)
+    public static bool SameFile(string a, string b)
         => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     private void Load()

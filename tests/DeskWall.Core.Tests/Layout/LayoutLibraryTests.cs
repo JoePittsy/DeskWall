@@ -167,6 +167,51 @@ public class LayoutLibraryTests
     }
 
     [Fact]
+    public void A_Switched_To_File_Wins_The_Closest_Match_Tie_However_Old_It_Is()
+    {
+        // Review of #92: closest-match ties go to the most recently written file, and File.Copy keeps
+        // the source's time. A display whose two candidates score alike must still land on the layout
+        // the owner just chose, not on the other candidate's newer file.
+        var home = new Home();
+        var rice = home.Layout(home.Library, "rice.json");
+        var alpine = home.Layout(home.Library, "alpine.json");
+        var vapor = home.Layout(home.Library, "vapor.json");
+        File.SetLastWriteTimeUtc(vapor, DateTime.UtcNow.AddDays(-30));
+        File.SetLastWriteTimeUtc(rice, DateTime.UtcNow.AddDays(-2));
+        File.SetLastWriteTimeUtc(alpine, DateTime.UtcNow.AddDays(-1));
+        var store = home.Store();
+        var other = new DisplaySignature("OTHER", 3440, 1440, 100);
+        store.Set(Dell, rice);
+        store.Set(other, alpine);
+        var unknown = new DisplaySignature("UNKNOWN", 3440, 1440, 100);
+        Assert.Equal(alpine, store.Resolve(unknown)!.SourcePath);   // the tie, broken by the newer file
+
+        LayoutLibrary.Use(store, unknown, "vapor", home.Library);
+
+        Assert.Equal(vapor, store.Resolve(unknown)!.SourcePath);
+    }
+
+    [Fact]
+    public void Use_Rereads_LayoutsJson_So_A_Long_Lived_Store_Never_Writes_Back_Stale_Entries()
+    {
+        // Review of #92: the designer holds one store for its whole life; a `deskwall theme` or
+        // `layouts set` run meanwhile must survive the designer's next switch.
+        var home = new Home();
+        var rice = home.Layout(home.Library, "rice.json");
+        var vapor = home.Layout(home.Library, "vapor.json");
+        var laptop = home.Layout(home.Library, "laptop.json");
+        var designer = home.Store();
+        designer.Set(Dell, rice);
+        home.Store().Set(Laptop, laptop);   // a second process, after the designer loaded
+
+        LayoutLibrary.Use(designer, Dell, "vapor", home.Library);
+
+        var onDisk = home.Store().Entries;
+        Assert.Equal(vapor, onDisk[Dell.Key]);
+        Assert.Equal(laptop, onDisk[Laptop.Key]);
+    }
+
+    [Fact]
     public void Use_With_An_Empty_Store_Registers_This_Display()
     {
         var home = new Home();

@@ -403,7 +403,10 @@ current display.
   `layouts.json`. Displays that share a layout (the console panel and Apollo's virtual display on
   JOES-PC) keep sharing it; a display with a layout of its own is untouched; a display that
   resolves by closest match still does, so it stays scaled. With an empty store, the entry is the
-  current display's.
+  current display's. The chosen file's write time is set to now, because closest-match ties go to
+  the most recently written file and a library file (or an imported copy, which keeps its
+  source's time) can be months old. The store is re-read first, so a long-lived one (the
+  designer's) never writes back entries another process changed.
 - **A file from outside the library is copied in** under its own name first, so the repo's
   `layouts\` stay templates. The same bytes already there are reused; a different file of that
   name is never overwritten, and the switch is refused.
