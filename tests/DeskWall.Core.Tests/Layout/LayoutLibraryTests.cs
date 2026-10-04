@@ -24,7 +24,7 @@ public class LayoutLibraryTests
     /// standing in for the repo's layouts\.</summary>
     private sealed class Home
     {
-        public string Root { get; } = Path.Combine(Path.GetTempPath(), "deskwall-tests", "library-" + Guid.NewGuid().ToString("N")[..8]);
+        public string Root { get; } = Path.Combine(TestRun.Root, "library-" + Guid.NewGuid().ToString("N")[..8]);
         public string Library => Path.Combine(Root, "layouts");
         public string Templates => Path.Combine(Root, "templates");
         public string StorePath => Path.Combine(Root, "layouts.json");
