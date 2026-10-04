@@ -554,6 +554,20 @@ A shell, for one line and nothing more (`cmd`, and so any `.bat`):
 echo {"source":"build","data":{"status":"green"}} > \\.\pipe\DeskWall.Events
 ```
 
+**Which pipe.** `DeskWall.Events` belongs to the daemon on the default runtime dir
+(`%LOCALAPPDATA%\DeskWall`), which is the installed one. A daemon on any other home (`--home` or
+`DESKWALL_HOME`) listens on `DeskWall.Events.<hash>` instead -- the same suffix as its
+single-instance lock (`RuntimeInstance.EventPipeName`) -- so a scratch daemon never shares the live
+one's pipe, and a producer always reaches the daemon it meant. A producer for such a home asks:
+
+```powershell
+$name = & deskwall.exe --home C:\scratch\home pipe | Out-String   # DeskWall.Events.8E76E78989D2DA7A
+$p = New-Object IO.Pipes.NamedPipeClientStream '.', $name.Trim(), 'Out'
+```
+
+(`deskwall` is a WinExe, so `& ... | Out-String` is what makes PowerShell wait for its output.)
+`deskwall pipe` with no `--home` prints `DeskWall.Events` unless `DESKWALL_HOME` is set.
+
 A producer may also hold the connection open and write a line whenever something changes; up to
 four producers can be connected at once. Blank lines are ignored, so a trailing newline is free.
 

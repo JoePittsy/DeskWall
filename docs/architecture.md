@@ -25,7 +25,9 @@ Three things run, never more than two at once on an idle machine:
   now" message and exits (`Program.Run`, the `Local\DeskWall.Daemon` named mutex) -- one lock, and
   one window title, per runtime dir: `HostWindow.LockName` hashes a non-default `--home` into both,
   so `deskwall --home <scratch> stop` or `run` only ever reaches the daemon for that home; the
-  default home keeps the title `DeskWallHost`, which is what older builds used too.
+  default home keeps the title `DeskWallHost`, which is what older builds used too. The event
+  pipe follows the same rule (`RuntimeInstance.EventPipeName`): `DeskWall.Events` for the default
+  home, `DeskWall.Events.<hash>` for any other, printed by `deskwall [--home <dir>] pipe`.
 - **`DeskWall.Designer.exe`** -- WPF, normal JIT runtime, exists only while the window is open.
   It never opens a channel to the daemon: it reads and writes the same files the daemon reads
   (the layout store, layout files, `secrets.json`, `settings.json`) and the daemon's hot-reload

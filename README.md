@@ -162,7 +162,8 @@ Bind a component to `build.data.status` and the wallpaper repaints within about 
 The last record of every provider is remembered across a restart, the designer's providers panel
 lists what each one publishes, and the pipe is restricted to your own account -- which also means
 a layout that binds a `shortcut` target to a pushed value will launch whatever that value says.
-The whole thing is `docs/sources.md`, "Pushed values: events".
+The whole thing is `docs/sources.md`, "Pushed values: events" -- including how a producer finds
+the pipe of a daemon on a non-default `--home` (`deskwall --home <dir> pipe`).
 
 ## Architecture, in short
 

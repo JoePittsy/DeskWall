@@ -161,10 +161,14 @@ list and not a work log.
   and `Local\DeskWall.Daemon.<hash>` for any `--home`. That is what lets a scratch daemon, and
   the budget tests, run beside the owner's live one -- before this they silently collapsed into
   "already running; asked it to refresh" and measured nothing.
-- **Two daemons can share one pipe name.** Windows lets a second process create another instance
-  of an existing named pipe when the ACL allows it, so two daemons on two homes both listen on
-  `DeskWall.Events` and a producer's connection lands on whichever is next. Only reachable with a
-  deliberate second `--home`, but do not assume a scratch daemon is the one that got your event.
+- **The event pipe is per runtime dir too, because Windows would let two daemons share one.** A
+  second process may create another instance of an existing named pipe when the ACL allows it,
+  so before #28 two daemons on two homes both listened on `DeskWall.Events` and a producer landed
+  on whichever was next. Now `RuntimeInstance.EventPipeName` gives it the lock's suffix:
+  `DeskWall.Events` for the default home (every script and doc one-liner unchanged),
+  `DeskWall.Events.<hash>` for any `--home`; `deskwall --home <dir> pipe` prints it. A test or a
+  scratch daemon must never construct `EventPipeServer` with an explicit `DeskWall.Events` -- on
+  JOES-PC that adds an instance to the live daemon's pipe and can steal the owner's events.
 - **A named-pipe client can beat `ConnectNamedPipe` and its data is not lost, only unreadable.**
   An instance is connectable the moment `CreateNamedPipe` returns; a producer that connects,
   writes and disconnects before the server asks for a connection makes the connect fail with

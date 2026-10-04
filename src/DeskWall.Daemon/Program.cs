@@ -57,6 +57,11 @@ internal static partial class Program
                 case "paths":
                     Console.WriteLine(Paths.RuntimeDir);
                     return 0;
+                case "pipe":
+                    // What a producer for this home connects to; only the default home's is the
+                    // bare DeskWall.Events the docs show.
+                    Console.WriteLine(RuntimeInstance.EventPipeName(Paths.RuntimeDir));
+                    return 0;
                 case "calibrate":
                     return Calibrate();
                 case "verify":
@@ -117,6 +122,7 @@ internal static partial class Program
         w.WriteLine("                             linked copies; --check prints the result and writes nothing");
         w.WriteLine("  trace <image> <x> <y> <width> <height> [output.json]  trace a skyline band");
         w.WriteLine("  paths                      the runtime directory");
+        w.WriteLine("  pipe                       this runtime dir's event pipe name (connect to \\\\.\\pipe\\<name>)");
         w.WriteLine("  calibrate                  measure the shell's shortcut-arrow overlay");
         w.WriteLine("  shortcuts [--layout <path>]  planned vs actual icon positions (read-only)");
         w.WriteLine("  verify [--pad N] [--threshold N] [--json]");

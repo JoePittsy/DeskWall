@@ -35,6 +35,18 @@ public class EventPipeServerTests
         return done();
     }
 
+    /// <summary>Issue #28. The daemon constructs its server without a name, so the default is what
+    /// decides which pipe a scratch home listens on. Never started: under the old default this
+    /// would have opened another instance of the live daemon's DeskWall.Events.</summary>
+    [Fact]
+    public void The_Default_Name_Belongs_To_This_Runtime_Dir()
+    {
+        using var server = new EventPipeServer(_ => true);
+        Assert.Equal(RuntimeInstance.EventPipeName(Paths.RuntimeDir), server.PipeName);
+        // Tests run under DESKWALL_HOME, so this is never the default home's name.
+        Assert.NotEqual("DeskWall.Events", server.PipeName);
+    }
+
     [Fact]
     public void A_Line_Written_To_The_Pipe_Reaches_The_Callback()
     {

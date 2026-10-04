@@ -29,6 +29,12 @@ public static class RuntimeInstance
     public static string DaemonLockName(string home) => @"Local\DeskWall.Daemon" + HomeSuffix(home);
     public static string DesignerLockName(string home) => @"Local\DeskWall.Designer" + HomeSuffix(home);
 
+    /// <summary>The daemon's event pipe, <c>\\.\pipe\&lt;this&gt;</c>. Windows lets a second process add
+    /// instances to an existing pipe name, so without the suffix two daemons on two homes both
+    /// listened on DeskWall.Events and a producer landed on whichever was next. `deskwall pipe`
+    /// prints it, which is how a producer for a non-default home finds it.</summary>
+    public static string EventPipeName(string home) => "DeskWall.Events" + HomeSuffix(home);
+
     /// <summary>The default home keeps the title it always had (the class name), so a new `stop` or
     /// designer still finds a daemon from an older build; any other home's title is its lock name.</summary>
     public static string DaemonWindowTitle(string home) =>
