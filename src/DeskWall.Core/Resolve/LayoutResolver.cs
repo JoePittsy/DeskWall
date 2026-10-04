@@ -111,7 +111,7 @@ public static class LayoutResolver
 
             case DialDef dl:
                 var dfrac = Math.Clamp(PropertyReader.Number(dl.Fraction, scope) ?? 0, 0, 1);
-                var dfill = ThresholdFill(dfrac, dl.Threshold, dl.ThresholdFill, dl.Fill, Color.Parse("#EBFFFFFF"), scope);
+                var dfill = ThresholdFill(dfrac, dl.Threshold, dl.ThresholdFill, dl.Fill, dl.Fill.IsBound ? Color.Transparent : Color.Parse("#EBFFFFFF"), scope);
                 var opacity = Math.Clamp(PropertyReader.Number(dl.Opacity, scope) ?? (dl.Opacity.IsBound ? 0 : 1), 0, 1);
                 var dtrack = PropertyReader.Color(dl.Track, scope) ?? Color.Parse("#46FFFFFF");
                 result.Add(new ResolvedDial(id, rect, def.Z, dfrac,

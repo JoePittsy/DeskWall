@@ -144,6 +144,18 @@ public class LayoutResolverTests
     }
 
     [Fact]
+    public void Dial_Bound_Fill_Missing_Is_Transparent_Like_The_Bar()
+    {
+        // #89: missing data must not paint the healthy default colour.
+        var layout = LayoutFile.Parse("""
+            { "version": 1, "baseImage": "x.jpg", "sources": [],
+              "components": [ { "type": "dial", "id": "d", "rect": [0, 0, 50, 50], "fraction": 0.5, "fill": { "bind": "hw.colour" } } ] }
+            """);
+        var d = Assert.IsType<ResolvedDial>(Assert.Single(LayoutResolver.Resolve(layout, ValueTree.Empty)));
+        Assert.Equal(Color.Transparent, d.Fill);
+    }
+
+    [Fact]
     public void Image_Source_Runtime_Prefix_Resolves_Into_The_Runtime_Dir()
     {
         var layout = LayoutFile.Parse("""

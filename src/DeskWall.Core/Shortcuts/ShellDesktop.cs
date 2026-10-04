@@ -8,11 +8,12 @@ namespace DeskWall.Core.Shortcuts;
 
 /// <summary>Shell.Application MinimizeAll / UndoMinimizeALL, the pair poc/verify.ps1 uses to expose the
 /// desktop for a screenshot. Lifted out of <see cref="Calibrator"/> so `verify` and `calibrate` share
-/// one copy. Best effort throughout: failing to minimise is not worth losing the run that wanted it.</summary>
+/// one copy. Never throws for a shell failure; it reports it, and both callers treat a failed
+/// minimise as fatal rather than screenshot whatever is covering the desktop.</summary>
 public static unsafe class ShellDesktop
 {
-    /// <summary>True when the shell really was asked to minimise. False means the caller is about to
-    /// screenshot whatever is covering the desktop, which is worth saying out loud.</summary>
+    /// <summary>True when the shell really was asked to minimise. False means the desktop is not
+    /// exposed; `verify` and `calibrate` stop there (exit 1).</summary>
     public static bool MinimizeAll() => Dispatch(minimize: true);
 
     public static bool UndoMinimizeAll() => Dispatch(minimize: false);

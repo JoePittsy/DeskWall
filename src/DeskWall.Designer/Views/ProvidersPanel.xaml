@@ -18,8 +18,7 @@
               ToolTip="Write a manifest seeded from what it has sent, so you can name its fields" />
     </DockPanel>
 
-    <TextBlock x:Name="EmptyNote" DockPanel.Dock="Top" Style="{DynamicResource Hint}"
-               Text="Nothing has been pushed yet. Write one JSON line to \\.\pipe\DeskWall.Events and it shows up here." />
+    <TextBlock x:Name="EmptyNote" DockPanel.Dock="Top" Style="{DynamicResource Hint}" />
 
     <ComboBox x:Name="Chooser" DockPanel.Dock="Top" Margin="0,0,0,6"
               AutomationProperties.Name="Pushed provider"
