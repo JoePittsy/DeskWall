@@ -72,6 +72,10 @@ public sealed class TickRunner(
         foreach (var (snap, work) in refreshing)
         {
             try { registry.Set(snap.Succeeded(await work.ConfigureAwait(false), now)); }
+            // Not an answer, so not recorded: the previous values keep publishing, and LastRefresh
+            // (staleness) and the failure count stay as they were until the fetch lands and its
+            // Changed wake harvests it (#20).
+            catch (SourcePendingException) { }
             catch (Exception ex) { registry.Set(snap.Failed(ex.Message, now)); }
         }
 

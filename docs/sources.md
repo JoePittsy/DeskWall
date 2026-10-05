@@ -30,9 +30,19 @@ each source reads its own `settings` keys and defaults) and `SourceFactory.cs`.
   (`SourceRegistry.Tree(sources, now)`), so a bound component falls back to its own default
   instead of showing a number that is merely old. `StaleChanged` logs one WARN going stale and
   one INFO coming back, not one line per tick.
-- Network and command sources never run on the tick thread (`AsyncSource`); a tick reads whatever
-  the last completed fetch published, and a fetch finishing later posts a wake so the next tick
-  picks it up.
+- Network and command sources never run on the tick thread (`AsyncSource`). Only a source's
+  **first** refresh waits for its fetch, bounded by `timeout`: there is nothing to show yet, and
+  a one-shot `deskwall tick` has no later tick. Every later refresh starts the fetch and, unless
+  it has already finished, returns at once (`SourcePendingException`): the tick leaves the
+  snapshot untouched, so the previous values keep publishing and `LastRefresh` (staleness) and the
+  failure count carry on. While the fetch runs the source is not due (`Scheduler.DueAt`); when it
+  lands, success or failure, `Changed` posts a wake and that tick harvests it -- a failure is
+  counted then, and backs off from then. Before #20 every refresh waited, and a dead local
+  endpoint held each tick that retried it for ~2 s (Windows retries a refused connect to a
+  closed local port for about that long). Measured on JOES-PC with `tick --measure --repeat 3`
+  on an `http` source pointed at a closed localhost port (2026-10-04, Debug JIT): warm ticks 2035
+  and 2017 ms before, 5 and 0 ms after; the cold first run is ~2.2 s either way, by design. A
+  daemon pays that once per activation (a new source set), not per retry.
 
 ## `time`
 
@@ -309,10 +319,11 @@ Runs the command hidden (no window), captures stdout as UTF-8. Publishes `text` 
   code as a flag the layout can bind to); a non-zero exit with **empty** stdout throws, so the
   last good values stay published.
 - A timeout kills the whole process tree and throws.
-- **A poll is on the tick's critical path**: the refresh waits for the process to exit before the
-  frame resolves. Measured: about 27 ms per run for a `.cmd` script, 1.3-1.5 s for a
-  `powershell.exe` recipe (Playnite, Tailscale). Due refreshes run side by side, so two such
-  recipes cost the slower one, and only when they are due or on a forced tick.
+- **Only the first poll is on the tick's critical path**: that refresh waits for the process to
+  exit before the frame resolves; later ones run behind the tick and land on a wake (above).
+  Measured: about 27 ms per run for a `.cmd` script, 1.3-1.5 s for a `powershell.exe` recipe
+  (Playnite, Tailscale). Due first refreshes run side by side, so two such recipes cost the
+  slower one.
 - **Secrets in the output are redacted.** A command that fails and echoes its own argument list
   back (the usual shape of a usage error) would otherwise publish the *substituted* value of a
   `{secret:...}` in `args`. Every string the source publishes -- `stderr`, `text`, and every
@@ -400,8 +411,10 @@ Publishes `json` or `text`, `status` (`NumberValue`, the HTTP status), `fetchedA
   (`HardCeiling`). The token `AsyncSource` hands the fetch is never cancelled on its own -- the
   work must finish and report so the next tick can use the result -- so without this ceiling a
   server that completes the TCP handshake and then stalls the body never trips the connect
-  timeout, and the source fails every tick for the life of the daemon instead of eventually
-  giving up and retrying clean.
+  timeout, and the source is stuck in flight for the life of the daemon instead of eventually
+  giving up and retrying clean. After the first refresh `timeout` no longer bounds a tick (no
+  tick waits); this ceiling is what bounds how long the previous values are served before the
+  fetch reports.
 
 ## `rss`
 

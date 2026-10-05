@@ -48,6 +48,25 @@ file sealed class SignallingSource : ISource, ISignalSource
     }
 }
 
+/// <summary>An async source (http, rss, command) whose fetches finish when the test opens the gate.
+/// Started is set once the first fetch is running, so a test can wait for that instead of sleeping.</summary>
+file sealed class GatedAsyncSource(string name) : AsyncSource(name, TimeSpan.FromMinutes(10), TimeSpan.FromSeconds(30))
+{
+    private readonly SemaphoreSlim _gate = new(0);
+    public readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public int Runs;
+
+    public void Open() => _gate.Release();
+
+    protected override async Task<DeskWall.Core.Values.RecordValue> FetchAsync(CancellationToken ct)
+    {
+        var n = Interlocked.Increment(ref Runs);
+        Started.TrySetResult();
+        await _gate.WaitAsync(ct);
+        return new(new Dictionary<string, DeskWall.Core.Values.Value> { ["n"] = new DeskWall.Core.Values.NumberValue(n) });
+    }
+}
+
 /// <summary>A source whose reads the test answers: each RefreshAsync waits for <see cref="Answer"/>.</summary>
 file sealed class GatedSource(string name) : ISource, IDisposable
 {
@@ -92,6 +111,27 @@ public class LiveSourcesTests
         await live.RefreshNowAsync("time");
 
         Assert.True(n >= 1);
+    }
+
+    /// <summary>#20 follow-up: an explicit refresh returns with an answer. The constructor's own tick
+    /// makes a source's first (waiting) refresh; one that lands while that fetch is still running used
+    /// to get "pending" and return at once, so Refresh did nothing visible and the caller read an
+    /// empty snapshot. It now waits for the fetch it joined, and does not start a second one.</summary>
+    [Fact]
+    public async Task RefreshNow_During_A_Fetch_In_Flight_Waits_For_Its_Answer()
+    {
+        var src = new GatedAsyncSource("slow");
+        using var live = new LiveSources([new SourceDef { Name = "slow", Type = "http" }], NoSecrets(),
+            new FixedClock(DateTimeOffset.UtcNow), create: _ => src);
+        await src.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));   // the constructor's tick is fetching
+
+        var refresh = live.RefreshNowAsync("slow");
+        Assert.False(refresh.IsCompleted);
+        src.Open();
+        await refresh.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.NotNull(live.Snapshots.Single(s => s.Name == "slow").Values);
+        Assert.Equal(1, src.Runs);
     }
 
     [Fact]

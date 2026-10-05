@@ -21,6 +21,22 @@ public sealed class LiveSources : IDisposable
         public Timer? Warm;
         /// <summary>Taken out of the set: a refresh still in flight must not write over its replacement.</summary>
         public volatile bool Retired;
+        private readonly object _answerLock = new();
+        private TaskCompletionSource? _answer;
+
+        /// <summary>Completes the next time this entry records an answer (values or a failure), or is
+        /// retired. What RefreshNowAsync waits on when its own refresh came back "pending".</summary>
+        public Task NextAnswer()
+        {
+            lock (_answerLock) return (_answer ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        }
+
+        public void Answered()
+        {
+            TaskCompletionSource? t;
+            lock (_answerLock) { t = _answer; _answer = null; }
+            t?.TrySetResult();
+        }
     }
 
     private readonly IClock _clock;
@@ -142,6 +158,7 @@ public sealed class LiveSources : IDisposable
         foreach (var e in list)
         {
             e.Retired = true;
+            e.Answered();   // nobody waits on a source that has left the set
             e.Warm?.Dispose();
             if (e.Source is ISignalSource sig) sig.Changed -= _onSignal;
         }
@@ -183,7 +200,14 @@ public sealed class LiveSources : IDisposable
     {
         var entry = _entries.FirstOrDefault(e => string.Equals(e.Def.Name, name, StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException($"no source named '{name}'", nameof(name));
+        // Taken before the refresh, so an answer recorded while it runs is not missed. An async
+        // source answers "pending" while a fetch is in flight - one this call started, or the first
+        // one the constructor's tick started (#20) - and its landing is harvested by the bus wake.
+        // Returning at once then made Refresh look like it did nothing and handed the caller an
+        // empty snapshot; it returns with an answer instead.
+        var answered = entry.NextAnswer();
         await RefreshEntryAsync(entry).ConfigureAwait(false);
+        await answered.ConfigureAwait(false);
     }
 
     private void Tick()
@@ -195,7 +219,7 @@ public sealed class LiveSources : IDisposable
             var now = _clock.Now;
             foreach (var entry in _entries)
             {
-                if (entry.Source is null) continue;
+                if (entry.Source is null or AsyncSource { Fetching: true }) continue;   // its landing signals
                 SourceSnapshot snap;
                 lock (_registryLock) snap = _registry.Get(entry.Def.Name);
                 if (entry.Source.NextDue(snap.LastRefresh, now) <= now)
@@ -220,24 +244,28 @@ public sealed class LiveSources : IDisposable
         // Checked here and again before Updated: a fetch that lands after Dispose would otherwise
         // call Dispatcher.Invoke on a window that has closed, or repaint a panel that has already
         // replaced this instance. A retired entry's late answer would overwrite its replacement's.
-        if (_disposed || entry.Retired) return;
+        if (_disposed || entry.Retired) { entry.Answered(); return; }
         if (entry.Source is null)
         {
             lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name));
+            entry.Answered();
             if (!_disposed) Updated?.Invoke();
             return;
         }
         try
         {
             var v = await entry.Source.RefreshAsync(CancellationToken.None).ConfigureAwait(false);
-            if (entry.Retired) return;
+            if (entry.Retired) { entry.Answered(); return; }
             lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name).Succeeded(v, _clock.Now));
         }
+        // Still fetching: the panel keeps what it shows, and the landing's Changed brings it back here.
+        catch (SourcePendingException) { return; }
         catch (Exception ex)
         {
-            if (entry.Retired) return;
+            if (entry.Retired) { entry.Answered(); return; }
             lock (_registryLock) _registry.Set(_registry.Get(entry.Def.Name).Failed(ex.Message, _clock.Now));
         }
+        entry.Answered();
         if (!_disposed) Updated?.Invoke();
     }
 
